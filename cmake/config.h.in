@@ -14,8 +14,8 @@
  * </table>
  */
 
-#ifndef SIMPLERENDER_CONFIG_H
-#define SIMPLERENDER_CONFIG_H
+#ifndef SIMPLEGAMEENGINE_CONFIG_H
+#define SIMPLEGAMEENGINE_CONFIG_H
 
 #include <string>
 #include <string_view>
@@ -45,4 +45,4 @@ static constexpr const size_t LOG_FILE_MAX_SIZE = @LOG_FILE_MAX_SIZE@;
 /// 日志文件数量
 static constexpr const size_t LOG_FILE_MAX_COUNT = @LOG_FILE_MAX_COUNT@;
 
-#endif /* SIMPLERENDER_CONFIG_H */
+#endif /* SIMPLEGAMEENGINE_CONFIG_H */
