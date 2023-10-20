@@ -132,6 +132,13 @@ CPMAddPackage(
         DOWNLOAD_ONLY True
 )
 
+# https://github.com/mariusbancila/stduuid
+CPMAddPackage(
+        NAME stduuid
+        GIT_REPOSITORY https://github.com/mariusbancila/stduuid.git
+        VERSION 1.2.3
+)
+
 # https://github.com/cpm-cmake/CPMLicenses.cmake
 # 保持在 CPMAddPackage 的最后
 CPMAddPackage(
@@ -230,31 +237,6 @@ find_program(LCOV_EXE lcov)
 if (NOT LCOV_EXE)
     message(FATAL_ERROR "lcov not found.\n"
             "Following https://github.com/linux-test-project/lcov to install.")
-endif ()
-
-find_package(SDL2 REQUIRED)
-if (NOT SDL2_FOUND)
-    message(FATAL_ERROR "sdl2 not found.\n"
-            "Following https://github.com/libsdl-org/SDL to install.")
-endif ()
-
-find_package(SDL2_ttf REQUIRED)
-if (NOT SDL2_TTF_FOUND)
-    message(FATAL_ERROR "sdl2_ttf not found.\n"
-            "Following https://github.com/libsdl-org/SDL to install.")
-endif ()
-
-if (APPLE)
-    set(OpenMP_C_FLAGS "-Xpreprocessor -fopenmp -I/usr/local/opt/libomp/include/")
-    set(OpenMP_C_LIB_NAMES "omp")
-    set(OpenMP_CXX_FLAGS "-Xpreprocessor -fopenmp -I/usr/local/opt/libomp/include/")
-    set(OpenMP_CXX_LIB_NAMES "omp")
-    set(OpenMP_omp_LIBRARY /usr/local/opt/libomp/lib/libomp.dylib)
-endif ()
-find_package(OpenMP REQUIRED)
-if (NOT OpenMP_FOUND)
-    message(FATAL_ERROR "OpenMP not found.\n"
-            "Following https://www.openmp.org to install.")
 endif ()
 
 find_package(spdlog REQUIRED)

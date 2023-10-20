@@ -30,25 +30,8 @@ include(functions)
 include(3rd)
 # 导入编译配置
 include(compile_config)
-
-# obj 文件路径
-set(OBJ_FILE_PATH "${PROJECT_SOURCE_DIR}/obj/")
-# 字体文件路径
-set(FONT_FILE_PATH "${wqy_font_SOURCE_DIR}/wqy-zenhei.ttc")
-# 线程数
-include(ProcessorCount)
-ProcessorCount(NPROC)
-# 日志文件路径
-set(LOG_FILE_PATH "${EXECUTABLE_OUTPUT_PATH}/logs/SimpleGameEngineLog.log")
-# 日志文件大小
-set(LOG_FILE_MAX_SIZE 1024*1024*4)
-# 日志文件数量
-set(LOG_FILE_MAX_COUNT 8)
-# 生成配置头文件
-configure_file(
-        "${PROJECT_SOURCE_DIR}/cmake/config.h.in"
-        "${PROJECT_SOURCE_DIR}/src/include/config.h"
-)
+# 导入项目配置
+include(project_config)
 
 # 添加要编译的目录
 add_subdirectory(${PROJECT_SOURCE_DIR}/src)

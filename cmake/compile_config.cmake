@@ -18,8 +18,4 @@ list(APPEND DEFAULT_LINK_LIB
         stb
         tinyobjloader
         Eigen
-        ${glog_LIBRARIES}
-        SDL2::Main
-        SDL2::TTF
-        OpenMP::OpenMP_CXX
 )
