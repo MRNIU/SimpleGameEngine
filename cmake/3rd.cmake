@@ -244,3 +244,9 @@ if (NOT spdlog_FOUND)
     message(FATAL_ERROR "spdlog not found.\n"
             "Following https://github.com/gabime/spdlog to install.")
 endif ()
+
+find_package(SDL2 REQUIRED)
+if (NOT SDL2_FOUND)
+    message(FATAL_ERROR "sdl2 not found.\n"
+            "Following https://github.com/libsdl-org/SDL to install.")
+endif ()
