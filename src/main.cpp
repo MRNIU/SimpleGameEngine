@@ -14,11 +14,6 @@
  * </table>
  */
 
-#include <iostream>
-#include <span>
-#include <string>
-#include <vector>
-
 #include "core/config/config.h"
 #include "core/log/log_system.h"
 
@@ -29,7 +24,7 @@ auto main(int, char **) -> int {
                                                  config.GetLogFileMaxSize(),
                                                  config.GetLogFileMaxCount());
 
-  log_system.info(233);
+  //  log_system.info(233);
 
   return 0;
 }

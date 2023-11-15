@@ -17,30 +17,47 @@
 #include "config.h"
 
 #include <boost/json.hpp>
+#include <fstream>
+#include <iostream>
 
 namespace simple_game_engine {
 namespace core {
 
 Config::Config(const std::string& config_json_file_path) {
-  auto json_value = boost::json::parse(config_json_file_path);
+  // 打开文件
+  std::ifstream json_file(config_json_file_path);
+  if (!json_file.is_open()) {
+    throw std::runtime_error("Error opening json_file.\n");
+  }
+  // 读取文件内容到字符串
+  std::string json_str((std::istreambuf_iterator<char>(json_file)),
+                       std::istreambuf_iterator<char>());
+
+  // 解析 json 文件
+  auto json_value = boost::json::parse(json_str);
+
+  // 保存解析结果
   application_name_ = json_value.at("application_name").as_string();
-  screen_width_ = json_value.at("screen_width").as_uint64();
-  screen_height_ = json_value.at("screen_height").as_uint64();
+  screen_width_ = json_value.at("screen_width").as_int64();
+  screen_height_ = json_value.at("screen_height").as_int64();
+  log_file_path_ = json_value.at("log_file_path").as_string();
+  log_file_max_size_ = json_value.at("log_file_max_size").as_int64();
+  log_file_max_count_ = json_value.at("log_file_max_count").as_int64();
 }
 
 const std::string& Config::GetApplicationName() const {
   return application_name_;
 }
 
-uint64_t Config::GetScreenWidth() const { return screen_width_; }
+size_t Config::GetScreenWidth() const { return screen_width_; }
 
-uint64_t Config::GetScreenHeight() const { return screen_height_; }
+size_t Config::GetScreenHeight() const { return screen_height_; }
 
 const std::string& Config::GetLogFilePath() const { return log_file_path_; }
 
-uint64_t Config::GetLogFileMaxSize() const { return log_file_max_size_; }
+size_t Config::GetLogFileMaxSize() const { return log_file_max_size_; }
 
-uint64_t Config::GetLogFileMaxCount() const { return log_file_max_count_; }
+size_t Config::GetLogFileMaxCount() const { return log_file_max_count_; }
 
 }  // namespace core
 }  // namespace simple_game_engine
