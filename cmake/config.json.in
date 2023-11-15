@@ -1,0 +1,8 @@
+{
+  "application_name": "@APPLICATION_NAME@",
+  "screen_width": @SCREEN_WIDTH@,
+  "screen_height": @SCREEN_HEIGHT@,
+  "log_file_path": "@LOG_FILE_PATH@",
+  "log_file_max_size": @LOG_FILE_MAX_SIZE@,
+  "log_file_max_count": @LOG_FILE_MAX_COUNT@
+}

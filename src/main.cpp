@@ -19,10 +19,17 @@
 #include <string>
 #include <vector>
 
-#include "exception.hpp"
+#include "core/config/config.h"
+#include "core/log/log_system.h"
 
 // @todo 不应该出现明确的类型，应该使用模板
 auto main(int, char **) -> int {
-  log_init();
+  simple_game_engine::core::Config config("config.json");
+  simple_game_engine::core::LogSystem log_system(config.GetLogFilePath(),
+                                                 config.GetLogFileMaxSize(),
+                                                 config.GetLogFileMaxCount());
+
+  log_system.info(233);
+
   return 0;
 }

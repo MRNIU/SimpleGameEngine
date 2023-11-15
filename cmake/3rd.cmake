@@ -214,3 +214,9 @@ if (NOT spdlog_FOUND)
     message(FATAL_ERROR "spdlog not found.\n"
             "Following https://github.com/gabime/spdlog to install.")
 endif ()
+
+find_package(Boost REQUIRED COMPONENTS json)
+if (NOT Boost_FOUND)
+    message(FATAL_ERROR "Boost not found.\n"
+            "Following https://www.boost.org to install.")
+endif ()

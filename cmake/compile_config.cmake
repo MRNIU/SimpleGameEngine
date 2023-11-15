@@ -18,4 +18,6 @@ list(APPEND DEFAULT_LINK_LIB
         stb
         tinyobjloader
         Eigen
+        Boost::headers
+        Boost::json
 )

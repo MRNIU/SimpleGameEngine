@@ -5,7 +5,9 @@
 # CMakeLists.txt for Simple-XX/SimpleGameEngine.
 
 add_library(core
-        log.cpp
+        application/application.cpp
+        config/config.cpp
+        log/log_system.cpp
 )
 
 target_include_directories(core PRIVATE

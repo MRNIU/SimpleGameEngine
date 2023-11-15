@@ -1,6 +1,6 @@
 
 /**
- * @file log.cpp
+ * @file log_system.cpp
  * @brief 日志封装
  * @author Zone.N (Zone.Niuzh@hotmail.com)
  * @version 1.0
@@ -14,7 +14,7 @@
  * </table>
  */
 
-#include "log.h"
+#include "log_system.h"
 
 #include <spdlog/async.h>
 #include <spdlog/sinks/basic_file_sink.h>
@@ -22,30 +22,40 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
-#include <chrono>
-#include <cstdio>
+namespace simple_game_engine {
+namespace core {
 
-std::shared_ptr<spdlog::logger> SRLOG = nullptr;
-
-/// @note 在 win 下使用时需要在程序结束时使用 `spdlog::shutdown()` 回收资源
-void log_init(void) {
+LogSystem::LogSystem(const std::string &log_file_path, size_t lig_file_max_size,
+                     size_t log_file_max_count) {
   try {
     spdlog::init_thread_pool(65536, 1);
     auto stdout_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     auto rotating_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-        LOG_FILE_PATH, LOG_FILE_MAX_SIZE, LOG_FILE_MAX_COUNT);
+        log_file_path, lig_file_max_size, log_file_max_count);
+
     std::vector<spdlog::sink_ptr> sinks{stdout_sink, rotating_sink};
-    auto logger = std::make_shared<spdlog::async_logger>(
+    logger_ = std::make_shared<spdlog::async_logger>(
         "multi_sink", sinks.begin(), sinks.end(), spdlog::thread_pool(),
         spdlog::async_overflow_policy::block);
+
     // [年-月-日 时:分:秒.毫秒] [文件名:行号] [日志级别以彩色大写输出 8
     // 字符右对齐] 内容
-    logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%s:%# %!] [%^%l%$] %v");
-    spdlog::register_logger(logger);
+    logger_->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%s:%# %!] [%^%l%$] %v");
+    logger_->set_level(spdlog::level::trace);
+
+    spdlog::register_logger(logger_);
     spdlog::flush_on(spdlog::level::trace);
 
-    SRLOG = spdlog::get("multi_sink");
   } catch (const spdlog::spdlog_ex &e) {
     std::printf("Log initialization failed: %s\n", e.what());
   }
 }
+
+LogSystem::~LogSystem() {
+  logger_->flush();
+  spdlog::drop_all();
+  spdlog::shutdown();
+}
+
+}  // namespace core
+}  // namespace simple_game_engine
