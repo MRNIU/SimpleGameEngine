@@ -14,55 +14,73 @@
  * </table>
  */
 
-#ifndef SIMPLEGAMEENGINE_SRC_CORE_INCLUDE_LOG_LOG_SYSTEM_H
-#define SIMPLEGAMEENGINE_SRC_CORE_INCLUDE_LOG_LOG_SYSTEM_H
+#ifndef SIMPLEGAMEENGINE_SRC_CORE_LOG_LOG_SYSTEM_H
+#define SIMPLEGAMEENGINE_SRC_CORE_LOG_LOG_SYSTEM_H
 
 #include <spdlog/spdlog.h>
 
 namespace simple_game_engine {
 namespace core {
 
+/**
+ * 日志系统
+ */
 class LogSystem {
  public:
-  enum class LogLevel : uint8_t { debug, info, warn, error, fatal };
+  /**
+   * 构造函数
+   * @param log_file_path 日志文件路径
+   * @param lig_file_max_size 日志文件最大大小
+   * @param log_file_max_count 日志文件最大数量
+   */
+  explicit LogSystem(const std::string &log_file_path, size_t lig_file_max_size,
+                     size_t log_file_max_count);
 
-  LogSystem(const std::string &log_file_path, size_t lig_file_max_size,
-            size_t log_file_max_count);
+  /**
+   * 析构函数
+   */
   ~LogSystem();
 
+  /// @name 默认构造/析构函数
+  /// @{
+  LogSystem() = delete;
+  LogSystem(const LogSystem &_scene) = delete;
+  LogSystem(LogSystem &&_scene) = delete;
+  auto operator=(const LogSystem &_scene) -> LogSystem & = delete;
+  auto operator=(LogSystem &&_scene) -> LogSystem & = delete;
+  /// @}
+
+  /**
+   * @name 日志打印
+   * @brief 各个级别的日志
+   * @tparam TARGS 参数类型
+   * @param args 参数
+   */
+  /// @{
   template <typename... TARGS>
-  void log(LogLevel level, TARGS &&...args) {
-    switch (level) {
-      case LogLevel::debug: {
-        logger_->debug(std::forward<TARGS>(args)...);
-        break;
-      }
-      case LogLevel::info: {
-        logger_->info(std::forward<TARGS>(args)...);
-        break;
-      }
-      case LogLevel::warn: {
-        logger_->warn(std::forward<TARGS>(args)...);
-        break;
-      }
-      case LogLevel::error: {
-        logger_->error(std::forward<TARGS>(args)...);
-        break;
-      }
-      case LogLevel::fatal: {
-        logger_->critical(std::forward<TARGS>(args)...);
-        fatalCallback(std::forward<TARGS>(args)...);
-        break;
-      }
-      default: {
-        break;
-      }
-    }
+  void info(TARGS &&...args) {
+    SPDLOG_LOGGER_INFO(logger_, std::forward<TARGS>(args)...);
   }
 
   template <typename... TARGS>
-  void info(TARGS &&...args) {
-    logger_->info(std::forward<TARGS>(args)...);
+  void warn(TARGS &&...args) {
+    SPDLOG_LOGGER_WARN(logger_, std::forward<TARGS>(args)...);
+  }
+
+  template <typename... TARGS>
+  void err(TARGS &&...args) {
+    SPDLOG_LOGGER_ERROR(logger_, std::forward<TARGS>(args)...);
+  }
+
+  template <typename... TARGS>
+  void debug(TARGS &&...args) {
+    SPDLOG_LOGGER_DEBUG(logger_, std::forward<TARGS>(args)...);
+  }
+
+  template <typename... TARGS>
+  void fatal(TARGS &&...args) {
+    SPDLOG_LOGGER_CRITICAL(logger_, std::forward<TARGS>(args)...);
+    fatalCallback(std::forward<TARGS>(args)...);
   }
 
   template <typename... TARGS>
@@ -70,12 +88,14 @@ class LogSystem {
     const std::string format_str = fmt::format(std::forward<TARGS>(args)...);
     throw std::runtime_error(format_str);
   }
+  /// @}
 
  private:
+  /// 日志指针
   std::shared_ptr<spdlog::logger> logger_;
 };
 
 }  // namespace core
 }  // namespace simple_game_engine
 
-#endif /* SIMPLEGAMEENGINE_SRC_CORE_INCLUDE_LOG_LOG_SYSTEM_H */
+#endif  // SIMPLEGAMEENGINE_SRC_CORE_LOG_LOG_SYSTEM_H

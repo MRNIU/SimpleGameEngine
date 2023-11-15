@@ -24,7 +24,7 @@ auto main(int, char **) -> int {
                                                  config.GetLogFileMaxSize(),
                                                  config.GetLogFileMaxCount());
 
-  //  log_system.info(233);
+  log_system.info(233);
 
   return 0;
 }

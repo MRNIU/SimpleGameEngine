@@ -32,7 +32,7 @@ class Config {
    * 构造函数
    * @param config_json_file_path 配置文件路径
    */
-  Config(const std::string &config_json_file_path);
+  explicit Config(const std::string &config_json_file_path);
 
   /// @name 默认构造/析构函数
   /// @{
