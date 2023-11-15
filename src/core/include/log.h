@@ -26,20 +26,6 @@ extern std::shared_ptr<spdlog::logger> SRLOG;
 
 /// @todo 修复 clang-tidy
 
-/// 微秒到秒
-static constexpr uint32_t US2S = 1000000;
-
-/**
- * 获取当前微秒数，用于性能分析
- * @return auto                 当前微秒
- */
-inline auto us() {
-  struct timeval t = {};
-
-  gettimeofday(&t, nullptr);
-  return t.tv_sec * 1000000 + t.tv_usec;
-}
-
 void log_init(void);
 
 #endif /* SIMPLEGAMEENGINE_LOG_H */

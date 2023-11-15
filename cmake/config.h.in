@@ -1,7 +1,7 @@
 
 /**
  * @file config.h
- * @brief 项目配置
+ * @brief 项目配置 本文件由 cmake 自动生成，请勿手动修改
  * @author Zone.N (Zone.Niuzh@hotmail.com)
  * @version 1.0
  * @date 2023-08-24

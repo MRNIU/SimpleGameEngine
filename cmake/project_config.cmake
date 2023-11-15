@@ -22,5 +22,5 @@ set(LOG_FILE_MAX_COUNT 8)
 # 生成配置头文件
 configure_file(
         "${PROJECT_SOURCE_DIR}/cmake/config.h.in"
-        "${PROJECT_SOURCE_DIR}/src/include/config.h"
+        "${PROJECT_SOURCE_DIR}/src/core/include/config.h"
 )

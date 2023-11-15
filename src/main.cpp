@@ -19,9 +19,7 @@
 #include <string>
 #include <vector>
 
-#include "config.h"
 #include "exception.hpp"
-
 
 // @todo 不应该出现明确的类型，应该使用模板
 auto main(int, char **) -> int {

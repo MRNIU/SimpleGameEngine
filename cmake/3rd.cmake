@@ -57,28 +57,6 @@ CPMAddPackage(
         "gtest_force_shared_crt ON"
 )
 
-# https://github.com/aminosbh/sdl2-cmake-modules.git
-CPMAddPackage(
-        NAME sdl2-cmake-modules
-        GIT_REPOSITORY https://github.com/aminosbh/sdl2-cmake-modules.git
-        GIT_TAG ad006a3daae65a612ed87415037e32188b81071e
-        DOWNLOAD_ONLY True
-)
-if (sdl2-cmake-modules_ADDED)
-    list(APPEND CMAKE_MODULE_PATH ${sdl2-cmake-modules_SOURCE_DIR})
-endif ()
-
-## https://github.com/freetype/freetype
-#CPMAddPackage(
-#        NAME freetype
-#        GIT_REPOSITORY https://github.com/freetype/freetype.git
-#        GIT_TAG VER-2-13-0
-#        VERSION 2.13.0
-#)
-#if (freetype_ADDED)
-#    add_library(Freetype::Freetype ALIAS freetype)
-#endif ()
-
 # https://github.com/tinyobjloader/tinyobjloader.git
 CPMAddPackage(
         NAME tinyobjloader
@@ -123,14 +101,6 @@ if (Eigen_ADDED)
     add_library(Eigen INTERFACE IMPORTED)
     target_include_directories(Eigen INTERFACE ${Eigen_SOURCE_DIR})
 endif ()
-
-# http://wenq.org/wqy2/index.cgi?ZenHei
-CPMAddPackage(
-        NAME wqy_font
-        URL https://sourceforge.net/projects/wqy/files/wqy-zenhei/0.8.38%20%28Pangu%29/wqy-zenhei-0.8.38-1.tar.gz
-        VERSION 0.8.38
-        DOWNLOAD_ONLY True
-)
 
 # https://github.com/mariusbancila/stduuid
 CPMAddPackage(
@@ -243,10 +213,4 @@ find_package(spdlog REQUIRED)
 if (NOT spdlog_FOUND)
     message(FATAL_ERROR "spdlog not found.\n"
             "Following https://github.com/gabime/spdlog to install.")
-endif ()
-
-find_package(SDL2 REQUIRED)
-if (NOT SDL2_FOUND)
-    message(FATAL_ERROR "sdl2 not found.\n"
-            "Following https://github.com/libsdl-org/SDL to install.")
 endif ()
