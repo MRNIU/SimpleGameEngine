@@ -17,11 +17,10 @@
 #ifndef SIMPLERENDER_DISPLAY_H
 #define SIMPLERENDER_DISPLAY_H
 
-#include <cstdint>
-#include <future>
-
 #include <SDL.h>
 
+#include <cstdint>
+#include <future>
 
 #include "framebuffer.h"
 
@@ -29,7 +28,7 @@
  * 显示抽象
  */
 class display_t {
-public:
+ public:
   /**
    * 构造函数
    * @param _state 运行状态
@@ -63,7 +62,7 @@ public:
    */
   void run();
 
-private:
+ private:
   /// 窗口标题
   static constexpr const char *WINDOW_TITLE = (char *)"SimpleRenderer";
   /// 默认字体大小

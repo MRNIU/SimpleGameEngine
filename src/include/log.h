@@ -17,9 +17,8 @@
 #ifndef SIMPLEGAMEENGINE_LOG_H
 #define SIMPLEGAMEENGINE_LOG_H
 
-#include <sys/time.h>
-
 #include <spdlog/spdlog.h>
+#include <sys/time.h>
 
 #include "config.h"
 

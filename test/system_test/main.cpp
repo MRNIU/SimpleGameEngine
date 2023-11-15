@@ -14,12 +14,12 @@
  * </table>
  */
 
+#include <SimpleRenderer.h>
+
 #include <iostream>
 #include <span>
 #include <string>
 #include <vector>
-
-#include <SimpleRenderer.h>
 
 #include "display.h"
 

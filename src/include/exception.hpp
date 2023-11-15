@@ -25,7 +25,7 @@
 namespace SimpleGameEngine {
 
 class exception : public std::exception {
-public:
+ public:
   exception() : message("") { SRLOG->error(""); }
   explicit exception(std::string _str) : message(_str) { SRLOG->error(_str); }
 
@@ -40,10 +40,10 @@ public:
 
   virtual const char *what() const throw() { return message.c_str(); }
 
-private:
+ private:
   std::string message;
 };
 
-} // namespace SimpleGameEngine
+}  // namespace SimpleGameEngine
 
 #endif /* SIMPLEGAMEENGINE_EXCEPTION_HPP */
