@@ -14,17 +14,23 @@
  * </table>
  */
 
+#include <string>
+#include <string_view>
+
 #include "core/config/config.h"
 #include "core/log/log_system.h"
+#include "platform/file_system/path.h"
 
-// @todo 不应该出现明确的类型，应该使用模板
-auto main(int, char **) -> int {
-  simple_game_engine::core::Config config("config.json");
+auto main(int, char**) -> int {
+  simple_game_engine::core::Config config(
+      simple_game_engine::platform::Path::GetExecutablePath()
+          .parent_path()
+          .append("config.json"));
   simple_game_engine::core::LogSystem log_system(config.GetLogFilePath(),
                                                  config.GetLogFileMaxSize(),
                                                  config.GetLogFileMaxCount());
 
-  log_system.info(233);
+  log_system.info("加载配置文件: {} {} {}");
 
   return 0;
 }

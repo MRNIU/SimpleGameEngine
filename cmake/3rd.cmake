@@ -220,3 +220,9 @@ if (NOT Boost_FOUND)
     message(FATAL_ERROR "Boost not found.\n"
             "Following https://www.boost.org to install.")
 endif ()
+
+find_package(Vulkan REQUIRED)
+if (NOT Vulkan_FOUND)
+    message(FATAL_ERROR "Vulkan not found.\n"
+            "Following https://www.vulkan.org to install.")
+endif ()

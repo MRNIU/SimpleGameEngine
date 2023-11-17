@@ -17,17 +17,21 @@
 #include "config.h"
 
 #include <boost/json.hpp>
+#include <boost/property_tree/json_parser.hpp>
+#include <boost/property_tree/ptree.hpp>
 #include <fstream>
 #include <iostream>
+#include <string>
 
 namespace simple_game_engine {
 namespace core {
 
-Config::Config(const std::string& config_json_file_path) {
+Config::Config(const std::filesystem::path& config_json_file_path) {
   // 打开文件
   std::ifstream json_file(config_json_file_path);
-  if (!json_file.is_open()) {
-    throw std::runtime_error("Error opening json_file.\n");
+  if (!json_file) {
+    throw std::runtime_error(
+        "Error opening json_file: " + config_json_file_path.string() + ".\n");
   }
   // 读取文件内容到字符串
   std::string json_str((std::istreambuf_iterator<char>(json_file)),

@@ -20,4 +20,6 @@ list(APPEND DEFAULT_LINK_LIB
         Eigen
         Boost::headers
         Boost::json
+        Vulkan::Vulkan
+        Vulkan::Headers
 )

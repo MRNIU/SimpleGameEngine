@@ -72,7 +72,7 @@ jobs:
           brew install doxygen graphviz llvm cppcheck lcov
           ln -s "$(brew --prefix llvm)/bin/clang-format" "/usr/local/bin/clang-format"
           ln -s "$(brew --prefix llvm)/bin/clang-tidy" "/usr/local/bin/clang-tidy"
-          brew install gcc g++ sdl2 sdl2_ttf libomp
+          brew install gcc g++ sdl2 sdl2_ttf libomp vulkan-loader vulkan-headers
 
       - name: Build
         run: |

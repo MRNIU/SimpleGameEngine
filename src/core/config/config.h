@@ -18,6 +18,7 @@
 #define SIMPLEGAMEENGINE_SRC_CORE_CONFIG_CONFIG_H
 
 #include <cstdint>
+#include <filesystem>
 #include <string>
 
 namespace simple_game_engine {
@@ -32,15 +33,14 @@ class Config {
    * 构造函数
    * @param config_json_file_path 配置文件路径
    */
-  explicit Config(const std::string &config_json_file_path);
+  explicit Config(const std::filesystem::path &config_json_file_path);
 
   /// @name 默认构造/析构函数
   /// @{
-  Config() = delete;
-  Config(const Config &_scene) = delete;
-  Config(Config &&_scene) = delete;
-  auto operator=(const Config &_scene) -> Config & = delete;
-  auto operator=(Config &&_scene) -> Config & = delete;
+  Config(const Config &) = delete;
+  Config(Config &&) = delete;
+  auto operator=(const Config &) -> Config & = delete;
+  auto operator=(Config &&) -> Config & = delete;
   ~Config() = default;
   /// @}
 

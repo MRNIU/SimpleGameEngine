@@ -17,10 +17,11 @@ set(LOG_FILE_PATH "${EXECUTABLE_OUTPUT_PATH}/logs/SimpleGameEngineLog.log")
 set(LOG_FILE_MAX_SIZE 4194304)
 # 日志文件数量
 set(LOG_FILE_MAX_COUNT 8)
+# 配置 json 路径
+set(CONFIG_JSON_FILE_PATH "${EXECUTABLE_OUTPUT_PATH}/config.json")
 
-# 生成配置头文件
+# 生成配置 json 文件
 configure_file(
         "${PROJECT_SOURCE_DIR}/cmake/config.json.in"
-        # "${PROJECT_SOURCE_DIR}/src/config.json"
-        "${EXECUTABLE_OUTPUT_PATH}/config.json"
+        "${CONFIG_JSON_FILE_PATH}"
 )

@@ -4,8 +4,8 @@
 #
 # CMakeLists.txt for Simple-XX/SimpleGameEngine.
 
-add_subdirectory(core)
 add_subdirectory(platform)
+add_subdirectory(core)
 # add_subdirectory(function)
 
 # 生成可执行文件
@@ -22,5 +22,6 @@ target_compile_options(SimpleGameEngine PRIVATE
 
 target_link_libraries(SimpleGameEngine PRIVATE
         ${DEFAULT_LINK_LIB}
+        platform
         core
 )
