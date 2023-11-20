@@ -17,7 +17,7 @@
 #include "window_system.h"
 
 namespace simple_game_engine {
-namespace core {
+namespace platform {
 
 // WindowSystem::~WindowSystem() {
 //   glfwDestroyWindow(m_window);
@@ -77,8 +77,9 @@ namespace core {
 // void WindowSystem::setFocusMode(bool mode) {
 //   m_is_focus_mode = mode;
 //   glfwSetInputMode(m_window, GLFW_CURSOR,
-//                    m_is_focus_mode ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+//                    m_is_focus_mode ? GLFW_CURSOR_DISABLED :
+//                    GLFW_CURSOR_NORMAL);
 // }
 
-}  // namespace core
+}  // namespace platform
 }  // namespace simple_game_engine

@@ -18,7 +18,7 @@
 #define SIMPLEGAMEENGINE_SRC_PLATFORM_WINDOW_SYSTEM_WINDOW_SYSTEM_H
 
 namespace simple_game_engine {
-namespace core {
+namespace platform {
 
 // #define GLFW_INCLUDE_VULKAN
 // #include <GLFW/glfw3.h>
@@ -57,8 +57,8 @@ namespace core {
 //   typedef std::function<void(int, int)> onWindowSizeFunc;
 //   typedef std::function<void()> onWindowCloseFunc;
 
-//   void registerOnResetFunc(onResetFunc func) { m_onResetFunc.push_back(func); }
-//   void registerOnKeyFunc(onKeyFunc func) { m_onKeyFunc.push_back(func); }
+//   void registerOnResetFunc(onResetFunc func) { m_onResetFunc.push_back(func);
+//   } void registerOnKeyFunc(onKeyFunc func) { m_onKeyFunc.push_back(func); }
 //   void registerOnCharFunc(onCharFunc func) { m_onCharFunc.push_back(func); }
 //   void registerOnCharModsFunc(onCharModsFunc func) {
 //     m_onCharModsFunc.push_back(func);
@@ -94,7 +94,8 @@ namespace core {
 
 //  protected:
 //   // window event callbacks
-//   static void keyCallback(GLFWwindow* window, int key, int scancode, int action,
+//   static void keyCallback(GLFWwindow* window, int key, int scancode, int
+//   action,
 //                           int mods) {
 //     WindowSystem* app = (WindowSystem*)glfwGetWindowUserPointer(window);
 //     if (app) {
@@ -121,7 +122,8 @@ namespace core {
 //       app->onMouseButton(button, action, mods);
 //     }
 //   }
-//   static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
+//   static void cursorPosCallback(GLFWwindow* window, double xpos, double ypos)
+//   {
 //     WindowSystem* app = (WindowSystem*)glfwGetWindowUserPointer(window);
 //     if (app) {
 //       app->onCursorPos(xpos, ypos);
@@ -140,7 +142,8 @@ namespace core {
 //       app->onScroll(xoffset, yoffset);
 //     }
 //   }
-//   static void dropCallback(GLFWwindow* window, int count, const char** paths) {
+//   static void dropCallback(GLFWwindow* window, int count, const char** paths)
+//   {
 //     WindowSystem* app = (WindowSystem*)glfwGetWindowUserPointer(window);
 //     if (app) {
 //       app->onDrop(count, paths);
@@ -208,7 +211,7 @@ namespace core {
 //   std::vector<onWindowCloseFunc> m_onWindowCloseFunc;
 // };
 
-}  // namespace core
+}  // namespace platform
 }  // namespace simple_game_engine
 
 #endif /* SIMPLEGAMEENGINE_SRC_PLATFORM_WINDOW_SYSTEM_WINDOW_SYSTEM_H */
