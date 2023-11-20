@@ -5,9 +5,7 @@
 # CMakeLists.txt for Simple-XX/SimpleGameEngine.
 
 add_library(platform
-#     rhi/vulkan/util.cpp
-#     rhi/vulkan/vma.cpp
-#     rhi/vulkan/vulkan_rhi.cpp
+#     vulkan/EasyVKStart
     window_system/window_system.cpp
     file_system/path.cpp
 )
