@@ -22,15 +22,16 @@
 #include "platform/file_system/path.h"
 
 auto main(int, char**) -> int {
-  simple_game_engine::core::Config config(
+  auto config_file_path =
       simple_game_engine::platform::Path::GetExecutablePath()
           .parent_path()
-          .append("config.json"));
+          .append("config.json");
+  simple_game_engine::core::Config config(config_file_path);
   simple_game_engine::core::LogSystem log_system(config.GetLogFilePath(),
                                                  config.GetLogFileMaxSize(),
                                                  config.GetLogFileMaxCount());
 
-  log_system.info("加载配置文件: {} {} {}");
+  SPDLOG_INFO("加载配置文件: {}", config_file_path.string());
 
   return 0;
 }

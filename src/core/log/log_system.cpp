@@ -44,6 +44,8 @@ LogSystem::LogSystem(const std::string &log_file_path, size_t lig_file_max_size,
 
   spdlog::register_logger(logger_);
   spdlog::flush_on(spdlog::level::trace);
+
+  spdlog::set_default_logger(logger_);
 }
 
 LogSystem::~LogSystem() {
