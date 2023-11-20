@@ -22,4 +22,6 @@ list(APPEND DEFAULT_LINK_LIB
         Boost::json
         Vulkan::Vulkan
         Vulkan::Headers
+        glm::glm
+        glfw
 )

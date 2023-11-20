@@ -226,3 +226,15 @@ if (NOT Vulkan_FOUND)
     message(FATAL_ERROR "Vulkan not found.\n"
             "Following https://www.vulkan.org to install.")
 endif ()
+
+find_package(glm REQUIRED)
+if (NOT glm_FOUND)
+    message(FATAL_ERROR "glm not found.\n"
+            "Following https://github.com/g-truc/glm to install.")
+endif ()
+
+find_package(glfw3 REQUIRED)
+if (NOT glfw3_FOUND)
+    message(FATAL_ERROR "glfw3 not found.\n"
+            "Following https://www.glfw.org to install.")
+endif ()
