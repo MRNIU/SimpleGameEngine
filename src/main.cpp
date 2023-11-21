@@ -20,7 +20,8 @@
 #include "core/config/config.h"
 #include "core/log/log_system.h"
 #include "platform/file_system/path.h"
-#include "platform/vulkan/GlfwGeneral.hpp"
+// #include "platform/vulkan/vk_engine.h"
+#include <vk_mem_alloc.h>
 
 auto main(int, char**) -> int {
   auto config_file_path =
@@ -34,13 +35,10 @@ auto main(int, char**) -> int {
 
   SPDLOG_INFO("加载配置文件: {}", config_file_path.string());
 
-  if (!InitializeWindow({280, 120})) return -1;  // 来个你讨厌的返回值
-  while (!glfwWindowShouldClose(pWindow)) {
-    TitleFps();
-    /*渲染及操作过程，待填充*/
-    glfwPollEvents();
-  }
-  TerminateWindow();
+  // VulkanEngine engine;
+  // engine.init();
+  // engine.run();
+  // engine.cleanup();
 
   return 0;
 }

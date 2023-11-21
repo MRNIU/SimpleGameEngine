@@ -24,4 +24,8 @@ list(APPEND DEFAULT_LINK_LIB
         Vulkan::Headers
         glm::glm
         glfw
+        SDL2::Main
+        vk-bootstrap::vk-bootstrap
+        VulkanMemoryAllocator
+        imgui
 )

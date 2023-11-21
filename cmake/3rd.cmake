@@ -109,6 +109,42 @@ CPMAddPackage(
         VERSION 1.2.3
 )
 
+# https://github.com/aminosbh/sdl2-cmake-modules.git
+CPMAddPackage(
+        NAME sdl2-cmake-modules
+        GIT_REPOSITORY https://github.com/aminosbh/sdl2-cmake-modules.git
+        GIT_TAG ad006a3daae65a612ed87415037e32188b81071e
+        DOWNLOAD_ONLY True
+)
+if (sdl2-cmake-modules_ADDED)
+    list(APPEND CMAKE_MODULE_PATH ${sdl2-cmake-modules_SOURCE_DIR})
+endif ()
+
+# https://github.com/charles-lunarg/vk-bootstrap.git
+CPMAddPackage(
+        NAME vk-bootstrap
+        GIT_REPOSITORY https://github.com/charles-lunarg/vk-bootstrap.git
+        GIT_TAG main
+)
+
+# https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+CPMAddPackage(
+        NAME VulkanMemoryAllocator
+        GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+        GIT_TAG v3.0.1
+)
+
+# https://github.com/ocornut/imgui.git
+CPMAddPackage(
+        NAME imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG v1.90
+)
+if (imgui_ADDED)
+    add_library(imgui INTERFACE)
+    target_include_directories(imgui INTERFACE ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+endif ()
+
 # https://github.com/cpm-cmake/CPMLicenses.cmake
 # 保持在 CPMAddPackage 的最后
 CPMAddPackage(
@@ -237,4 +273,16 @@ find_package(glfw3 REQUIRED)
 if (NOT glfw3_FOUND)
     message(FATAL_ERROR "glfw3 not found.\n"
             "Following https://www.glfw.org to install.")
+endif ()
+
+find_package(SDL2 REQUIRED)
+if (NOT SDL2_FOUND)
+    message(FATAL_ERROR "sdl2 not found.\n"
+            "Following https://github.com/libsdl-org/SDL to install.")
+endif ()
+
+find_package(imgui REQUIRED)
+if (NOT imgui_FOUND)
+    message(FATAL_ERROR "imgui not found.\n"
+            "Following https://github.com/ocornut/imgui to install.")
 endif ()
