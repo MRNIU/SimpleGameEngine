@@ -5,15 +5,17 @@
 # CMakeLists.txt for Simple-XX/SimpleGameEngine.
 
 add_library(platform
-#     vulkan/vk_initializers.cpp
-#     vulkan/vk_images.cpp 
-#     vulkan/vk_descriptors.cpp
-#     vulkan/vk_pipelines.cpp
-#     vulkan/camera.cpp
-#     vulkan/vk_engine.cpp
+        #     vulkan/vk_initializers.cpp
+        #     vulkan/vk_images.cpp
+        #     vulkan/vk_descriptors.cpp
+        #     vulkan/vk_pipelines.cpp
+        #     vulkan/camera.cpp
+        #     vulkan/vk_engine.cpp
+        bgfx/helloworld_mt.cpp
+        bgfx/helloworld.cpp
 
-    window_system/window_system.cpp
-    file_system/path.cpp
+        window_system/window_system.cpp
+        file_system/path.cpp
 )
 
 target_include_directories(platform PRIVATE

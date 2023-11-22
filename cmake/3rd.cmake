@@ -131,7 +131,7 @@ CPMAddPackage(
 CPMAddPackage(
         NAME VulkanMemoryAllocator
         GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-        GIT_TAG v3.0.1
+        GIT_TAG master
 )
 
 # https://github.com/ocornut/imgui.git
@@ -150,6 +150,13 @@ CPMAddPackage(
         NAME bgfx.cmake
         GIT_REPOSITORY https://github.com/bkaradzic/bgfx.cmake.git
         GIT_TAG master
+        OPTIONS
+        "BX_AMALGAMATED ON"
+        "BGFX_AMALGAMATED ON"
+        "BGFX_BUILD_TOOLS OFF"
+        "BGFX_BUILD_EXAMPLES OFF"
+        "BGFX_BUILD_TESTS OFF"
+        "BGFX_INSTALL OFF"
 )
 
 # https://github.com/cpm-cmake/CPMLicenses.cmake
