@@ -145,6 +145,13 @@ if (imgui_ADDED)
     target_include_directories(imgui INTERFACE ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 endif ()
 
+# https://github.com/bkaradzic/bgfx.cmake.git
+CPMAddPackage(
+        NAME bgfx.cmake
+        GIT_REPOSITORY https://github.com/bkaradzic/bgfx.cmake.git
+        GIT_TAG master
+)
+
 # https://github.com/cpm-cmake/CPMLicenses.cmake
 # 保持在 CPMAddPackage 的最后
 CPMAddPackage(

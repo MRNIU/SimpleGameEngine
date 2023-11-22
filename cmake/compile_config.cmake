@@ -28,4 +28,7 @@ list(APPEND DEFAULT_LINK_LIB
         vk-bootstrap::vk-bootstrap
         VulkanMemoryAllocator
         imgui
+        bx
+        bimg
+        bgfx
 )
