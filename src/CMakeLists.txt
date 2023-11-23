@@ -26,6 +26,5 @@ target_link_libraries(SimpleGameEngine PRIVATE
         ${DEFAULT_LINK_LIB}
         platform
         core
-        #        shaders
+        shaders
 )
-

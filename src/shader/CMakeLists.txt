@@ -9,6 +9,7 @@ bgfx_compile_shader_to_header(
         SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/v_simple.sc
         VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/varying.def.sc
         OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin
+        INCLUDE_DIRS ${bgfx.cmake_SOURCE_DIR}/bgfx/src
 )
 
 bgfx_compile_shader_to_header(
@@ -16,6 +17,7 @@ bgfx_compile_shader_to_header(
         SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/f_simple.sc
         VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/varying.def.sc
         OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin
+        INCLUDE_DIRS ${bgfx.cmake_SOURCE_DIR}/bgfx/src
 )
 
 add_library(shaders INTERFACE v_simple.sc f_simple.sc)
