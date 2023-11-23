@@ -33,6 +33,10 @@
           "type": "BOOL",
           "value": "ON"
         },
+        "CMAKE_VERBOSE_MAKEFILE": {
+          "type": "BOOL",
+          "value": "ON"
+        },
         "EXECUTABLE_OUTPUT_PATH": {
           "type": "STRING",
           "value": "${sourceDir}/build/bin"

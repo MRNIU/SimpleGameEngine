@@ -32,10 +32,6 @@
 #include "platform/bgfx/imgui_impl_bgfx.h"
 #include "platform/file_system/path.h"
 
-#if BX_PLATFORM_EMSCRIPTEN
-#include "emscripten.h"
-#endif  // BX_PLATFORM_EMSCRIPTEN
-
 struct PosColorVertex {
   float x;
   float y;
@@ -143,12 +139,6 @@ void main_loop(void* data) {
   bgfx::submit(0, context->program);
 
   bgfx::frame();
-
-#if BX_PLATFORM_EMSCRIPTEN
-  if (context->quit) {
-    emscripten_cancel_main_loop();
-  }
-#endif
 }
 
 auto main(int, char**) -> int {
@@ -180,7 +170,6 @@ auto main(int, char**) -> int {
     return 1;
   }
 
-#if !BX_PLATFORM_EMSCRIPTEN
   SDL_SysWMinfo wmi;
   SDL_VERSION(&wmi.version);
   if (!SDL_GetWindowWMInfo(window, &wmi)) {
@@ -189,7 +178,6 @@ auto main(int, char**) -> int {
     return 1;
   }
   bgfx::renderFrame();  // single threaded mode
-#endif                  // !BX_PLATFORM_EMSCRIPTEN
 
   bgfx::PlatformData pd{};
 #if BX_PLATFORM_WINDOWS
@@ -199,10 +187,7 @@ auto main(int, char**) -> int {
 #elif BX_PLATFORM_LINUX
   pd.ndt = wmi.info.x11.display;
   pd.nwh = (void*)(uintptr_t)wmi.info.x11.window;
-#elif BX_PLATFORM_EMSCRIPTEN
-  pd.nwh = (void*)"#canvas";
-#endif  // BX_PLATFORM_WINDOWS ? BX_PLATFORM_OSX ? BX_PLATFORM_LINUX ?
-        // BX_PLATFORM_EMSCRIPTEN
+#endif  // BX_PLATFORM_WINDOWS ? BX_PLATFORM_OSX ? BX_PLATFORM_LINUX
 
   bgfx::Init bgfx_init;
   bgfx_init.type = bgfx::RendererType::Count;  // auto choose renderer
@@ -223,10 +208,9 @@ auto main(int, char**) -> int {
   ImGui_ImplSDL2_InitForD3D(window);
 #elif BX_PLATFORM_OSX
   ImGui_ImplSDL2_InitForMetal(window);
-#elif BX_PLATFORM_LINUX || BX_PLATFORM_EMSCRIPTEN
+#elif BX_PLATFORM_LINUX
   ImGui_ImplSDL2_InitForOpenGL(window, nullptr);
-#endif  // BX_PLATFORM_WINDOWS ? BX_PLATFORM_OSX ? BX_PLATFORM_LINUX ?
-        // BX_PLATFORM_EMSCRIPTEN
+#endif  // BX_PLATFORM_WINDOWS ? BX_PLATFORM_OSX ? BX_PLATFORM_LINUX
 
   bgfx::VertexLayout pos_col_vert_layout;
   pos_col_vert_layout.begin()
@@ -239,24 +223,22 @@ auto main(int, char**) -> int {
       bgfx::makeRef(cube_tri_list, sizeof(cube_tri_list)));
 
   const std::string shader_root =
-  simple_game_engine::platform::Path::GetExecutablePath().string() +
-#if BX_PLATFORM_EMSCRIPTEN
-      "/shader/embuild/";
-#else
-      "/shader/build/";
-#endif  // BX_PLATFORM_EMSCRIPTEN
+      simple_game_engine::platform::Path::GetExecutablePath()
+          .parent_path()
+          .string();
 
   std::string vshader;
-  if (!fileops::read_file(shader_root + "v_simple.bin", vshader)) {
+  if (!fileops::read_file(shader_root + "/v_simple.bin", vshader)) {
     printf(
         "Could not find shader vertex shader (ensure shaders have been "
         "compiled).\n"
-        "Run compile-shaders-<platform>.sh/bat\n");
+        "Run compile-shaders-<platform>.sh/bat %s\n",
+        shader_root.c_str());
     return 1;
   }
 
   std::string fshader;
-  if (!fileops::read_file(shader_root + "f_simple.bin", fshader)) {
+  if (!fileops::read_file(shader_root + "/f_simple.bin", fshader)) {
     printf(
         "Could not find shader fragment shader (ensure shaders have "
         "been compiled).\n"
@@ -276,13 +258,9 @@ auto main(int, char**) -> int {
   context.vbh = vbh;
   context.ibh = ibh;
 
-#if BX_PLATFORM_EMSCRIPTEN
-  emscripten_set_main_loop_arg(main_loop, &context, -1, 1);
-#else
   while (!context.quit) {
     main_loop(&context);
   }
-#endif  // BX_PLATFORM_EMSCRIPTEN
 
   bgfx::destroy(vbh);
   bgfx::destroy(ibh);
