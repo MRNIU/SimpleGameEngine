@@ -20,15 +20,16 @@ list(APPEND DEFAULT_LINK_LIB
         Eigen
         Boost::headers
         Boost::json
-        Vulkan::Vulkan
-        Vulkan::Headers
-        glm::glm
-        glfw
-        SDL2::Main
-        vk-bootstrap::vk-bootstrap
-        VulkanMemoryAllocator
-        imgui
         bx
-        bimg
         bgfx
+        SDL2::Main
+        imgui
+        # bimg
+        # SDL2::Image
+        # Vulkan::Vulkan
+        # Vulkan::Headers
+        # glm::glm
+        # glfw
+        # vk-bootstrap::vk-bootstrap
+        # VulkanMemoryAllocator
 )

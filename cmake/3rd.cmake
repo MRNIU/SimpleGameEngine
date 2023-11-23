@@ -141,8 +141,16 @@ CPMAddPackage(
         GIT_TAG v1.90
 )
 if (imgui_ADDED)
-    add_library(imgui INTERFACE)
-    target_include_directories(imgui INTERFACE ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+        add_library(imgui INTERFACE)
+        target_include_directories(imgui INTERFACE ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+        target_sources(imgui INTERFACE
+                ${imgui_SOURCE_DIR}/imgui_demo.cpp
+                ${imgui_SOURCE_DIR}/imgui_draw.cpp
+                ${imgui_SOURCE_DIR}/imgui_tables.cpp
+                ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+                ${imgui_SOURCE_DIR}/imgui.cpp
+                ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+        )
 endif ()
 
 # https://github.com/bkaradzic/bgfx.cmake.git
@@ -153,7 +161,6 @@ CPMAddPackage(
         OPTIONS
         "BX_AMALGAMATED ON"
         "BGFX_AMALGAMATED ON"
-        "BGFX_BUILD_TOOLS OFF"
         "BGFX_BUILD_EXAMPLES OFF"
         "BGFX_BUILD_TESTS OFF"
         "BGFX_INSTALL OFF"
@@ -291,7 +298,13 @@ endif ()
 
 find_package(SDL2 REQUIRED)
 if (NOT SDL2_FOUND)
-    message(FATAL_ERROR "sdl2 not found.\n"
+    message(FATAL_ERROR "SDL2 not found.\n"
+            "Following https://github.com/libsdl-org/SDL to install.")
+endif ()
+
+find_package(SDL2_image REQUIRED)
+if (NOT SDL2_image_FOUND)
+    message(FATAL_ERROR "SDL2_image not found.\n"
             "Following https://github.com/libsdl-org/SDL to install.")
 endif ()
 

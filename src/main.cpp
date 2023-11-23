@@ -14,224 +14,288 @@
  * </table>
  */
 
+#include <SDL.h>
+#include <SDL_syswm.h>
+#include <bgfx/bgfx.h>
+#include <bgfx/platform.h>
+#include <bx/math.h>
+#include <imgui.h>
+#include <imgui_impl_sdl2.h>
+
+#include <iostream>
 #include <string>
 #include <string_view>
 
 #include "core/config/config.h"
 #include "core/log/log_system.h"
+#include "platform/bgfx/file-ops.h"
+#include "platform/bgfx/imgui_impl_bgfx.h"
 #include "platform/file_system/path.h"
-// #include "platform/vulkan/vk_engine.h"
-#include <vk_mem_alloc.h>
 
-// auto main(int, char**) -> int {
-//   auto config_file_path =
-//       simple_game_engine::platform::Path::GetExecutablePath()
-//           .parent_path()
-//           .append("config.json");
-//   simple_game_engine::core::Config config(config_file_path);
-//   simple_game_engine::core::LogSystem log_system(config.GetLogFilePath(),
-//                                                  config.GetLogFileMaxSize(),
-//                                                  config.GetLogFileMaxCount());
+#if BX_PLATFORM_EMSCRIPTEN
+#include "emscripten.h"
+#endif  // BX_PLATFORM_EMSCRIPTEN
 
-//   SPDLOG_INFO("加载配置文件: {}", config_file_path.string());
-
-//   // VulkanEngine engine;
-//   // engine.init();
-//   // engine.run();
-//   // engine.cleanup();
-
-//   return 0;
-// }
-
-/*
- * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
- * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
- */
-#include <stdio.h>
-#include <bx/bx.h>
-#include <bx/spscqueue.h>
-#include <bx/thread.h>
-#include <bgfx/bgfx.h>
-#include <bgfx/platform.h>
-#include <GLFW/glfw3.h>
-
-#if BX_PLATFORM_LINUX
-#define GLFW_EXPOSE_NATIVE_X11
-#elif BX_PLATFORM_WINDOWS
-#define GLFW_EXPOSE_NATIVE_WIN32
-#elif BX_PLATFORM_OSX
-#define GLFW_EXPOSE_NATIVE_COCOA
-#endif
-
-#include <GLFW/glfw3native.h>
-//#include "logo.h"
-
-static bx::DefaultAllocator s_allocator;
-static bx::SpScUnboundedQueue s_apiThreadEvents(&s_allocator);
-
-enum class EventType {
-  Exit,
-  Key,
-  Resize
+struct PosColorVertex {
+  float x;
+  float y;
+  float z;
+  uint32_t abgr;
 };
 
-struct ExitEvent {
-  EventType type = EventType::Exit;
+static PosColorVertex cube_vertices[] = {
+    {-1.0f, 1.0f, 1.0f, 0xff000000},   {1.0f, 1.0f, 1.0f, 0xff0000ff},
+    {-1.0f, -1.0f, 1.0f, 0xff00ff00},  {1.0f, -1.0f, 1.0f, 0xff00ffff},
+    {-1.0f, 1.0f, -1.0f, 0xffff0000},  {1.0f, 1.0f, -1.0f, 0xffff00ff},
+    {-1.0f, -1.0f, -1.0f, 0xffffff00}, {1.0f, -1.0f, -1.0f, 0xffffffff},
 };
 
-struct KeyEvent {
-  EventType type = EventType::Key;
-  int key;
-  int action;
+static const uint16_t cube_tri_list[] = {
+    0, 1, 2, 1, 3, 2, 4, 6, 5, 5, 6, 7, 0, 2, 4, 4, 2, 6,
+    1, 5, 3, 5, 7, 3, 0, 4, 1, 4, 5, 1, 2, 3, 6, 6, 3, 7,
 };
 
-struct ResizeEvent {
-  EventType type = EventType::Resize;
-  uint32_t width;
-  uint32_t height;
-};
-
-static void glfw_errorCallback(int error, const char *description) {
-  fprintf(stderr, "GLFW error %d: %s\n", error, description);
+static bgfx::ShaderHandle create_shader(const std::string& shader,
+                                        const char* name) {
+  const bgfx::Memory* mem = bgfx::copy(shader.data(), shader.size());
+  const bgfx::ShaderHandle handle = bgfx::createShader(mem);
+  bgfx::setName(handle, name);
+  return handle;
 }
 
-static void glfw_keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods) {
-  auto keyEvent = new KeyEvent;
-  keyEvent->key = key;
-  keyEvent->action = action;
-  s_apiThreadEvents.push(keyEvent);
-}
+struct context_t {
+  SDL_Window* window = nullptr;
+  bgfx::ProgramHandle program = BGFX_INVALID_HANDLE;
+  bgfx::VertexBufferHandle vbh = BGFX_INVALID_HANDLE;
+  bgfx::IndexBufferHandle ibh = BGFX_INVALID_HANDLE;
 
-struct ApiThreadArgs {
-  bgfx::PlatformData platformData;
-  uint32_t width;
-  uint32_t height;
+  float cam_pitch = 0.0f;
+  float cam_yaw = 0.0f;
+  float rot_scale = 0.01f;
+
+  int prev_mouse_x = 0;
+  int prev_mouse_y = 0;
+
+  int width = 0;
+  int height = 0;
+
+  bool quit = false;
 };
 
-static int32_t runApiThread(bx::Thread *self, void *userData) {
-  auto args = (ApiThreadArgs *) userData;
-  // Initialize bgfx using the native window handle and window resolution.
-  bgfx::Init init;
-  init.platformData = args->platformData;
-  init.resolution.width = args->width;
-  init.resolution.height = args->height;
-  init.resolution.reset = BGFX_RESET_VSYNC;
-  if (!bgfx::init(init))
-    return 1;
-  // Set view 0 to the same dimensions as the window and to clear the color buffer.
-  const bgfx::ViewId kClearView = 0;
-  bgfx::setViewClear(kClearView, BGFX_CLEAR_COLOR);
-  bgfx::setViewRect(kClearView, 0, 0, bgfx::BackbufferRatio::Equal);
-  uint32_t width = args->width;
-  uint32_t height = args->height;
-  bool showStats = false;
-  bool exit = false;
-  while (!exit) {
-    // Handle events from the main thread.
-    while (auto ev = (EventType *) s_apiThreadEvents.pop()) {
-      if (*ev == EventType::Key) {
-        auto keyEvent = (KeyEvent *) ev;
-        if (keyEvent->key == GLFW_KEY_F1 && keyEvent->action == GLFW_RELEASE)
-          showStats = !showStats;
-      } else if (*ev == EventType::Resize) {
-        auto resizeEvent = (ResizeEvent *) ev;
-        bgfx::reset(resizeEvent->width, resizeEvent->height, BGFX_RESET_VSYNC);
-        bgfx::setViewRect(kClearView, 0, 0, bgfx::BackbufferRatio::Equal);
-        width = resizeEvent->width;
-        height = resizeEvent->height;
-      } else if (*ev == EventType::Exit) {
-        exit = true;
-      }
-      delete ev;
+void main_loop(void* data) {
+  auto context = static_cast<context_t*>(data);
+
+  for (SDL_Event current_event; SDL_PollEvent(&current_event) != 0;) {
+    ImGui_ImplSDL2_ProcessEvent(&current_event);
+    if (current_event.type == SDL_QUIT) {
+      context->quit = true;
+      break;
     }
-    // This dummy draw call is here to make sure that view 0 is cleared if no other draw calls are submitted to view 0.
-    bgfx::touch(kClearView);
-    // Use debug font to print information about this example.
-    bgfx::dbgTextClear();
-//    bgfx::dbgTextImage(bx::max<uint16_t>(uint16_t(width / 2 / 8), 20) - 20,
-//                       bx::max<uint16_t>(uint16_t(height / 2 / 16), 6) - 6, 40, 12, s_logo, 160);
-    bgfx::dbgTextPrintf(0, 0, 0x0f, "Press F1 to toggle stats.");
-    bgfx::dbgTextPrintf(0,
-                        1,
-                        0x0f,
-                        "Color can be changed with ANSI \x1b[9;me\x1b[10;ms\x1b[11;mc\x1b[12;ma\x1b[13;mp\x1b[14;me\x1b[0m code too.");
-    bgfx::dbgTextPrintf(80,
-                        1,
-                        0x0f,
-                        "\x1b[;0m    \x1b[;1m    \x1b[; 2m    \x1b[; 3m    \x1b[; 4m    \x1b[; 5m    \x1b[; 6m    \x1b[; 7m    \x1b[0m");
-    bgfx::dbgTextPrintf(80,
-                        2,
-                        0x0f,
-                        "\x1b[;8m    \x1b[;9m    \x1b[;10m    \x1b[;11m    \x1b[;12m    \x1b[;13m    \x1b[;14m    \x1b[;15m    \x1b[0m");
-    const bgfx::Stats *stats = bgfx::getStats();
-    bgfx::dbgTextPrintf(0, 2, 0x0f, "Backbuffer %dW x %dH in pixels, debug text %dW x %dH in characters.",
-                        stats->width, stats->height, stats->textWidth, stats->textHeight);
-    // Enable stats or debug text.
-    bgfx::setDebug(showStats ? BGFX_DEBUG_STATS : BGFX_DEBUG_TEXT);
-    // Advance to next frame. Main thread will be kicked to process submitted rendering primitives.
-    bgfx::frame();
   }
+
+  ImGui_Implbgfx_NewFrame();
+  ImGui_ImplSDL2_NewFrame();
+
+  ImGui::NewFrame();
+  ImGui::ShowDemoWindow();  // your drawing here
+  ImGui::Render();
+  ImGui_Implbgfx_RenderDrawLists(ImGui::GetDrawData());
+
+  if (!ImGui::GetIO().WantCaptureMouse) {
+    // simple input code for orbit camera
+    int mouse_x, mouse_y;
+    const int buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
+    if ((buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0) {
+      int delta_x = mouse_x - context->prev_mouse_x;
+      int delta_y = mouse_y - context->prev_mouse_y;
+      context->cam_yaw += float(-delta_x) * context->rot_scale;
+      context->cam_pitch += float(-delta_y) * context->rot_scale;
+    }
+    context->prev_mouse_x = mouse_x;
+    context->prev_mouse_y = mouse_y;
+  }
+
+  float cam_rotation[16];
+  bx::mtxRotateXYZ(cam_rotation, context->cam_pitch, context->cam_yaw, 0.0f);
+
+  float cam_translation[16];
+  bx::mtxTranslate(cam_translation, 0.0f, 0.0f, -5.0f);
+
+  float cam_transform[16];
+  bx::mtxMul(cam_transform, cam_translation, cam_rotation);
+
+  float view[16];
+  bx::mtxInverse(view, cam_transform);
+
+  float proj[16];
+  bx::mtxProj(proj, 60.0f, float(context->width) / float(context->height), 0.1f,
+              100.0f, bgfx::getCaps()->homogeneousDepth);
+
+  bgfx::setViewTransform(0, view, proj);
+
+  float model[16];
+  bx::mtxIdentity(model);
+  bgfx::setTransform(model);
+
+  bgfx::setVertexBuffer(0, context->vbh);
+  bgfx::setIndexBuffer(context->ibh);
+
+  bgfx::submit(0, context->program);
+
+  bgfx::frame();
+
+#if BX_PLATFORM_EMSCRIPTEN
+  if (context->quit) {
+    emscripten_cancel_main_loop();
+  }
+#endif
+}
+
+auto main(int, char**) -> int {
+  auto config_file_path =
+      simple_game_engine::platform::Path::GetExecutablePath()
+          .parent_path()
+          .append("config.json");
+  simple_game_engine::core::Config config(config_file_path);
+  simple_game_engine::core::LogSystem log_system(config.GetLogFilePath(),
+                                                 config.GetLogFileMaxSize(),
+                                                 config.GetLogFileMaxCount());
+
+  SPDLOG_INFO("加载配置文件: {}", config_file_path.string());
+
+  if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+    printf("SDL could not initialize. SDL_Error: %s\n", SDL_GetError());
+    return 1;
+  }
+
+  const int width = 800;
+  const int height = 600;
+  SDL_Window* window = SDL_CreateWindow(
+      simple_game_engine::platform::Path::GetExecutablePath().c_str(),
+      SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height,
+      SDL_WINDOW_SHOWN);
+
+  if (window == nullptr) {
+    printf("Window could not be created. SDL_Error: %s\n", SDL_GetError());
+    return 1;
+  }
+
+#if !BX_PLATFORM_EMSCRIPTEN
+  SDL_SysWMinfo wmi;
+  SDL_VERSION(&wmi.version);
+  if (!SDL_GetWindowWMInfo(window, &wmi)) {
+    printf("SDL_SysWMinfo could not be retrieved. SDL_Error: %s\n",
+           SDL_GetError());
+    return 1;
+  }
+  bgfx::renderFrame();  // single threaded mode
+#endif                  // !BX_PLATFORM_EMSCRIPTEN
+
+  bgfx::PlatformData pd{};
+#if BX_PLATFORM_WINDOWS
+  pd.nwh = wmi.info.win.window;
+#elif BX_PLATFORM_OSX
+  pd.nwh = wmi.info.cocoa.window;
+#elif BX_PLATFORM_LINUX
+  pd.ndt = wmi.info.x11.display;
+  pd.nwh = (void*)(uintptr_t)wmi.info.x11.window;
+#elif BX_PLATFORM_EMSCRIPTEN
+  pd.nwh = (void*)"#canvas";
+#endif  // BX_PLATFORM_WINDOWS ? BX_PLATFORM_OSX ? BX_PLATFORM_LINUX ?
+        // BX_PLATFORM_EMSCRIPTEN
+
+  bgfx::Init bgfx_init;
+  bgfx_init.type = bgfx::RendererType::Count;  // auto choose renderer
+  bgfx_init.resolution.width = width;
+  bgfx_init.resolution.height = height;
+  bgfx_init.resolution.reset = BGFX_RESET_VSYNC;
+  bgfx_init.platformData = pd;
+  bgfx::init(bgfx_init);
+
+  bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x6495EDFF, 1.0f,
+                     0);
+  bgfx::setViewRect(0, 0, 0, width, height);
+
+  ImGui::CreateContext();
+
+  ImGui_Implbgfx_Init(255);
+#if BX_PLATFORM_WINDOWS
+  ImGui_ImplSDL2_InitForD3D(window);
+#elif BX_PLATFORM_OSX
+  ImGui_ImplSDL2_InitForMetal(window);
+#elif BX_PLATFORM_LINUX || BX_PLATFORM_EMSCRIPTEN
+  ImGui_ImplSDL2_InitForOpenGL(window, nullptr);
+#endif  // BX_PLATFORM_WINDOWS ? BX_PLATFORM_OSX ? BX_PLATFORM_LINUX ?
+        // BX_PLATFORM_EMSCRIPTEN
+
+  bgfx::VertexLayout pos_col_vert_layout;
+  pos_col_vert_layout.begin()
+      .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+      .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+      .end();
+  bgfx::VertexBufferHandle vbh = bgfx::createVertexBuffer(
+      bgfx::makeRef(cube_vertices, sizeof(cube_vertices)), pos_col_vert_layout);
+  bgfx::IndexBufferHandle ibh = bgfx::createIndexBuffer(
+      bgfx::makeRef(cube_tri_list, sizeof(cube_tri_list)));
+
+  const std::string shader_root =
+  simple_game_engine::platform::Path::GetExecutablePath().string() +
+#if BX_PLATFORM_EMSCRIPTEN
+      "/shader/embuild/";
+#else
+      "/shader/build/";
+#endif  // BX_PLATFORM_EMSCRIPTEN
+
+  std::string vshader;
+  if (!fileops::read_file(shader_root + "v_simple.bin", vshader)) {
+    printf(
+        "Could not find shader vertex shader (ensure shaders have been "
+        "compiled).\n"
+        "Run compile-shaders-<platform>.sh/bat\n");
+    return 1;
+  }
+
+  std::string fshader;
+  if (!fileops::read_file(shader_root + "f_simple.bin", fshader)) {
+    printf(
+        "Could not find shader fragment shader (ensure shaders have "
+        "been compiled).\n"
+        "Run compile-shaders-<platform>.sh/bat\n");
+    return 1;
+  }
+
+  bgfx::ShaderHandle vsh = create_shader(vshader, "vshader");
+  bgfx::ShaderHandle fsh = create_shader(fshader, "fshader");
+  bgfx::ProgramHandle program = bgfx::createProgram(vsh, fsh, true);
+
+  context_t context;
+  context.width = width;
+  context.height = height;
+  context.program = program;
+  context.window = window;
+  context.vbh = vbh;
+  context.ibh = ibh;
+
+#if BX_PLATFORM_EMSCRIPTEN
+  emscripten_set_main_loop_arg(main_loop, &context, -1, 1);
+#else
+  while (!context.quit) {
+    main_loop(&context);
+  }
+#endif  // BX_PLATFORM_EMSCRIPTEN
+
+  bgfx::destroy(vbh);
+  bgfx::destroy(ibh);
+  bgfx::destroy(program);
+
+  ImGui_ImplSDL2_Shutdown();
+  ImGui_Implbgfx_Shutdown();
+
+  ImGui::DestroyContext();
   bgfx::shutdown();
-  return 0;
-}
 
-int main(int argc, char **argv) {
-  // Create a GLFW window without an OpenGL context.
-  glfwSetErrorCallback(glfw_errorCallback);
-  if (!glfwInit())
-    return 1;
-  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  GLFWwindow *window = glfwCreateWindow(1024, 768, "helloworld multithreaded", nullptr, nullptr);
-  if (!window)
-    return 1;
-  glfwSetKeyCallback(window, glfw_keyCallback);
-  // Call bgfx::renderFrame before bgfx::init to signal to bgfx not to create a render thread.
-  // Most graphics APIs must be used on the same thread that created the window.
-  bgfx::renderFrame();
-  // Create a thread to call the bgfx API from (except bgfx::renderFrame).
-  ApiThreadArgs apiThreadArgs;
-#if BX_PLATFORM_LINUX || BX_PLATFORM_BSD
-  apiThreadArgs.platformData.ndt = glfwGetX11Display();
-  apiThreadArgs.platformData.nwh = (void *) (uintptr_t) glfwGetX11Window(window);
-#elif BX_PLATFORM_OSX
-  apiThreadArgs.platformData.nwh = glfwGetCocoaWindow(window);
-#elif BX_PLATFORM_WINDOWS
-  apiThreadArgs.platformData.nwh = glfwGetWin32Window(window);
-#endif
-  int width, height;
-  glfwGetWindowSize(window, &width, &height);
-  apiThreadArgs.width = (uint32_t)
-      width;
-  apiThreadArgs.height = (uint32_t)
-      height;
-  bx::Thread apiThread;
-  apiThread.init(runApiThread, &apiThreadArgs);
-  // Run GLFW message pump.
-  bool exit = false;
-  while (!exit) {
-    glfwPollEvents();
-    // Send window close event to the API thread.
-    if (glfwWindowShouldClose(window)) {
-      s_apiThreadEvents.push(new ExitEvent);
-      exit = true;
-    }
-    // Send window resize event to the API thread.
-    int oldWidth = width, oldHeight = height;
-    glfwGetWindowSize(window, &width, &height);
-    if (width != oldWidth || height != oldHeight) {
-      auto resize = new ResizeEvent;
-      resize->width = (uint32_t)
-          width;
-      resize->height = (uint32_t)
-          height;
-      s_apiThreadEvents.push(resize);
-    }
-    // Wait for the API thread to call bgfx::frame, then process submitted rendering primitives.
-    bgfx::renderFrame();
-  }
-  // Wait for the API thread to finish before shutting down.
-  while (bgfx::RenderFrame::NoContext != bgfx::renderFrame()) {}
-  apiThread.shutdown();
-  glfwTerminate();
-  return apiThread.getExitCode();
+  SDL_DestroyWindow(window);
+  SDL_Quit();
+
+  return 0;
 }
