@@ -22,4 +22,5 @@ target_compile_options(platform PRIVATE
 
 target_link_libraries(platform PRIVATE
         ${DEFAULT_LINK_LIB}
+        utils
 )

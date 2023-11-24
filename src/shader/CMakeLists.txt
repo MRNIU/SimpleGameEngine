@@ -6,10 +6,11 @@
 
 bgfx_compile_shader_to_header(
         TYPE VERTEX
-        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/vs.sc ${CMAKE_CURRENT_SOURCE_DIR}/va.sc
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/vs.sc
         VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/varying.def.sc
         OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin
         INCLUDE_DIRS ${bgfx.cmake_SOURCE_DIR}/bgfx/src
+        PROFILE 440
 )
 
 bgfx_compile_shader_to_header(
@@ -18,6 +19,7 @@ bgfx_compile_shader_to_header(
         VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/varying.def.sc
         OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin
         INCLUDE_DIRS ${bgfx.cmake_SOURCE_DIR}/bgfx/src
+        PROFILE 440
 )
 
 add_library(shaders INTERFACE vs.sc fs.sc)

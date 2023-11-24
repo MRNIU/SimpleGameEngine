@@ -22,7 +22,7 @@
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
 
-#include "utils/log/log_system.h"
+#include "log/log_system.h"
 
 namespace simple_game_engine {
 namespace platform {

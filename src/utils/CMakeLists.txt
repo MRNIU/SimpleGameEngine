@@ -9,8 +9,8 @@ add_library(utils
         log/log_system.cpp
 )
 
-target_include_directories(utils PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
+target_include_directories(utils INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 
 target_compile_options(utils PRIVATE
