@@ -17,10 +17,17 @@
 #include <SDL.h>
 #include <SDL_syswm.h>
 #include <bgfx/bgfx.h>
+#include <bgfx/embedded_shader.h>
 #include <bgfx/platform.h>
 #include <bx/math.h>
+#include <f_simple.sc.essl.bin.h>
+#include <f_simple.sc.glsl.bin.h>
+#include <f_simple.sc.spv.bin.h>
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
+#include <v_simple.sc.essl.bin.h>
+#include <v_simple.sc.glsl.bin.h>
+#include <v_simple.sc.spv.bin.h>
 
 #include <iostream>
 #include <string>
@@ -31,6 +38,16 @@
 #include "platform/bgfx/file-ops.h"
 #include "platform/bgfx/imgui_impl_bgfx.h"
 #include "platform/file_system/path.h"
+#if defined(_WIN32)
+#include <f_simple.sc.dx11.bin.h>
+#include <f_simple.sc.dx9.bin.h>
+#include <v_simple.sc.dx11.bin.h>
+#include <v_simple.sc.dx9.bin.h>
+#endif  //  defined(_WIN32)
+#if __APPLE__
+#include <f_simple.sc.mtl.bin.h>
+#include <v_simple.sc.mtl.bin.h>
+#endif  // __APPLE__
 
 struct PosColorVertex {
   float x;
@@ -222,33 +239,14 @@ auto main(int, char**) -> int {
   bgfx::IndexBufferHandle ibh = bgfx::createIndexBuffer(
       bgfx::makeRef(cube_tri_list, sizeof(cube_tri_list)));
 
-  const std::string shader_root =
-      simple_game_engine::platform::Path::GetExecutablePath()
-          .parent_path()
-          .string();
+  static const bgfx::EmbeddedShader s_embeddedShaders[] = {
+      BGFX_EMBEDDED_SHADER(v_simple), BGFX_EMBEDDED_SHADER(f_simple),
+      BGFX_EMBEDDED_SHADER_END()};
 
-  std::string vshader;
-  if (!fileops::read_file(shader_root + "/v_simple.bin", vshader)) {
-    printf(
-        "Could not find shader vertex shader (ensure shaders have been "
-        "compiled).\n"
-        "Run compile-shaders-<platform>.sh/bat %s\n",
-        shader_root.c_str());
-    return 1;
-  }
-
-  std::string fshader;
-  if (!fileops::read_file(shader_root + "/f_simple.bin", fshader)) {
-    printf(
-        "Could not find shader fragment shader (ensure shaders have "
-        "been compiled).\n"
-        "Run compile-shaders-<platform>.sh/bat\n");
-    return 1;
-  }
-
-  bgfx::ShaderHandle vsh = create_shader(vshader, "vshader");
-  bgfx::ShaderHandle fsh = create_shader(fshader, "fshader");
-  bgfx::ProgramHandle program = bgfx::createProgram(vsh, fsh, true);
+  bgfx::RendererType::Enum type = bgfx::getRendererType();
+  bgfx::ProgramHandle program = bgfx::createProgram(
+      bgfx::createEmbeddedShader(s_embeddedShaders, type, "v_simple"),
+      bgfx::createEmbeddedShader(s_embeddedShaders, type, "f_simple"), true);
 
   context_t context;
   context.width = width;
