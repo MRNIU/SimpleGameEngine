@@ -4,6 +4,7 @@
 #
 # CMakeLists.txt for Simple-XX/SimpleGameEngine.
 
+add_subdirectory(utils)
 add_subdirectory(platform)
 add_subdirectory(core)
 # add_subdirectory(function)
@@ -15,7 +16,7 @@ add_executable(SimpleGameEngine
 )
 
 target_include_directories(SimpleGameEngine PRIVATE
-        ${CMAKE_BINARY_DIR}/include/generated/shaders
+        ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_compile_options(SimpleGameEngine PRIVATE
@@ -24,6 +25,7 @@ target_compile_options(SimpleGameEngine PRIVATE
 
 target_link_libraries(SimpleGameEngine PRIVATE
         ${DEFAULT_LINK_LIB}
+        utils
         platform
         core
         shaders

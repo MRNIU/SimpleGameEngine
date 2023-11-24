@@ -14,25 +14,18 @@
  * </table>
  */
 
-#include <SDL.h>
-#include <SDL_syswm.h>
-#include <bgfx/bgfx.h>
-#include <bgfx/embedded_shader.h>
-#include <bgfx/platform.h>
-#include <bx/math.h>
-#include <imgui.h>
-#include <imgui_impl_sdl2.h>
-
 #include <iostream>
 #include <string>
 #include <string_view>
 
-#include "core/config/config.h"
-#include "core/log/log_system.h"
-#include "platform/bgfx/file-ops.h"
-#include "platform/bgfx/imgui_impl_bgfx.h"
 #include "platform/file_system/path.h"
+#include "platform/rhi/bgfx.h"
+#include "platform/rhi/file-ops.h"
+#include "platform/rhi/imgui_impl_bgfx.h"
+#include "platform/window_system/imgui_sdl2.h"
 #include "shader/shaders.inc"
+#include "utils/config/config.h"
+#include "utils/log/log_system.h"
 
 struct PosColorVertex {
   float x;
@@ -52,14 +45,6 @@ static const uint16_t cube_tri_list[] = {
     0, 1, 2, 1, 3, 2, 4, 6, 5, 5, 6, 7, 0, 2, 4, 4, 2, 6,
     1, 5, 3, 5, 7, 3, 0, 4, 1, 4, 5, 1, 2, 3, 6, 6, 3, 7,
 };
-
-static bgfx::ShaderHandle create_shader(const std::string& shader,
-                                        const char* name) {
-  const bgfx::Memory* mem = bgfx::copy(shader.data(), shader.size());
-  const bgfx::ShaderHandle handle = bgfx::createShader(mem);
-  bgfx::setName(handle, name);
-  return handle;
-}
 
 struct context_t {
   SDL_Window* window = nullptr;
@@ -143,52 +128,33 @@ void main_loop(void* data) {
   bgfx::frame();
 }
 
+const int width = 800;
+const int height = 600;
+
 auto main(int, char**) -> int {
   auto config_file_path =
       simple_game_engine::platform::Path::GetExecutablePath()
           .parent_path()
           .append("config.json");
-  simple_game_engine::core::Config config(config_file_path);
-  simple_game_engine::core::LogSystem log_system(config.GetLogFilePath(),
-                                                 config.GetLogFileMaxSize(),
-                                                 config.GetLogFileMaxCount());
+  simple_game_engine::utils::Config config(config_file_path);
+  simple_game_engine::utils::LogSystem log_system(config.GetLogFilePath(),
+                                                  config.GetLogFileMaxSize(),
+                                                  config.GetLogFileMaxCount());
 
   SPDLOG_INFO("加载配置文件: {}", config_file_path.string());
 
-  if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-    printf("SDL could not initialize. SDL_Error: %s\n", SDL_GetError());
-    return 1;
-  }
+  simple_game_engine::platform::SDL2 sdl2(width, height);
 
-  const int width = 800;
-  const int height = 600;
-  SDL_Window* window = SDL_CreateWindow(
-      simple_game_engine::platform::Path::GetExecutablePath().c_str(),
-      SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height,
-      SDL_WINDOW_SHOWN);
-
-  if (window == nullptr) {
-    printf("Window could not be created. SDL_Error: %s\n", SDL_GetError());
-    return 1;
-  }
-
-  SDL_SysWMinfo wmi;
-  SDL_VERSION(&wmi.version);
-  if (!SDL_GetWindowWMInfo(window, &wmi)) {
-    printf("SDL_SysWMinfo could not be retrieved. SDL_Error: %s\n",
-           SDL_GetError());
-    return 1;
-  }
   bgfx::renderFrame();  // single threaded mode
 
   bgfx::PlatformData pd{};
 #if BX_PLATFORM_WINDOWS
-  pd.nwh = wmi.info.win.window;
+  pd.nwh = sdl2.wmi.info.win.window;
 #elif BX_PLATFORM_OSX
-  pd.nwh = wmi.info.cocoa.window;
+  pd.nwh = sdl2.wmi.info.cocoa.window;
 #elif BX_PLATFORM_LINUX
-  pd.ndt = wmi.info.x11.display;
-  pd.nwh = (void*)(uintptr_t)wmi.info.x11.window;
+  pd.ndt = sdl2.wmi.info.x11.display;
+  pd.nwh = (void*)(uintptr_t)sdl2.wmi.info.x11.window;
 #endif  // BX_PLATFORM_WINDOWS ? BX_PLATFORM_OSX ? BX_PLATFORM_LINUX
 
   bgfx::Init bgfx_init;
@@ -207,11 +173,11 @@ auto main(int, char**) -> int {
 
   ImGui_Implbgfx_Init(255);
 #if BX_PLATFORM_WINDOWS
-  ImGui_ImplSDL2_InitForD3D(window);
+  ImGui_ImplSDL2_InitForD3D(sdl2.window);
 #elif BX_PLATFORM_OSX
-  ImGui_ImplSDL2_InitForMetal(window);
+  ImGui_ImplSDL2_InitForMetal(sdl2.window);
 #elif BX_PLATFORM_LINUX
-  ImGui_ImplSDL2_InitForOpenGL(window, nullptr);
+  ImGui_ImplSDL2_InitForOpenGL(sdl2.window, nullptr);
 #endif  // BX_PLATFORM_WINDOWS ? BX_PLATFORM_OSX ? BX_PLATFORM_LINUX
 
   bgfx::VertexLayout pos_col_vert_layout;
@@ -236,7 +202,7 @@ auto main(int, char**) -> int {
   context.width = width;
   context.height = height;
   context.program = program;
-  context.window = window;
+  context.window = sdl2.window;
   context.vbh = vbh;
   context.ibh = ibh;
 
@@ -253,9 +219,6 @@ auto main(int, char**) -> int {
 
   ImGui::DestroyContext();
   bgfx::shutdown();
-
-  SDL_DestroyWindow(window);
-  SDL_Quit();
 
   return 0;
 }

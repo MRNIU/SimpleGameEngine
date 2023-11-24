@@ -24,7 +24,7 @@
 #include <string>
 
 namespace simple_game_engine {
-namespace core {
+namespace utils {
 
 Config::Config(const std::filesystem::path& config_json_file_path) {
   // 打开文件
@@ -63,5 +63,5 @@ size_t Config::GetLogFileMaxSize() const { return log_file_max_size_; }
 
 size_t Config::GetLogFileMaxCount() const { return log_file_max_count_; }
 
-}  // namespace core
+}  // namespace utils
 }  // namespace simple_game_engine

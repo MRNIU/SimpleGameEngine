@@ -14,13 +14,13 @@
  * </table>
  */
 
-#ifndef SIMPLEGAMEENGINE_SRC_CORE_LOG_LOG_SYSTEM_H
-#define SIMPLEGAMEENGINE_SRC_CORE_LOG_LOG_SYSTEM_H
+#ifndef SIMPLEGAMEENGINE_SRC_UTILS_LOG_LOG_SYSTEM_H
+#define SIMPLEGAMEENGINE_SRC_UTILS_LOG_LOG_SYSTEM_H
 
 #include <spdlog/spdlog.h>
 
 namespace simple_game_engine {
-namespace core {
+namespace utils {
 
 /**
  * 日志系统
@@ -95,7 +95,7 @@ class LogSystem {
   std::shared_ptr<spdlog::logger> logger_;
 };
 
-}  // namespace core
+}  // namespace utils
 }  // namespace simple_game_engine
 
-#endif  // SIMPLEGAMEENGINE_SRC_CORE_LOG_LOG_SYSTEM_H
+#endif  // SIMPLEGAMEENGINE_SRC_UTILS_LOG_LOG_SYSTEM_H

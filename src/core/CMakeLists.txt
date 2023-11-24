@@ -6,8 +6,6 @@
 
 add_library(core
         application/application.cpp
-        config/config.cpp
-        log/log_system.cpp
 )
 
 target_include_directories(core PRIVATE

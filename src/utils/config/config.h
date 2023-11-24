@@ -14,15 +14,15 @@
  * </table>
  */
 
-#ifndef SIMPLEGAMEENGINE_SRC_CORE_CONFIG_CONFIG_H
-#define SIMPLEGAMEENGINE_SRC_CORE_CONFIG_CONFIG_H
+#ifndef SIMPLEGAMEENGINE_SRC_UTILS_CONFIG_CONFIG_H
+#define SIMPLEGAMEENGINE_SRC_UTILS_CONFIG_CONFIG_H
 
 #include <cstdint>
 #include <filesystem>
 #include <string>
 
 namespace simple_game_engine {
-namespace core {
+namespace utils {
 
 /**
  * 配置信息
@@ -94,7 +94,7 @@ class Config {
   size_t log_file_max_count_;
 };
 
-}  // namespace core
+}  // namespace utils
 }  // namespace simple_game_engine
 
-#endif  // SIMPLEGAMEENGINE_SRC_CORE_CONFIG_CONFIG_H
+#endif  // SIMPLEGAMEENGINE_SRC_UTILS_CONFIG_CONFIG_H

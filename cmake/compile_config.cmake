@@ -14,12 +14,10 @@ list(APPEND DEFAULT_COMPILE_OPTIONS
 )
 
 list(APPEND DEFAULT_LINK_LIB
-        spdlog::spdlog
         stb
         tinyobjloader
         Eigen
         Boost::headers
-        Boost::json
         bx
         bgfx
         SDL2::Main
@@ -32,4 +30,6 @@ list(APPEND DEFAULT_LINK_LIB
         # glfw
         # vk-bootstrap::vk-bootstrap
         # VulkanMemoryAllocator
+        # spdlog::spdlog
+        # Boost::json
 )

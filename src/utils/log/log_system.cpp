@@ -23,7 +23,7 @@
 #include <spdlog/spdlog.h>
 
 namespace simple_game_engine {
-namespace core {
+namespace utils {
 
 LogSystem::LogSystem(const std::string &log_file_path, size_t lig_file_max_size,
                      size_t log_file_max_count) {
@@ -54,5 +54,5 @@ LogSystem::~LogSystem() {
   spdlog::shutdown();
 }
 
-}  // namespace core
+}  // namespace utils
 }  // namespace simple_game_engine

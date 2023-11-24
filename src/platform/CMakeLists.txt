@@ -5,8 +5,10 @@
 # CMakeLists.txt for Simple-XX/SimpleGameEngine.
 
 add_library(platform
-        bgfx/imgui_impl_bgfx.cpp
+        rhi/imgui_impl_bgfx.cpp
+        rhi/bgfx.cpp
         window_system/window_system.cpp
+        window_system/imgui_sdl2.cpp
         file_system/path.cpp
 )
 
