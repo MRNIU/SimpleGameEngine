@@ -20,7 +20,6 @@
 
 #include "platform/file_system/path.h"
 #include "platform/rhi/bgfx.h"
-#include "platform/rhi/file-ops.h"
 #include "platform/rhi/imgui_impl_bgfx.h"
 #include "platform/window_system/imgui_sdl2.h"
 #include "shader/shaders.inc"
