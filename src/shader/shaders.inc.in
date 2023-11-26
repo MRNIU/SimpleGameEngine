@@ -22,7 +22,6 @@
 namespace simple_game_engine {
 namespace shader {
 @SHADERS_INCLUDE@
-
 static const bgfx::EmbeddedShader kEmbeddedShaders[] = {
     @EMBEDDEDSHADER_ARRAY@
     BGFX_EMBEDDED_SHADER_END()
