@@ -120,19 +120,19 @@ if (sdl2-cmake-modules_ADDED)
     list(APPEND CMAKE_MODULE_PATH ${sdl2-cmake-modules_SOURCE_DIR})
 endif ()
 
-# https://github.com/charles-lunarg/vk-bootstrap.git
-CPMAddPackage(
-        NAME vk-bootstrap
-        GIT_REPOSITORY https://github.com/charles-lunarg/vk-bootstrap.git
-        GIT_TAG main
-)
-
-# https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-CPMAddPackage(
-        NAME VulkanMemoryAllocator
-        GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-        GIT_TAG master
-)
+## https://github.com/charles-lunarg/vk-bootstrap.git
+#CPMAddPackage(
+#        NAME vk-bootstrap
+#        GIT_REPOSITORY https://github.com/charles-lunarg/vk-bootstrap.git
+#        GIT_TAG main
+#)
+#
+## https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+#CPMAddPackage(
+#        NAME VulkanMemoryAllocator
+#        GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+#        GIT_TAG master
+#)
 
 # https://github.com/ocornut/imgui.git
 CPMAddPackage(

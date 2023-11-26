@@ -17,7 +17,6 @@
 #ifndef SIMPLEGAMEENGINE_SHADERS_INC
 #define SIMPLEGAMEENGINE_SHADERS_INC
 
-#include <bx/platform.h>
 #include <bgfx/embedded_shader.h>
 
 namespace simple_game_engine {
