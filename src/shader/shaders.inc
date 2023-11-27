@@ -46,7 +46,6 @@ namespace shader {
 #include <fs.sc.mtl.bin.h>
 #endif
 
-
 static const bgfx::EmbeddedShader kEmbeddedShaders[] = {
     BGFX_EMBEDDED_SHADER(vs),
     BGFX_EMBEDDED_SHADER(fs),

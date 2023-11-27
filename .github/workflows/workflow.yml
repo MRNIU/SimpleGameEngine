@@ -26,7 +26,7 @@ jobs:
         run: |
           sudo apt update
           sudo apt install --fix-missing -y doxygen graphviz clang-format clang-tidy cppcheck lcov
-          sudo apt install --fix-missing -y gcc g++ libsdl2-dev libsdl2-ttf-dev libomp-dev libspdlog-dev libboost1.81-all-dev 
+          sudo apt install --fix-missing -y gcc g++ libsdl2-dev libsdl2-ttf-dev libomp-dev libspdlog-dev libboost1.81-all-dev libboost-json1.81-dev libsdl2-image-dev
 
       - name: Build
         run: |
@@ -48,7 +48,7 @@ jobs:
         run: |
           sudo apt update
           sudo apt install --fix-missing -y doxygen graphviz clang-format clang-tidy cppcheck lcov
-          sudo apt install --fix-missing -y gcc g++ libsdl2-dev libsdl2-ttf-dev libomp-dev libspdlog-dev libboost1.81-all-dev
+          sudo apt install --fix-missing -y gcc g++ libsdl2-dev libsdl2-ttf-dev libomp-dev libspdlog-dev libboost1.81-all-dev libboost-json1.81-dev libsdl2-image-dev
 
       - name: Build
         run: |
@@ -72,7 +72,7 @@ jobs:
           brew install doxygen graphviz llvm cppcheck lcov
           ln -s "$(brew --prefix llvm)/bin/clang-format" "/usr/local/bin/clang-format"
           ln -s "$(brew --prefix llvm)/bin/clang-tidy" "/usr/local/bin/clang-tidy"
-          brew install gcc g++ sdl2 sdl2_ttf libomp vulkan-loader vulkan-headers
+          brew install gcc g++ sdl2 sdl2_ttf sdl2_image boost libomp vulkan-loader vulkan-headers
 
       - name: Build
         run: |
