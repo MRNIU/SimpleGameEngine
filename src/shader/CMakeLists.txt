@@ -34,13 +34,11 @@ foreach (shader_file ${shaders_SOURCES})
     string(APPEND SHADERS_INCLUDE
             "
 // ${shader_include_file_name}
+#include <${shader_include_file_name}.sc.dx11.bin.h>
+#include <${shader_include_file_name}.sc.dx10.bin.h>
 #include <${shader_include_file_name}.sc.essl.bin.h>
 #include <${shader_include_file_name}.sc.glsl.bin.h>
 #include <${shader_include_file_name}.sc.spv.bin.h>
-#if defined(_WIN32)
-#include <${shader_include_file_name}.sc.dx11.bin.h>
-#include <${shader_include_file_name}.sc.dx9.bin.h>
-#endif
 #if __APPLE__
 #include <${shader_include_file_name}.sc.mtl.bin.h>
 #endif

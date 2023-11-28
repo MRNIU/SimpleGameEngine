@@ -23,25 +23,21 @@ namespace simple_game_engine {
 namespace shader {
 
 // vs
+#include <vs.sc.dx11.bin.h>
+#include <vs.sc.dx10.bin.h>
 #include <vs.sc.essl.bin.h>
 #include <vs.sc.glsl.bin.h>
 #include <vs.sc.spv.bin.h>
-#if defined(_WIN32)
-#include <vs.sc.dx11.bin.h>
-#include <vs.sc.dx9.bin.h>
-#endif
 #if __APPLE__
 #include <vs.sc.mtl.bin.h>
 #endif
 
 // fs
+#include <fs.sc.dx11.bin.h>
+#include <fs.sc.dx10.bin.h>
 #include <fs.sc.essl.bin.h>
 #include <fs.sc.glsl.bin.h>
 #include <fs.sc.spv.bin.h>
-#if defined(_WIN32)
-#include <fs.sc.dx11.bin.h>
-#include <fs.sc.dx9.bin.h>
-#endif
 #if __APPLE__
 #include <fs.sc.mtl.bin.h>
 #endif
