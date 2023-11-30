@@ -23,8 +23,10 @@ namespace simple_game_engine {
 namespace shader {
 
 // vs
+#if defined(_WIN32) || defined(__linux__)
 #include <vs.sc.dx11.bin.h>
 #include <vs.sc.dx10.bin.h>
+#endif
 #include <vs.sc.essl.bin.h>
 #include <vs.sc.glsl.bin.h>
 #include <vs.sc.spv.bin.h>
@@ -33,8 +35,10 @@ namespace shader {
 #endif
 
 // fs
+#if defined(_WIN32) || defined(__linux__)
 #include <fs.sc.dx11.bin.h>
 #include <fs.sc.dx10.bin.h>
+#endif
 #include <fs.sc.essl.bin.h>
 #include <fs.sc.glsl.bin.h>
 #include <fs.sc.spv.bin.h>

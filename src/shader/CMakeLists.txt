@@ -34,8 +34,10 @@ foreach (shader_file ${shaders_SOURCES})
     string(APPEND SHADERS_INCLUDE
             "
 // ${shader_include_file_name}
+#if defined(_WIN32) || defined(__linux__)
 #include <${shader_include_file_name}.sc.dx11.bin.h>
 #include <${shader_include_file_name}.sc.dx10.bin.h>
+#endif
 #include <${shader_include_file_name}.sc.essl.bin.h>
 #include <${shader_include_file_name}.sc.glsl.bin.h>
 #include <${shader_include_file_name}.sc.spv.bin.h>
