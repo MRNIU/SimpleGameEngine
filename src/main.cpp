@@ -190,6 +190,7 @@ auto main(int, char**) -> int {
       bgfx::makeRef(cube_tri_list, sizeof(cube_tri_list)));
 
   bgfx::RendererType::Enum type = bgfx::getRendererType();
+  /// @bug bgfx fatal error
   bgfx::ProgramHandle program = bgfx::createProgram(
       bgfx::createEmbeddedShader(simple_game_engine::shader::kEmbeddedShaders,
                                  type, "vs"),
