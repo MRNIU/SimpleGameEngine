@@ -60,6 +60,7 @@
 
 - 文件路径和 IO 留在 `editor::app`。
 - `EditorModel` 不保存当前文件路径，不知道 `Open` / `Save As` UI。
+- 当前 `EditorModel::run_smoke_actions*` 仍做 smoke 文件 IO；本 milestone 要把 smoke 的文件读写迁到 `editor::app` 文件工作流 helper，只让 `EditorModel` 保留纯 model 操作。
 - `scene` 格式不变。
 - dirty 是 `EditorModel` 的状态；app 层只根据它决定是否阻止 destructive action。
 - 不新增 `project`、`document` 或 `platform` crate。
@@ -94,8 +95,10 @@ status: String
 ### Open
 
 - 从 `path_input` 读取路径。
-- 如果当前 model 是 dirty，阻止并提示先 `Save` 或 `Discard`。
-- 记录 pending action 为 `Open(path)`。
+- 判定顺序固定为：先校验路径非空，再执行 dirty guard，再读文件。
+- 空路径只显示 `Path is empty`，不设置 pending action。
+- 如果路径有效但当前 model 是 dirty，阻止并提示先 `Save` 或 `Discard`。
+- 只有 dirty guard 阻止有效路径时，才记录 pending action 为 `Open(path)`。
 - 如果不 dirty，读取文件、解析 scene、替换 model。
 - 打开成功后 `current_path = Some(path)`，`path_input` 同步为该路径，dirty 清空。
 - 打开失败时保留当前 model、current path 和 dirty。
@@ -106,12 +109,14 @@ status: String
 - 如果没有 `current_path`，使用 `path_input`。
 - 保存成功后调用 `EditorModel::mark_saved()`。
 - 如果使用 `path_input` 保存成功，也把它设为 `current_path`。
+- 保存成功后清除 `pending_action`，因为当前修改已经被保存，旧的 destructive action 不应继续保留。
 - 保存失败时保留 model 和 dirty。
 
 ### Save As
 
 - 始终使用 `path_input`。
 - 保存成功后把 `path_input` 设为 `current_path`，并清 dirty。
+- 保存成功后清除 `pending_action`，原因同 `Save`。
 - 保存失败时保留原 `current_path`、model 和 dirty。
 
 ### Discard
@@ -149,7 +154,10 @@ egui button/path edit
 
 - `editor::app` helper tests：
   - dirty 时 `New` 被阻止并产生 pending action。
+  - 空路径 `Open` 只产生路径错误，不产生 pending action。
   - dirty 时 `Open` 被阻止并产生 pending action。
+  - `Save` 成功后清除 pending action。
+  - `Save As` 成功后清除 pending action。
   - `Discard` 后执行 pending `New`。
   - `Discard` 后执行 pending `Open(path)`。
   - `Save` 在无 current path 时使用 `path_input`。
@@ -162,14 +170,14 @@ egui button/path edit
 验收命令沿用 README 的 Dev Container 路径：
 
 ```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
-cargo build --workspace
-xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo fmt --all --check'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo clippy --workspace --all-targets -- -D warnings'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo test --workspace --all-targets'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo build --workspace'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron'
 ```
 
-这些命令在 README 中通过 Dev Container 执行。GUI smoke 仍是证据层，不等于跨平台 GPU 兼容性证明。
+这些命令依赖 README 中声明的 `DEVCONTAINER_NAME` 初始化流程。GUI smoke 仍是证据层，不等于跨平台 GPU 兼容性证明。
 
 ## 实施切片
 
