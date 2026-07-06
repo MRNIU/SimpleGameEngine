@@ -18,7 +18,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 
 - Cargo workspace 包含 `app`、`ecs`、`math`、`asset`、`scene`、`render`、`window`、`input`、`editor`、`runtime`。
 - `ecs` 保存 entity/component 真源，`scene` 负责 `.scene.ron` roundtrip，`render` 从 ECS 抽取 viewport 数据并保留 `wgpu` viewport pipeline 边界。
-- `editor` 使用 `eframe::Renderer::Wgpu`，提供 egui native shell、hierarchy、inspector、`render::ViewportRenderer` viewport、create cube、save/reopen smoke path。
+- `editor` 使用 `eframe::Renderer::Wgpu`，提供 egui native shell、hierarchy、inspector、`render::ViewportRenderer` viewport、create cube、`.scene.ron` New/Open/Save/Save As/Discard 文件工作流。
 - `runtime` 可以加载示例 `.scene.ron` 并抽取 render scene 和 viewport draw call。
 - 当前发布版 `eframe/egui-wgpu 0.35.0` 仍依赖 `wgpu 29`；workspace 统一到 `wgpu 29.0.4`，避免 editor/render 跨版本共享 GPU 类型。
 
@@ -90,14 +90,14 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo build --workspace'
 # 运行 editor；host-native 是 opt-in，GUI smoke 不属于默认 Dev Container gate
 cargo run -p editor
 
-# 虚拟 X editor smoke；通过退出码和 summary log 验证窗口路径、自动 save/reopen 和 ViewportRenderer prepare/paint
+# 虚拟 X editor smoke；通过退出码和 summary log 验证窗口路径、文件工作流 save/open 和 ViewportRenderer prepare/paint
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron'
 
 # host-native 自动 smoke；opt-in，只使用已存在的宿主 Rust 环境
 cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron
 ```
 
-虚拟 X 和 host-native `--smoke` 证明 editor 操作闭环、viewport draw-call summary，以及真实 `ViewportRenderer` prepare/paint 触达；它们仍不等于人工确认真实窗口像素或跨平台 GPU 兼容性证明。
+虚拟 X 和 host-native `--smoke` 证明 editor 文件工作流 save/open 闭环、viewport draw-call summary，以及真实 `ViewportRenderer` prepare/paint 触达；它们仍不等于人工确认真实窗口像素或跨平台 GPU 兼容性证明。
 
 ## 代码结构
 

@@ -1,10 +1,6 @@
 // Copyright The SimpleGameEngine Contributors
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{fs, path::PathBuf, sync::Arc};
 
 use ecs::EntityId;
 use eframe::egui;
@@ -14,7 +10,8 @@ use crate::{
     viewport::{ViewportWgpuProbe, draw_viewport, install_viewport_renderer},
 };
 
-const DEFAULT_SCENE_PATH: &str = "target/tmp/editor_manual.scene.ron";
+mod file_workflow;
+
 const SMOKE_MAX_VIEWPORT_FRAMES: u32 = 120;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -45,12 +42,21 @@ impl EditorLaunchOptions {
 #[derive(Debug, Default)]
 pub struct EditorApp {
     model: EditorModel,
+    path_input: String,
+    current_path: Option<PathBuf>,
+    pending_action: Option<PendingFileAction>,
     status: String,
     options: EditorLaunchOptions,
     smoke_report: Option<EditorSmokeReport>,
     smoke_frame_count: u32,
     viewport_probe: ViewportWgpuProbe,
     wgpu_viewport_available: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PendingFileAction {
+    New,
+    Open(PathBuf),
 }
 
 impl EditorApp {
@@ -72,39 +78,13 @@ impl EditorApp {
             ..Self::default()
         }
     }
-
-    fn save_default_scene(&mut self) {
-        match self.save_scene_to_path(Path::new(DEFAULT_SCENE_PATH)) {
-            Ok(()) => self.status = format!("Saved {DEFAULT_SCENE_PATH}"),
-            Err(error) => self.status = format!("Save failed: {error}"),
-        }
-    }
-
-    fn reopen_default_scene(&mut self) {
-        match fs::read_to_string(DEFAULT_SCENE_PATH) {
-            Ok(input) => match self.model.reopen_scene_from_str(&input) {
-                Ok(()) => self.status = format!("Opened {DEFAULT_SCENE_PATH}"),
-                Err(error) => self.status = format!("Open failed: {error}"),
-            },
-            Err(error) => self.status = format!("Open failed: {error}"),
-        }
-    }
-
-    fn save_scene_to_path(&mut self, path: &Path) -> anyhow::Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(path, self.model.save_scene_to_string()?)?;
-        self.model.mark_saved();
-        Ok(())
-    }
 }
 
 impl eframe::App for EditorApp {
     fn logic(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
         if let Some(path) = self.options.smoke_path.clone() {
             if self.smoke_report.is_none() {
-                match self.model.run_smoke_actions_in_place(&path) {
+                match self.run_smoke_file_workflow(&path) {
                     Ok(report) => self.smoke_report = Some(report),
                     Err(error) => {
                         eprintln!("editor smoke failed: {error:#}");
@@ -155,6 +135,32 @@ impl eframe::App for EditorApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         ui.horizontal(|ui| {
+            if ui.button("New").clicked() {
+                self.new_scene();
+            }
+            if ui.button("Open").clicked() {
+                self.open_scene();
+            }
+            if ui.button("Save").clicked() {
+                self.save_scene();
+            }
+            if ui.button("Save As").clicked() {
+                self.save_scene_as();
+            }
+            if ui.button("Discard").clicked() {
+                self.discard_pending_action();
+            }
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Path");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.path_input)
+                    .desired_width(ui.available_width()),
+            );
+        });
+
+        ui.horizontal(|ui| {
             if ui.button("New Cube").clicked() {
                 self.model.create_cube();
             }
@@ -170,17 +176,13 @@ impl eframe::App for EditorApp {
                     Err(error) => self.status = format_editor_error("Delete failed", error),
                 }
             }
-            if ui.button("Save").clicked() {
-                self.save_default_scene();
-            }
-            if ui.button("Reopen").clicked() {
-                self.reopen_default_scene();
-            }
             if self.model.is_dirty() {
                 ui.label("Unsaved");
             }
-            ui.label(&self.status);
         });
+        if !self.status.is_empty() {
+            ui.add(egui::Label::new(&self.status).wrap());
+        }
 
         ui.separator();
         ui.columns(3, |columns| {
@@ -368,9 +370,7 @@ fn cjk_font_candidates() -> &'static [&'static str] {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        DEFAULT_SCENE_PATH, EditorLaunchOptions, cjk_font_candidates, inspector_transform_fields,
-    };
+    use super::{EditorLaunchOptions, cjk_font_candidates, inspector_transform_fields};
     use ecs::{Camera, EntityId, EntityRecord, Projection};
     use math::Transform;
     use std::path::PathBuf;
@@ -388,11 +388,6 @@ mod tests {
             options.smoke_path,
             Some(PathBuf::from("target/tmp/smoke.scene.ron"))
         );
-    }
-
-    #[test]
-    fn manual_save_path_stays_out_of_tracked_assets() {
-        assert_eq!(DEFAULT_SCENE_PATH, "target/tmp/editor_manual.scene.ron");
     }
 
     #[test]

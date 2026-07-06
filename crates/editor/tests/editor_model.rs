@@ -5,7 +5,6 @@
 use ecs::EntityId;
 use editor::{EditorError, EditorModel};
 use math::Transform;
-use std::{fs, path::Path};
 
 #[test]
 fn editor_model_can_create_save_and_reopen_a_cube_scene() {
@@ -154,17 +153,9 @@ fn editor_model_reopen_preserves_selection_only_when_entity_still_exists() {
 
 #[test]
 fn editor_smoke_actions_create_save_reopen_and_verify_viewport() {
-    let path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp/editor_model_smoke.scene.ron");
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    let _ = fs::remove_file(&path);
-
-    let report = EditorModel::default().run_smoke_actions(&path).unwrap();
+    let report = EditorModel::default().run_smoke_actions().unwrap();
 
     assert_eq!(report.mesh_count, 3);
     assert!(report.has_camera);
     assert_eq!(report.viewport_index_count, 108);
-    assert!(path.exists());
 }

@@ -1,7 +1,5 @@
 // Copyright The SimpleGameEngine Contributors
 
-use std::{fs, path::Path};
-
 use ecs::{Camera, EntityId, MeshRef, Projection, World};
 use math::Transform;
 use render::{
@@ -222,11 +220,11 @@ impl EditorModel {
         viewport_draw_call_with_selection(&self.render_scene(), self.selected.as_ref())
     }
 
-    pub fn run_smoke_actions(mut self, path: &Path) -> anyhow::Result<EditorSmokeReport> {
-        self.run_smoke_actions_in_place(path)
+    pub fn run_smoke_actions(mut self) -> anyhow::Result<EditorSmokeReport> {
+        self.run_smoke_actions_in_place()
     }
 
-    pub fn run_smoke_actions_in_place(&mut self, path: &Path) -> anyhow::Result<EditorSmokeReport> {
+    pub fn run_smoke_actions_in_place(&mut self) -> anyhow::Result<EditorSmokeReport> {
         let _first = self.create_cube();
         let second = self.create_cube();
         self.rename_entity(&second, "Smoke Cube")?;
@@ -239,13 +237,10 @@ impl EditorModel {
             },
         )?;
         let _duplicate = self.duplicate_selected()?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(path, self.save_scene_to_string()?)?;
-        self.mark_saved();
+        self.smoke_report()
+    }
 
-        self.reopen_scene_from_str(&fs::read_to_string(path)?)?;
+    pub fn smoke_report(&self) -> anyhow::Result<EditorSmokeReport> {
         let render_scene = self.render_scene();
         let viewport_draw = self
             .viewport_draw_call()
