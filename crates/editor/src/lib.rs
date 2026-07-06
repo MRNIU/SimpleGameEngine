@@ -14,7 +14,7 @@ use render::{RenderScene, ViewportDrawCall, extract_render_scene, viewport_draw_
 
 const ROOT_ID: &str = "root";
 const CAMERA_ID: &str = "camera";
-const DEFAULT_SCENE_PATH: &str = "assets/examples/editor_smoke.scene.ron";
+const DEFAULT_SCENE_PATH: &str = "target/tmp/editor_manual.scene.ron";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EditorLaunchOptions {
@@ -389,7 +389,7 @@ fn paint_fallback_viewport(rect: egui::Rect, painter: &egui::Painter, draw: &Vie
 
 #[cfg(test)]
 mod tests {
-    use super::{EditorLaunchOptions, EditorModel};
+    use super::{DEFAULT_SCENE_PATH, EditorLaunchOptions, EditorModel};
     use std::path::PathBuf;
 
     #[test]
@@ -418,5 +418,10 @@ mod tests {
             options.smoke_path,
             Some(PathBuf::from("target/tmp/smoke.scene.ron"))
         );
+    }
+
+    #[test]
+    fn manual_save_path_stays_out_of_tracked_assets() {
+        assert_eq!(DEFAULT_SCENE_PATH, "target/tmp/editor_manual.scene.ron");
     }
 }
