@@ -5,16 +5,24 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use ecs::{Camera, EntityId, MeshRef, Projection, World};
-use eframe::egui;
+use eframe::{egui, egui_wgpu, wgpu};
 use math::Transform;
-use render::{RenderScene, ViewportDrawCall, extract_render_scene, viewport_draw_call};
+use render::{
+    RenderScene, ViewportDrawCall, ViewportRenderer, extract_render_scene, viewport_draw_call,
+};
 
 const ROOT_ID: &str = "root";
 const CAMERA_ID: &str = "camera";
 const DEFAULT_SCENE_PATH: &str = "target/tmp/editor_manual.scene.ron";
+const SMOKE_MAX_VIEWPORT_FRAMES: u32 = 120;
+const VIEWPORT_MIN_SIZE: egui::Vec2 = egui::vec2(240.0, 180.0);
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EditorLaunchOptions {
@@ -54,6 +62,45 @@ pub struct EditorSmokeReport {
     pub mesh_count: usize,
     pub has_camera: bool,
     pub viewport_index_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct ViewportWgpuReport {
+    prepare_count: usize,
+    paint_count: usize,
+    completed: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ViewportWgpuProbe {
+    inner: Arc<ViewportWgpuProbeInner>,
+}
+
+#[derive(Debug, Default)]
+struct ViewportWgpuProbeInner {
+    prepare_count: AtomicUsize,
+    paint_count: AtomicUsize,
+}
+
+impl ViewportWgpuProbe {
+    fn mark_prepared(&self) {
+        self.inner.prepare_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn mark_painted(&self) {
+        self.inner.paint_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[must_use]
+    fn report(&self) -> ViewportWgpuReport {
+        let prepare_count = self.inner.prepare_count.load(Ordering::Relaxed);
+        let paint_count = self.inner.paint_count.load(Ordering::Relaxed);
+        ViewportWgpuReport {
+            prepare_count,
+            paint_count,
+            completed: prepare_count > 0 && paint_count > 0,
+        }
+    }
 }
 
 impl EditorModel {
@@ -152,6 +199,10 @@ impl EditorModel {
     }
 
     pub fn run_smoke_actions(mut self, path: &Path) -> anyhow::Result<EditorSmokeReport> {
+        self.run_smoke_actions_in_place(path)
+    }
+
+    pub fn run_smoke_actions_in_place(&mut self, path: &Path) -> anyhow::Result<EditorSmokeReport> {
         let cube = self.create_cube();
         self.set_translation(&cube, [1.0, 2.0, 3.0])?;
         if let Some(parent) = path.parent() {
@@ -165,11 +216,13 @@ impl EditorModel {
             .viewport_draw_call()
             .ok_or_else(|| anyhow::anyhow!("viewport draw call missing after reopen"))?;
 
-        Ok(EditorSmokeReport {
+        let report = EditorSmokeReport {
             mesh_count: render_scene.meshes.len(),
             has_camera: render_scene.active_camera.is_some(),
             viewport_index_count: viewport_draw.index_count,
-        })
+        };
+        *self = reopened;
+        Ok(report)
     }
 
     #[must_use]
@@ -203,7 +256,10 @@ pub struct EditorApp {
     model: EditorModel,
     status: String,
     options: EditorLaunchOptions,
-    smoke_ran: bool,
+    smoke_report: Option<EditorSmokeReport>,
+    smoke_frame_count: u32,
+    viewport_probe: ViewportWgpuProbe,
+    wgpu_viewport_available: bool,
 }
 
 impl EditorApp {
@@ -214,11 +270,13 @@ impl EditorApp {
 
     #[must_use]
     pub fn new_with_options(
-        _creation_context: &eframe::CreationContext<'_>,
+        creation_context: &eframe::CreationContext<'_>,
         options: EditorLaunchOptions,
     ) -> Self {
+        let wgpu_viewport_available = install_viewport_renderer(creation_context);
         Self {
             options,
+            wgpu_viewport_available,
             ..Self::default()
         }
     }
@@ -258,23 +316,53 @@ impl EditorApp {
 
 impl eframe::App for EditorApp {
     fn logic(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
-        if !self.smoke_ran
-            && let Some(path) = self.options.smoke_path.clone()
-        {
-            self.smoke_ran = true;
-            let model = std::mem::take(&mut self.model);
-            match model.run_smoke_actions(&path) {
-                Ok(report) => {
-                    println!(
-                        "editor smoke ok: meshes={}, camera={}, viewport_indices={}",
-                        report.mesh_count, report.has_camera, report.viewport_index_count
-                    );
-                    context.send_viewport_cmd(egui::ViewportCommand::Close);
+        if let Some(path) = self.options.smoke_path.clone() {
+            if self.smoke_report.is_none() {
+                match self.model.run_smoke_actions_in_place(&path) {
+                    Ok(report) => self.smoke_report = Some(report),
+                    Err(error) => {
+                        eprintln!("editor smoke failed: {error:#}");
+                        std::process::exit(1);
+                    }
                 }
-                Err(error) => {
-                    eprintln!("editor smoke failed: {error:#}");
-                    std::process::exit(1);
+            }
+
+            self.smoke_frame_count = self.smoke_frame_count.saturating_add(1);
+            let viewport_report = self.viewport_probe.report();
+            if viewport_report.completed {
+                let report = self
+                    .smoke_report
+                    .as_ref()
+                    .expect("smoke report is set before viewport completion");
+                println!(
+                    "editor smoke ok: meshes={}, camera={}, viewport_indices={}, viewport_prepare={}, viewport_paint={}",
+                    report.mesh_count,
+                    report.has_camera,
+                    report.viewport_index_count,
+                    viewport_report.prepare_count,
+                    viewport_report.paint_count
+                );
+                self.options.smoke_path = None;
+                context.send_viewport_cmd(egui::ViewportCommand::Close);
+            } else if self.smoke_frame_count > SMOKE_MAX_VIEWPORT_FRAMES {
+                match self.smoke_report.as_ref() {
+                    Some(report) => eprintln!(
+                        "editor smoke failed: wgpu viewport path not reached after {} frames: meshes={}, camera={}, viewport_indices={}, viewport_prepare={}, viewport_paint={}",
+                        self.smoke_frame_count,
+                        report.mesh_count,
+                        report.has_camera,
+                        report.viewport_index_count,
+                        viewport_report.prepare_count,
+                        viewport_report.paint_count
+                    ),
+                    None => eprintln!("editor smoke failed: model smoke did not produce a report"),
                 }
+                std::process::exit(1);
+            } else if !self.wgpu_viewport_available {
+                eprintln!("editor smoke failed: eframe wgpu render state is unavailable");
+                std::process::exit(1);
+            } else {
+                context.request_repaint();
             }
         }
     }
@@ -297,9 +385,73 @@ impl eframe::App for EditorApp {
         ui.columns(3, |columns| {
             draw_hierarchy(&mut columns[0], &mut self.model);
             draw_inspector(&mut columns[1], &mut self.model, &mut self.status);
-            draw_viewport(&mut columns[2], self.model.viewport_draw_call().as_ref());
+            let draw = self.model.viewport_draw_call();
+            let wgpu_probe = self.wgpu_viewport_available.then_some(&self.viewport_probe);
+            draw_viewport(&mut columns[2], draw.as_ref(), wgpu_probe);
         });
     }
+}
+
+struct ViewportGpuResources {
+    renderer: ViewportRenderer,
+}
+
+impl ViewportGpuResources {
+    fn new(device: &wgpu::Device, color_format: wgpu::TextureFormat) -> Self {
+        Self {
+            renderer: ViewportRenderer::new(device, color_format),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct ViewportWgpuCallback {
+    draw: ViewportDrawCall,
+    probe: ViewportWgpuProbe,
+}
+
+impl egui_wgpu::CallbackTrait for ViewportWgpuCallback {
+    fn prepare(
+        &self,
+        device: &wgpu::Device,
+        _queue: &wgpu::Queue,
+        _screen_descriptor: &egui_wgpu::ScreenDescriptor,
+        _egui_encoder: &mut wgpu::CommandEncoder,
+        callback_resources: &mut egui_wgpu::CallbackResources,
+    ) -> Vec<wgpu::CommandBuffer> {
+        if let Some(resources) = callback_resources.get_mut::<ViewportGpuResources>() {
+            resources.renderer.prepare(device, Some(&self.draw));
+            self.probe.mark_prepared();
+        }
+        Vec::new()
+    }
+
+    fn paint(
+        &self,
+        _info: egui::PaintCallbackInfo,
+        render_pass: &mut wgpu::RenderPass<'static>,
+        callback_resources: &egui_wgpu::CallbackResources,
+    ) {
+        if let Some(resources) = callback_resources.get::<ViewportGpuResources>() {
+            resources.renderer.paint(render_pass);
+            self.probe.mark_painted();
+        }
+    }
+}
+
+fn install_viewport_renderer(creation_context: &eframe::CreationContext<'_>) -> bool {
+    let Some(render_state) = creation_context.wgpu_render_state.as_ref() else {
+        return false;
+    };
+    render_state
+        .renderer
+        .write()
+        .callback_resources
+        .insert(ViewportGpuResources::new(
+            &render_state.device,
+            render_state.target_format,
+        ));
+    true
 }
 
 fn draw_hierarchy(ui: &mut egui::Ui, model: &mut EditorModel) {
@@ -344,15 +496,36 @@ fn draw_inspector(ui: &mut egui::Ui, model: &mut EditorModel, status: &mut Strin
     }
 }
 
-fn draw_viewport(ui: &mut egui::Ui, draw: Option<&ViewportDrawCall>) {
+fn draw_viewport(
+    ui: &mut egui::Ui,
+    draw: Option<&ViewportDrawCall>,
+    wgpu_probe: Option<&ViewportWgpuProbe>,
+) {
     ui.heading("Viewport");
-    let rect = ui.available_rect_before_wrap();
-    let response = ui.allocate_rect(rect, egui::Sense::hover());
-    let painter = ui.painter_at(response.rect);
-    painter.rect_filled(response.rect, 0.0, egui::Color32::from_rgb(18, 24, 29));
-    if let Some(draw) = draw {
-        paint_fallback_viewport(response.rect, &painter, draw);
+    let (rect, _response) = ui.allocate_exact_size(
+        viewport_canvas_size(ui.available_size_before_wrap()),
+        egui::Sense::hover(),
+    );
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(18, 24, 29));
+    if let Some((draw, probe)) = draw.zip(wgpu_probe) {
+        painter.add(egui_wgpu::Callback::new_paint_callback(
+            rect,
+            ViewportWgpuCallback {
+                draw: draw.clone(),
+                probe: probe.clone(),
+            },
+        ));
+    } else if let Some(draw) = draw {
+        paint_fallback_viewport(rect, &painter, draw);
     }
+}
+
+fn viewport_canvas_size(available: egui::Vec2) -> egui::Vec2 {
+    egui::vec2(
+        available.x.max(VIEWPORT_MIN_SIZE.x),
+        available.y.max(VIEWPORT_MIN_SIZE.y),
+    )
 }
 
 fn paint_fallback_viewport(rect: egui::Rect, painter: &egui::Painter, draw: &ViewportDrawCall) {
@@ -389,7 +562,7 @@ fn paint_fallback_viewport(rect: egui::Rect, painter: &egui::Painter, draw: &Vie
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_SCENE_PATH, EditorLaunchOptions, EditorModel};
+    use super::{DEFAULT_SCENE_PATH, EditorLaunchOptions, EditorModel, ViewportWgpuProbe};
     use std::path::PathBuf;
 
     #[test]
@@ -423,5 +596,34 @@ mod tests {
     #[test]
     fn manual_save_path_stays_out_of_tracked_assets() {
         assert_eq!(DEFAULT_SCENE_PATH, "target/tmp/editor_manual.scene.ron");
+    }
+
+    #[test]
+    fn viewport_wgpu_probe_requires_prepare_and_paint() {
+        let probe = ViewportWgpuProbe::default();
+
+        assert!(!probe.report().completed);
+
+        probe.mark_prepared();
+        assert!(!probe.report().completed);
+
+        probe.mark_painted();
+        let report = probe.report();
+
+        assert!(report.completed);
+        assert_eq!(report.prepare_count, 1);
+        assert_eq!(report.paint_count, 1);
+    }
+
+    #[test]
+    fn viewport_canvas_keeps_nonzero_paint_area() {
+        assert_eq!(
+            super::viewport_canvas_size(egui::vec2(0.0, 0.0)),
+            egui::vec2(240.0, 180.0)
+        );
+        assert_eq!(
+            super::viewport_canvas_size(egui::vec2(320.0, 240.0)),
+            egui::vec2(320.0, 240.0)
+        );
     }
 }

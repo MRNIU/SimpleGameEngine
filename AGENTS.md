@@ -69,7 +69,7 @@
 
 最后审阅日期：2026-07-06
 
-- 当前阶段：Rust reset 已落地为 Cargo workspace
-- 活跃重点：收集 host-native GUI smoke 证据
-- 已知技术债：虚拟 X smoke 只验证操作闭环和 draw-call summary；真实窗口像素/GPU smoke 尚未验证
-- 下一个里程碑：host-native editor smoke：打开窗口、创建 cube、编辑 transform、保存并重新打开 `.scene.ron`
+- 当前阶段：Rust reset 已落地为 Cargo workspace；editor 已通过 `eframe::Renderer::Wgpu` 接入 `render::ViewportRenderer`
+- 活跃重点：明确自动 gate、虚拟 X smoke、host-native GUI smoke 和真实 `wgpu` viewport 的证据分层
+- 已知技术债：虚拟 X 和 host-native `--smoke` 已验证 create/save/reopen 和 `ViewportRenderer` prepare/paint 触达，但仍不能证明人工观察到的真实窗口像素或跨平台 GPU 兼容性
+- 下一个里程碑：人工 host-native editor smoke：打开窗口、创建 cube、编辑 transform、保存并重新打开 `.scene.ron`，并确认 viewport 像素输出

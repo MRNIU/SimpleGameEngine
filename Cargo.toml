@@ -20,7 +20,7 @@ repository = "https://github.com/MRNIU/SimpleGameEngine"
 
 [workspace.dependencies]
 anyhow = "1"
-eframe = { version = "0.35.0", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+eframe = { version = "0.35.0", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
 egui = "0.35.0"
 glam = { version = "0.33.2", features = ["serde"] }
 ron = "0.12.2"
@@ -28,7 +28,7 @@ serde = { version = "1", features = ["derive"] }
 thiserror = "2.0.18"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-wgpu = "30.0.0"
+wgpu = "29.0.4"
 winit = "0.30.13"
 
 [workspace.lints.rust]

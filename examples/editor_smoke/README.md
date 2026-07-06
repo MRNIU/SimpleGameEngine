@@ -1,12 +1,12 @@
 # Editor Smoke
 
-默认自动 gate 只跑 fmt、clippy、test 和 build。GUI smoke 需要 host-native Rust 环境或显式配置好的 GPU runner：
+默认 CI gate 只跑 fmt、clippy 和 test。本地 Dev Container 可额外跑 build。GUI smoke 是证据层，需要 host-native Rust 环境、虚拟 X，或显式配置好的 GPU runner：
 
 ```bash
 cargo run -p editor
 ```
 
-手动 smoke 目标：打开 editor，看到 hierarchy、inspector 和 viewport preview，创建 cube，编辑 transform，保存 `assets/examples/editor_smoke.scene.ron`，再 reopen。
+手动 smoke 目标：打开 editor，看到 hierarchy、inspector 和 viewport preview，创建 cube，编辑 transform，保存 `.scene.ron`，再 reopen。
 
 Dev Container 中可跑虚拟 X smoke：
 
@@ -14,4 +14,12 @@ Dev Container 中可跑虚拟 X smoke：
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron'
 ```
 
-该命令通过退出码和 `editor smoke ok: meshes=..., camera=..., viewport_indices=...` summary log 验证窗口启动、自动 create/edit/save/reopen 和 draw-call 生成；它不做截图、像素检查或真实 GPU 兼容性证明。
+host-native 自动 smoke 是 opt-in，只使用已存在的宿主 Rust 环境：
+
+```bash
+cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron
+```
+
+这些命令通过退出码和 `editor smoke ok: meshes=..., camera=..., viewport_indices=..., viewport_prepare=..., viewport_paint=...` summary log 验证窗口启动、自动 create/edit/save/reopen、draw-call 生成，以及真实 `ViewportRenderer` prepare/paint path 触达；它们不做截图、像素检查或真实 GPU 兼容性证明。
+
+当前 editor 使用 `eframe::Renderer::Wgpu` 和 `egui_wgpu::CallbackTrait` 接入 `render::ViewportRenderer`。workspace 使用 `eframe/egui-wgpu 0.35.0` 兼容的 `wgpu 29.0.4`；等 eframe 发布同主版本支持后再升级到 `wgpu 30`。

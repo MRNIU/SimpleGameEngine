@@ -94,7 +94,7 @@ impl ViewportRenderer {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &[Some(vertex_layout)],
+                buffers: &[vertex_layout],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -147,7 +147,7 @@ impl ViewportRenderer {
         self.index_count = draw.index_count as u32;
     }
 
-    pub fn paint<'pass>(&'pass self, render_pass: &mut wgpu::RenderPass<'pass>) {
+    pub fn paint(&self, render_pass: &mut wgpu::RenderPass<'_>) {
         if self.index_count == 0 {
             return;
         }

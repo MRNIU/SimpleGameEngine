@@ -11,7 +11,7 @@ fn main() -> anyhow::Result<()> {
 
     let launch_options = EditorLaunchOptions::from_args(std::env::args())?;
     let options = eframe::NativeOptions {
-        renderer: eframe::Renderer::Glow,
+        renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
     eframe::run_native(

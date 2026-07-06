@@ -4,10 +4,10 @@
 
 ## 结论
 
-下一步在 `main` 顺序推进两个阶段：
+本 spec 已在 `main` 上完成两个阶段：
 
 1. 收口当前 Rust reset 基线，让文档、验证命令和已知缺口一致。
-2. 先验证 editor 与 `render` 的 `wgpu` viewport 入口边界；边界成立后再接入真实 viewport 最小路径。
+2. 验证 editor 与 `render` 的 `wgpu` viewport 入口边界，并接入真实 viewport 最小路径。
 
 这不是新功能扩张阶段。脚本、Prefab、glTF、物理、音频、完整 asset database 和新 crate 继续排除在范围外。
 
@@ -16,11 +16,11 @@
 - Rust reset 已落地为 Cargo workspace。
 - `ecs` 是 scene/editor/runtime 的 entity 和 component 真源。
 - `scene` 负责 `.scene.ron` save/load，不保存 GPU、窗口或 editor panel 状态。
-- `render` 已有 render extraction、viewport draw-call 数据和 `wgpu` pipeline/buffer 边界。
+- `render` 已有 render extraction、viewport draw-call 数据和 `wgpu` pipeline/buffer/draw 边界。
 - `editor` 已有 hierarchy、inspector、create cube、save/reopen smoke path。
-- 当前 editor viewport 仍主要是 egui fallback preview；它能证明 draw-call 数据存在，但不能单独证明真实 `wgpu` viewport 已嵌入 editor。
-- 当前 editor 二进制使用 `eframe::Renderer::Glow`。`render::ViewportRenderer` 需要 `wgpu::Device` 和 `wgpu::RenderPass`，两者不能直接相接。
-- `eframe 0.35.0` 的 `egui-wgpu` 包依赖 `wgpu 29.0.4`，workspace 的 `render` 依赖 `wgpu 30.0.0`；跨版本 `wgpu` 类型不能共享。
+- 当前 editor 二进制使用 `eframe::Renderer::Wgpu`。
+- editor viewport 通过 `egui_wgpu::CallbackTrait` 进入 `render::ViewportRenderer::prepare` / `paint`。
+- 当前 crates.io 最新发布版 `eframe/egui-wgpu 0.35.0` 依赖 `wgpu 29`，workspace 统一到 `wgpu 29.0.4`；`wgpu 30` 暂不用于 editor viewport，等 `eframe/egui-wgpu` 发布同主版本支持后再升级。
 
 ## 非目标
 
@@ -46,11 +46,11 @@
 - 文档不再互相矛盾。
 - CI gate 和本地 Dev Container 验证分层清楚：CI 跑 fmt/clippy/test，本地验证可额外跑 build。
 - GUI smoke 被描述为证据层，不被误写成跨平台自动保证。
-- 当前 editor viewport 的 fallback 与真实 `wgpu` 缺口被明确记录。
+- 当前真实 `wgpu` viewport、fallback 边界与未验证项被明确记录。
 
 ## 阶段 B0：验证 Wgpu Viewport 入口
 
-目标：先证明 editor 有一条可维护的路径能把 viewport 绘制交给 `render` crate，而不是假设 `ViewportRenderer` 可以直接嵌入现有 `eframe::Renderer::Glow` UI。
+目标：先证明 editor 有一条可维护的路径能把 viewport 绘制交给 `render` crate，而不是假设 `ViewportRenderer` 可以直接嵌入旧 `eframe::Renderer::Glow` UI。
 
 必须先回答三个问题：
 
@@ -58,12 +58,13 @@
 - `render` 和 editor 使用的 `wgpu` 版本是否统一；若继续保留 `eframe 0.35.0` 的 `egui-wgpu` 路径，则 `render` 不能暴露 `wgpu 30.0.0` 类型给它。
 - viewport smoke 如何证明真实路径触达 `ViewportRenderer::prepare` / `paint` 或等价的 `render` draw path，而不只是 draw-call summary。
 
-完成标准：
+结论：
 
-- 写清选定入口：`eframe` Wgpu 后端、独立 winit/wgpu viewport、或暂缓真实 viewport。
-- 若选 `eframe` Wgpu 后端，先解决 `wgpu 29` / `wgpu 30` 类型边界。
-- 若选独立 winit/wgpu viewport，说明它和 egui panel 的窗口/事件关系。
-- 若入口边界不能用小改动成立，阶段 B1 停在设计更新，不写半成品实现。
+- 选定入口：`eframe::Renderer::Wgpu`。
+- 不自建 winit/wgpu viewport。
+- 通过 `egui_wgpu::CallbackTrait` 把 viewport 区域交给 `render::ViewportRenderer`。
+- `render` 和 editor 统一使用 `wgpu 29.0.4`，避免跨版本 `wgpu::Device` / `wgpu::RenderPass` / `wgpu::TextureFormat` 类型不兼容。
+- smoke 通过 `viewport_prepare=...` 和 `viewport_paint=...` 证明真实 path 触达，而不只看 draw-call summary。
 
 ## 阶段 B1：接入真实 Wgpu Viewport
 
@@ -82,7 +83,8 @@
 EditorModel
 -> render::extract_render_scene
 -> render::viewport_draw_call
--> render::ViewportRenderer
+-> egui_wgpu::CallbackTrait
+-> render::ViewportRenderer::prepare / paint
 -> editor viewport region
 ```
 
@@ -120,9 +122,10 @@ cargo build --workspace
 
 ```bash
 xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron
+cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron
 ```
 
-该 smoke 当前只证明 create/save/reopen 和 draw-call summary。阶段 B1 若接入真实 viewport，必须新增或调整证据，让它能证明真实 viewport path 触达 `render` 的 prepare/paint 或等价绘制路径；否则不能把它当作真实 GPU 像素证据。
+这些 smoke 当前证明 create/save/reopen、draw-call summary，以及真实 viewport path 触达 `render` 的 prepare/paint。它们仍不能当作人工确认的真实窗口像素或跨平台 GPU 兼容性证明。
 
 测试增量保持最小：
 
@@ -139,9 +142,10 @@ xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron
 4. 更新文档，记录真实 viewport、fallback 和未验证项。
 5. 跑 CI gate、本地 build 和 editor smoke。
 
+以上步骤已完成；host-native `--smoke` 已验证，人工 GUI 像素确认仍是手动证据层，不进入默认 CI gate。
+
 ## 风险
 
-- 当前 `eframe::Renderer::Glow` 和 `render::ViewportRenderer` 的 `wgpu` API 不直接相接。
-- `egui-wgpu` 与 workspace `wgpu` 版本可能不一致，直接共享 `wgpu` 类型会失败。
-- 虚拟 X smoke 仍不能证明真实窗口像素和 GPU 兼容性。
-- 如果 `wgpu` 嵌入 editor 的最小路径过大，应先保留阶段 A 和 B0 成果，再把 B1 拆成单独实现计划。
+- 虚拟 X 和 host-native `--smoke` 仍不能证明人工观察到的真实窗口像素和跨平台 GPU 兼容性。
+- `wgpu 30` 暂不用于 editor viewport；升级需要等 `eframe/egui-wgpu` 发布同主版本支持，或另行评估自建 winit/wgpu viewport。
+- 如果未来自建 viewport，需要重新说明它和 egui panel 的窗口/事件关系。
