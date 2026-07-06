@@ -36,6 +36,7 @@ CI gate 只包含：
 - `cargo run -p runtime -- assets/examples/editor_smoke.scene.ron`
 - `xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron`
 - `cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron`
+- 人工 host-native editor smoke 已确认真实窗口像素输出、两次 `New Cube`、手动移动第二个 cube、保存并重新打开 `.scene.ron`
 
 ## Viewport 入口结论
 
@@ -47,4 +48,4 @@ CI gate 只包含：
 
 ## 未验证
 
-当前 editor smoke 通过退出码和 `editor smoke ok: ... viewport_prepare=..., viewport_paint=...` summary log 确认操作闭环和真实 `ViewportRenderer` path 触达；它不做截图、像素检查或真实 GPU 兼容性证明。人工 host-native GUI smoke 是手动证据层，未进入默认 CI gate。
+当前 editor smoke 通过退出码和 `editor smoke ok: ... viewport_prepare=..., viewport_paint=...` summary log 确认操作闭环和真实 `ViewportRenderer` path 触达；它不做截图、像素检查或真实 GPU 兼容性证明。人工 host-native GUI smoke 已作为手动证据层通过，但仍不等于跨平台 GPU 兼容性证明，也不进入默认 CI gate。

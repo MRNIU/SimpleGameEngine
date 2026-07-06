@@ -8,6 +8,8 @@ cargo run -p editor
 
 手动 smoke 目标：打开 editor，看到 hierarchy、inspector 和 viewport preview，创建 cube，编辑 transform，保存 `.scene.ron`，再 reopen。
 
+2026-07-06 人工 host-native GUI smoke 已通过：真实窗口中确认 viewport 像素输出、两次 `New Cube`、手动移动第二个 cube、保存并重新打开 `.scene.ron`。
+
 Dev Container 中可跑虚拟 X smoke：
 
 ```bash
