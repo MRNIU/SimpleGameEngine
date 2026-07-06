@@ -1,0 +1,43 @@
+(
+  entities: [
+    (
+      id: "root",
+      name: "Root",
+      transform: (
+        translation: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0, 1.0),
+        scale: (1.0, 1.0, 1.0),
+      ),
+      parent: None,
+      camera: None,
+      mesh: None,
+      light: None,
+    ),
+    (
+      id: "camera",
+      name: "Camera",
+      transform: (
+        translation: (0.0, 2.0, 5.0),
+        rotation: (0.0, 0.0, 0.0, 1.0),
+        scale: (1.0, 1.0, 1.0),
+      ),
+      parent: Some("root"),
+      camera: Some((projection: Perspective(fov_y_degrees: 60.0))),
+      mesh: None,
+      light: None,
+    ),
+    (
+      id: "cube",
+      name: "Cube",
+      transform: (
+        translation: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0, 0.0, 1.0),
+        scale: (1.0, 1.0, 1.0),
+      ),
+      parent: Some("root"),
+      camera: None,
+      mesh: Some((asset: "primitive:cube", material: "primitive:default_material")),
+      light: None,
+    ),
+  ],
+)

@@ -1,0 +1,10 @@
+<type>(<scope>): <subject>
+
+# type: feat|fix|refactor|perf|test|docs|build|ci|chore|style|revert
+# scope: optional English identifier, for example docs, cmake, renderer, test
+# subject: 中文优先，保留必要英文术语，不加句号
+# breaking change: add ! before :, for example <type>(<scope>)!: <subject>
+#
+# body: explain why, what changed, risk/compatibility, and validation when useful
+# footer: add issue refs or BREAKING CHANGE only when applicable
+# Signed-off-by is required by default; use git commit -s

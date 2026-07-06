@@ -1,0 +1,30 @@
+{
+  "name": "simple-game-engine-devcontainer",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "options": [
+      "--tag",
+      "simple-game-engine-devcontainer:latest"
+    ]
+  },
+  "runArgs": [
+    "--name",
+    "${localEnv:DEVCONTAINER_NAME}"
+  ],
+  "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && rustc --version && cargo --version",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "editor.formatOnSave": true,
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "EditorConfig.EditorConfig",
+        "GitHub.vscode-pull-request-github",
+        "eamodio.gitlens",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml"
+      ]
+    }
+  }
+}

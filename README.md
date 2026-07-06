@@ -3,29 +3,23 @@
 [![build](https://github.com/MRNIU/SimpleGameEngine/actions/workflows/workflow.yml/badge.svg)](https://github.com/MRNIU/SimpleGameEngine/actions/workflows/workflow.yml)
 [![license](https://img.shields.io/github/license/MRNIU/SimpleGameEngine)](LICENSE)
 
-SimpleGameEngine 是一个转向 Rust 的跨平台游戏引擎实验仓库。项目已决定以新的 Rust engine/editor 架构替换旧 C++ 软件渲染结构；旧实现只通过 Git 历史作为参考，不要求在主线目录中继续保留。
+SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线已经切到 editor-first 的 Rust engine/editor workspace；旧 C++ 软件渲染实现只通过 Git 历史作为参考。
 
 ## 当前边界
 
-- 目标语言：Rust stable channel
-- 目标构建系统：Cargo workspace
-- 目标入口：`crates/`、`assets/`、`examples/`、`tests/`
+- 语言：Rust stable channel
+- 构建系统：Cargo workspace
+- 入口：`crates/`、`assets/`、`examples/`
 - 首个 MVP：editor-first scene editor
-- 旧 C++ 路径：`src/`、`test/unit_test/`、`test/system_test/`、`cmake/`、CMake 配置和旧资源路径均允许在 Rust reset 中删除或替换
-- 旧实现参考：通过 Git 历史查看，不作为新架构的保留边界
+- 自动化测试：crate 内 unit tests 和对应 crate 的 `tests/` integration tests
+- 旧实现参考：通过 Git 历史查看，不作为当前目录保留边界
 
-## 未来计划
+## 当前实现
 
-1. 制定游戏引擎设计目标。
-2. 技术栈切换到 Rust。
-3. 按 Rust 架构更新 Docker、CI、文档和目录结构。
-4. 制定最小 MVP 并实现。
-5. 删除或替换旧 C++ 软件渲染内容；需要参考时通过 Git 历史访问。
-6. 目标平台覆盖 Windows、macOS、Linux；目标架构覆盖 x86_64、aarch64。
-
-## 迁移状态
-
-当前仓库正从旧 C++ 软件渲染结构切换到 Rust engine/editor workspace。Rust reset 落地前，旧 CMake、GoogleTest、SDL C++ 示例和 Doxygen 命令不再作为目标工作流真值；它们可以被删除或替换。
+- Cargo workspace 包含 `app`、`ecs`、`math`、`asset`、`scene`、`render`、`window`、`input`、`editor`、`runtime`。
+- `ecs` 保存 entity/component 真源，`scene` 负责 `.scene.ron` roundtrip，`render` 从 ECS 抽取 viewport 数据。
+- `editor` 提供 egui native shell、hierarchy、inspector、viewport draw-call 预览、create cube、save/reopen smoke path。
+- `runtime` 可以加载示例 `.scene.ron` 并抽取 render scene 和 viewport draw call。
 
 已批准的架构设计见：
 
@@ -33,7 +27,7 @@ SimpleGameEngine 是一个转向 Rust 的跨平台游戏引擎实验仓库。项
 
 ## 快速开始
 
-项目默认使用 Dev Container。宿主机只负责 Git 与 Docker/Dev Container 编排，不默认安装 Rust、CMake、编译器或项目依赖。Rust workspace 落地后，README 将以 Cargo 命令作为构建、测试和运行真值源。
+项目默认使用 Dev Container。宿主机只负责 Git 与 Docker/Dev Container 编排，不默认安装 Rust、编译器或项目依赖。
 
 ```bash
 DEVCONTAINER_USER="$(id -un | sed -E 's/[^[:alnum:]_.-]+/-/g; s/^-+//; s/-+$//')"
@@ -47,24 +41,26 @@ docker inspect "$DEVCONTAINER_NAME" >/dev/null 2>&1 || \
 docker start "$DEVCONTAINER_NAME" >/dev/null 2>&1 || true
 ```
 
-Rust reset 的目标验证命令：
+验证命令：
 
 ```bash
 docker exec "$DEVCONTAINER_NAME" bash -lc 'git config --global --add safe.directory /workspace'
-docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo fmt --check'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo fmt --all --check'
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo clippy --workspace --all-targets -- -D warnings'
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo test --workspace --all-targets'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo build --workspace'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron'
 ```
 
 支持 Dev Container 的编辑器也使用同一个容器名。打开项目前先导出 `DEVCONTAINER_NAME`。
 
 ## 常用命令
 
-以下命令在 Rust workspace 落地后成为真值源：
+以下命令是项目真值源：
 
 ```bash
 # 格式化检查
-docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo fmt --check'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo fmt --all --check'
 
 # 静态检查
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo clippy --workspace --all-targets -- -D warnings'
@@ -77,6 +73,9 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo build --workspace'
 
 # 运行 editor；host-native 是 opt-in，GUI smoke 不属于默认 Dev Container gate
 cargo run -p editor
+
+# 虚拟 X editor smoke；通过退出码和 summary log 验证窗口路径、自动 save/reopen 和 draw-call
+docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron'
 ```
 
 ## 代码结构
@@ -86,14 +85,14 @@ cargo run -p editor
 | `crates/` | Rust engine/editor workspace crates |
 | `assets/` | primitive 和示例资源 |
 | `examples/` | 示例入口和 smoke |
-| `tests/` | Rust integration tests |
+| `crates/*/tests/` | Rust integration tests |
 | `docs/` | 项目约定 |
-| `src/`、`cmake/`、旧 `test/` | 旧 C++ 结构，可在 Rust reset 中删除或替换 |
 
 ## 文档入口
 
 - `AGENTS.md`：项目级规则和 AI agent 工作流
 - `docs/conventions.md`：代码、文档、测试和环境约定
+- `docs/architecture/overview.md`：当前 Rust workspace 架构边界
 - `.gitmessage`：commit message 模板
 
 ## 许可证

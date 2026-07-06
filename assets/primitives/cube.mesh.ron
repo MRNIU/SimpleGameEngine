@@ -1,0 +1,5 @@
+(
+  id: "primitive:cube",
+  vertices: 8,
+  triangles: 12,
+)

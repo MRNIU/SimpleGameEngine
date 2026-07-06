@@ -30,9 +30,9 @@
 | `crates/render/` | wgpu 初始化、viewport mesh render、camera | editor 数据结构所有权 |
 | `crates/editor/` | egui panels、hierarchy、inspector、viewport | 底层 ECS 存储实现 |
 | `assets/` | primitive 和示例资源 | 运行时生成缓存 |
-| `tests/` | Rust integration tests | 依赖人工 GUI 的唯一验证 |
+| `crates/*/tests/` | Rust integration tests | 依赖人工 GUI 的唯一验证 |
 
-旧 `src/`、`test/unit_test/`、`test/system_test/`、`cmake/`、CMake 配置和 C++ 资源路径不是新的保留边界，可在 Rust reset 中删除或替换。
+旧 `src/`、`test/unit_test/`、`test/system_test/`、`cmake/`、CMake 配置和 C++ 资源路径不是新的保留边界；当前 Rust reset 后如需参考旧实现，通过 Git 历史查看。
 
 ## 项目级硬约束
 
@@ -69,7 +69,7 @@
 
 最后审阅日期：2026-07-06
 
-- 当前阶段：Rust engine/editor 架构设计已确定，准备执行 Rust reset
-- 活跃重点：按 editor-first scene editor MVP 替换旧 C++ 仓库结构
-- 已知技术债：旧 C++、CMake、CPM、GoogleTest、SDL C++ 示例和相关文档需要删除或替换
-- 下一个里程碑：形成 implementation plan，再执行 Rust workspace、Docker、CI 和文档更新
+- 当前阶段：Rust reset 已落地为 Cargo workspace
+- 活跃重点：收集 host-native GUI smoke 证据
+- 已知技术债：虚拟 X smoke 只验证操作闭环和 draw-call summary；真实窗口像素/GPU smoke 尚未验证
+- 下一个里程碑：host-native editor smoke：打开窗口、创建 cube、编辑 transform、保存并重新打开 `.scene.ron`

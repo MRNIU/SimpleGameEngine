@@ -1,17 +1,13 @@
-
-# This file is a part of Simple-XX/SimpleRenderer
-# (https://github.com/Simple-XX/SimpleRenderer).
-#
-# .gitignore for Simple-XX/SimpleRenderer.
-
 *.o
 .DS_Store
-build
-cmake-build*
-.gdbinit
-tools/opensbi/build
-.vscode
-.idea
-3rd
-Doxyfile
-src/include/config.h
+/target/
+/build/
+/cmake-build*/
+.vscode/
+.idea/
+.claude/
+.codex/
+.superpowers/
+/docs/superpowers/plans/
+.worktrees/
+.aider*

@@ -30,7 +30,7 @@
 
 ## 测试约定
 
-- 可自动化逻辑优先放在 crate 内 unit tests 或 `tests/` integration tests。
+- 可自动化逻辑优先放在 crate 内 unit tests 或对应 crate 的 `tests/` integration tests。
 - 依赖真实窗口、键盘、鼠标或 GPU 图形会话的验证作为手动 host smoke 或可选 self-hosted GPU runner，不作为默认自动 release gate。
 - 新增非平凡分支、循环、解析或算法时，至少留下一个能失败的测试或 smoke。
 
