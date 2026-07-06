@@ -45,7 +45,7 @@
 
 | 区域 | 职责 |
 | --- | --- |
-| `ecs` | 提供 rename、delete subtree、duplicate 需要的最小 `World` 操作，并保持 parent/children cache 一致 |
+| `ecs` | 提供 rename、delete subtree 等最小结构操作，并保持 parent/children cache 一致 |
 | `scene` | 继续只保存 ECS 可保存子集，不保存 selection、panel 展开状态或 dirty 状态 |
 | `editor::model` | 聚合 editor 动作：create、select、rename、duplicate、delete、edit transform、save/reopen |
 | `editor::app` | 负责 egui 布局、按钮、状态文案，把动作交给 `EditorModel` |
@@ -56,6 +56,7 @@
 
 - `EntityId` 继续是稳定 ID；rename 只改 `EntityRecord.name`。
 - UI 不直接修改 `World` 细节，必须通过 `EditorModel` 动作。
+- `EditorModel` 负责保护实体、名称、transform 和 duplicate 策略；`ecs` 只表达实体结构错误。
 - `scene` 不保存 editor-only 状态。
 - 不新增 project system、component registry、reflect metadata 或 asset browser。
 
@@ -78,18 +79,20 @@
 
 ### Duplicate
 
-- 复制当前选中普通实体的可保存组件。
+- 复制当前选中普通实体的明确字段：`name`、`transform`、`parent`、`mesh`、`light`。
+- `camera` 不复制；如果后续出现非保护 camera 实体，再另行设计 camera duplicate。
 - 新实体生成唯一 `EntityId`，例如 `cube_1`、`cube_2`。
 - 新实体名称使用原名加 ` Copy`，必要时继续追加数字。
 - 新实体挂到原实体相同 parent 下。
 - 首版不复制子树。
 - `root` 和 `camera` 不支持 duplicate。
+- duplicate 不依赖 `World::spawn` 报重复 id。当前 `World::spawn` 会覆盖同 id；本 milestone 由 `EditorModel` 先生成并检查唯一 id，再调用 `spawn`。
 
 ### Transform Edit
 
 - Inspector 支持编辑 `translation`、`rotation`、`scale`。
-- `scale` 的最小约束是各轴不能为 `0.0`。
-- rotation 首版保留为 quaternion 四元数数值编辑，不做 Euler UI 或 gizmo。
+- `EditorModel` 在写入前校验 transform：所有浮点必须 finite，`scale` 各轴不能为 `0.0`，rotation 四元数不能是零长度。
+- rotation 首版保留为 quaternion 四元数数值编辑，不做 Euler UI 或 gizmo；写入时可把 finite 非零 quaternion 归一化。
 
 ## Hierarchy
 
@@ -124,13 +127,14 @@ Inspector 显示并编辑当前 selection：
 
 ## Dirty 和 Save/Reopen
 
-Dirty 规则：
+Dirty 规则由 `EditorModel` 持有；文件 IO 仍在 `editor::app` 层。
 
 - create、rename、delete、duplicate、transform edit 后置 dirty。
-- save 成功后清 dirty。
-- save 失败保留当前 model 和 dirty。
-- reopen 成功后替换 model 并清 dirty。
-- reopen 失败保留当前 model 和 dirty。
+- `EditorModel::save_scene_to_string` 仍是只读导出，不直接清 dirty。
+- app 层 save 成功写盘后调用 `EditorModel` 的 saved 标记清 dirty。
+- app 层 save 失败时不调用 saved 标记，保留当前 model 和 dirty。
+- app 层 reopen 成功解析后调用 `EditorModel` 的 replace/reopen helper，替换 model 并清 dirty。
+- app 层 reopen 失败保留当前 model 和 dirty。
 
 Reopen 后 selection 策略：
 
@@ -146,6 +150,7 @@ viewport 继续使用现有 primitive cube draw-call。
 - selected cube 使用不同颜色或边框。
 - 非 cube 实体没有 viewport highlight。
 - 选中反馈通过 draw-call 数据表达，`render` 不拥有 editor selection 状态。
+- 本 milestone 需要把现有 `render::viewport_draw_call(&RenderScene)` 扩展为 selected-aware API，或新增薄包装；`EditorModel::viewport_draw_call` 负责传入当前 selection。
 
 不做：
 
@@ -171,14 +176,19 @@ egui action
 
 ## 错误处理
 
-`ecs` 返回 typed error：
+`ecs` 继续只返回结构性 typed error：
 
 - missing entity
-- duplicate entity id
 - self parent
+
+`scene::load_scene` 通过 `World::from_records` 继续保留 duplicate entity id 检查。
+
+`EditorModel` 返回 editor-level error：
+
 - protected entity operation
 - invalid entity name
 - invalid transform value
+- duplicate id generation exhausted or collided unexpectedly
 
 `EditorModel` 把错误转为用户可见状态；editor 不因为用户操作失败而 panic。
 
@@ -188,8 +198,8 @@ egui action
 
 最小自动测试：
 
-- `ecs` tests：rename、protected delete、recursive delete、duplicate parent 保持、children cache rebuild。
-- `editor` model tests：create two cubes、rename、edit transform、duplicate、delete、dirty 状态、save/reopen selection 策略。
+- `ecs` tests：rename、recursive delete、children cache rebuild、`from_records` duplicate id 仍报错。
+- `editor` model tests：create two cubes、rename、edit transform validation、duplicate、protected delete/duplicate、dirty 状态、save/reopen selection 策略。
 - `scene` roundtrip tests：name、parent、transform、mesh/camera 保存恢复。
 - `render` tests：selected cube draw-call 使用可区分反馈。
 - editor smoke：create two cubes、rename/edit/duplicate 或 delete、save/reopen、viewport prepare/paint path reached。
@@ -197,11 +207,11 @@ egui action
 验收命令沿用 README：
 
 ```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
-cargo build --workspace
-xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo fmt --all --check'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo clippy --workspace --all-targets -- -D warnings'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo test --workspace --all-targets'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo build --workspace'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron'
 ```
 
 默认 gate 仍是 fmt、clippy、test。GUI smoke 是证据层，不代表跨平台 GPU 兼容性证明。
