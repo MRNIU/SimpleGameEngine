@@ -200,7 +200,7 @@ classDiagram
     EntityId parent
   }
 
-  class Children {
+  class ChildrenCache {
     Vec~EntityId~ children
   }
 
@@ -231,7 +231,7 @@ classDiagram
   World --> Entity
   Entity --> Name
   Entity --> Parent
-  Entity --> Children
+  Entity --> ChildrenCache
   Entity --> Transform
   Entity --> Camera
   Entity --> MeshRef
@@ -241,9 +241,10 @@ classDiagram
 
 ECS 是真源：
 
-- editor hierarchy 从 `Parent`、`Children`、`Name` 组件投影出来。
+- editor hierarchy 从 `Parent` 和 `Name` 组件投影出来。
 - Inspector 直接编辑组件数据。
 - Viewport 从 ECS 读取 `Transform + MeshRef + MaterialRef + Camera/Light` 子集，再交给 `render`。
+- `Parent` 是持久化真源；`Children` 是加载后由 `Parent` 重建的运行时缓存，不作为普通可保存组件。
 - ECS 首版不做 archetype、不做并行调度、不做 change detection。
 
 `.scene.ron` 保存 ECS 可保存子集，不保存 GPU 资源、窗口状态、editor panel 状态。
@@ -263,12 +264,30 @@ Scene(
           scale: [1.0, 1.0, 1.0],
         ),
       ],
-      children: ["camera", "cube"],
+    ),
+    Entity(
+      id: "camera",
+      name: "Camera",
+      components: [
+        Parent(parent: "root"),
+        Transform(
+          translation: [0.0, 2.0, 5.0],
+          rotation: [0.0, 0.0, 0.0, 1.0],
+          scale: [1.0, 1.0, 1.0],
+        ),
+        Camera(projection: Perspective(fov_y_degrees: 60.0)),
+      ],
     ),
     Entity(
       id: "cube",
       name: "Cube",
       components: [
+        Parent(parent: "root"),
+        Transform(
+          translation: [0.0, 0.0, 0.0],
+          rotation: [0.0, 0.0, 0.0, 1.0],
+          scale: [1.0, 1.0, 1.0],
+        ),
         MeshRef(asset: "primitive:cube"),
         MaterialRef(asset: "primitive:default_material"),
       ],
@@ -402,8 +421,8 @@ Test layers:
 | Unit | `ecs` component/query, `math` transform, `asset` resolve |
 | Integration | `.scene.ron` save/load roundtrip |
 | Render headless | render data extraction and resource descriptor tests without a real window |
-| Editor smoke | Manual or optional self-hosted GPU runner: open window, create cube, save, reopen |
-| Release gate | fmt, clippy, and test must pass automatically |
+| Editor smoke | Manual host-native smoke or optional self-hosted GPU runner: open window, create cube, save, reopen |
+| Release gate | fmt, clippy, and test must pass automatically; GUI editor smoke is recorded evidence, not the default automatic gate |
 
 ## Completion Definition
 
@@ -412,10 +431,8 @@ The first implementation phase is complete when:
 - C++/CMake/GoogleTest/CPM/SDL C++ structure is removed or replaced.
 - Rust workspace builds inside the Dev Container.
 - CI runs Rust fmt, clippy, and tests.
-- `editor` opens a window with hierarchy, inspector, and viewport.
-- User can create at least one cube entity and edit transform.
-- User can save and load `.scene.ron`.
-- Viewport displays a minimal mesh/camera result through wgpu.
+- Manual host-native editor smoke, or optional self-hosted GPU runner smoke, proves that `editor` opens a window with hierarchy, inspector, and viewport.
+- The same GUI smoke proves that a user can create at least one cube entity, edit transform, save `.scene.ron`, reopen it, and see a minimal mesh/camera result through wgpu.
 
 ## Explicit Non-Goals
 

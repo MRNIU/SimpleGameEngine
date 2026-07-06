@@ -1,205 +1,101 @@
-[![codecov](https://codecov.io/gh/Simple-XX/SimpleRenderer/graph/badge.svg?token=J7NKK3SBNJ)](https://codecov.io/gh/Simple-XX/SimpleRenderer)
-![workflow](https://github.com/Simple-XX/SimpleRenderer/actions/workflows/workflow.yml/badge.svg)
-![commit-activity](https://img.shields.io/github/commit-activity/t/Simple-XX/SimpleRenderer)
-![last-commit-main](https://img.shields.io/github/last-commit/Simple-XX/SimpleRenderer/main)
-![MIT License](https://img.shields.io/github/license/mashape/apistatus.svg)
-[![LICENSE](https://img.shields.io/badge/license-Anti%20996-blue.svg)](https://github.com/996icu/996.ICU/blob/master/LICENSE)
-[![996.icu](https://img.shields.io/badge/link-996.icu-red.svg)](https://996.icu)
+# SimpleGameEngine
 
-# SimpleRenderer
+[![build](https://github.com/MRNIU/SimpleGameEngine/actions/workflows/workflow.yml/badge.svg)](https://github.com/MRNIU/SimpleGameEngine/actions/workflows/workflow.yml)
+[![license](https://img.shields.io/github/license/MRNIU/SimpleGameEngine)](LICENSE)
 
-[![cn](https://img.shields.io/badge/language-Chinese-pink.svg)](https://github.com/Simple-XX/SimpleRenderer/blob/main/README-cn.md)
-[![en](https://img.shields.io/badge/language-English-lightblue.svg)](https://github.com/Simple-XX/SimpleRenderer/blob/main/README.md)
+SimpleGameEngine 是一个转向 Rust 的跨平台游戏引擎实验仓库。项目已决定以新的 Rust engine/editor 架构替换旧 C++ 软件渲染结构；旧实现只通过 Git 历史作为参考，不要求在主线目录中继续保留。
 
-An educational C++ software renderer designed to help developers understand the inner workings of rendering pipelines and how OpenGL operates behind the scenes.
+## 当前边界
 
-## Overview
+- 目标语言：Rust stable channel
+- 目标构建系统：Cargo workspace
+- 目标入口：`crates/`、`assets/`、`examples/`、`tests/`
+- 首个 MVP：editor-first scene editor
+- 旧 C++ 路径：`src/`、`test/unit_test/`、`test/system_test/`、`cmake/`、CMake 配置和旧资源路径均允许在 Rust reset 中删除或替换
+- 旧实现参考：通过 Git 历史查看，不作为新架构的保留边界
 
-SimpleRenderer is a software renderer built with the primary goal of educating developers about the fundamentals of 3D rendering and graphics pipelines. By providing a simplified yet functional rendering framework, it demystifies the complex processes involved in rendering graphics, mirroring how OpenGL and other graphics APIs work under the hood.
+## 未来计划
 
-### Purpose
+1. 制定游戏引擎设计目标。
+2. 技术栈切换到 Rust。
+3. 按 Rust 架构更新 Docker、CI、文档和目录结构。
+4. 制定最小 MVP 并实现。
+5. 删除或替换旧 C++ 软件渲染内容；需要参考时通过 Git 历史访问。
+6. 目标平台覆盖 Windows、macOS、Linux；目标架构覆盖 x86_64、aarch64。
 
-- **Educational Focus**: Designed to teach the core concepts of rendering, including vertex processing, rasterization, shading, and transformations.
-- **Demystifying OpenGL**: Offers insights into how OpenGL and GPU-based rendering pipelines function internally.
-- **Hands-On Learning**: Allows developers to experiment with rendering algorithms and observe the effects of various techniques in real-time.
+## 迁移状态
 
-### Key Features
+当前仓库正从旧 C++ 软件渲染结构切换到 Rust engine/editor workspace。Rust reset 落地前，旧 CMake、GoogleTest、SDL C++ 示例和 Doxygen 命令不再作为目标工作流真值；它们可以被删除或替换。
 
-- **Customizable Shaders**: Implemented vertex and fragment shaders to demonstrate how shading works at a fundamental level.
-- **Simplified Rendering Pipeline**: Breaks down the rendering process into understandable stages, mirroring the OpenGL pipeline.
-- **Cross-Platform Compatibility**: Compatible with Linux and macOS, facilitating learning across different environments.
-- **Extensive Documentation**: Provides detailed explanations of each component to aid learning and comprehension.
+已批准的架构设计见：
 
-### Learning Objectives
+- `docs/superpowers/specs/2026-07-06-rust-engine-architecture-design.md`
 
-By exploring SimpleRenderer, you will learn:
+## 快速开始
 
-- How vertices are transformed from 3D space to 2D screen coordinates.
-- The process of assembling primitives (triangles) and performing clipping.
-- How rasterization converts vector information into pixels.
-- The fundamentals of shading models, including lighting calculations.
-- How depth buffering and backface culling optimize rendering.
-
----
-
-## Getting Started
-
-### Prerequisites
-
-Ensure you have the following dependencies installed:
+项目默认使用 Dev Container。宿主机只负责 Git 与 Docker/Dev Container 编排，不默认安装 Rust、CMake、编译器或项目依赖。Rust workspace 落地后，README 将以 Cargo 命令作为构建、测试和运行真值源。
 
 ```bash
-sudo apt install doxygen graphviz clang-format clang-tidy cppcheck lcov gcc g++ libsdl2-dev libsdl2-ttf-dev libomp-dev libspdlog-dev cmake libassimp-dev
+DEVCONTAINER_USER="$(id -un | sed -E 's/[^[:alnum:]_.-]+/-/g; s/^-+//; s/-+$//')"
+DEVCONTAINER_BRANCH="$(git branch --show-current | sed -E 's/[^[:alnum:]_.-]+/-/g; s/^-+//; s/-+$//')"
+if [ -z "$DEVCONTAINER_BRANCH" ]; then echo "detached HEAD is not supported" >&2; exit 1; fi
+export DEVCONTAINER_NAME="simple-game-engine-devcontainer-${DEVCONTAINER_USER}-${DEVCONTAINER_BRANCH}"
+
+docker build -t simple-game-engine-devcontainer:latest .devcontainer
+docker inspect "$DEVCONTAINER_NAME" >/dev/null 2>&1 || \
+  docker run -d --name "$DEVCONTAINER_NAME" -v "$PWD:/workspace" -w /workspace simple-game-engine-devcontainer:latest sleep infinity
+docker start "$DEVCONTAINER_NAME" >/dev/null 2>&1 || true
 ```
 
-For macOS users, install dependencies using Homebrew:
+Rust reset 的目标验证命令：
 
 ```bash
-brew install doxygen graphviz clang-format clang-tidy cppcheck lcov gcc sdl2 sdl2_ttf libomp spdlog cmake assimp
+docker exec "$DEVCONTAINER_NAME" bash -lc 'git config --global --add safe.directory /workspace'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo fmt --check'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo clippy --workspace --all-targets -- -D warnings'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo test --workspace --all-targets'
 ```
 
-### Building the Project
+支持 Dev Container 的编辑器也使用同一个容器名。打开项目前先导出 `DEVCONTAINER_NAME`。
 
-#### 1. Clone the Repository
+## 常用命令
+
+以下命令在 Rust workspace 落地后成为真值源：
 
 ```bash
-git clone https://github.com/Simple-XX/SimpleRenderer.git
-cd SimpleRenderer
+# 格式化检查
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo fmt --check'
+
+# 静态检查
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo clippy --workspace --all-targets -- -D warnings'
+
+# 运行测试
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo test --workspace --all-targets'
+
+# 构建 workspace
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo build --workspace'
+
+# 运行 editor；host-native 是 opt-in，GUI smoke 不属于默认 Dev Container gate
+cargo run -p editor
 ```
 
-#### 2. Configure and Build Using CMake Presets
+## 代码结构
 
-For a standard build:
+| 路径 | 职责 |
+|------|------|
+| `crates/` | Rust engine/editor workspace crates |
+| `assets/` | primitive 和示例资源 |
+| `examples/` | 示例入口和 smoke |
+| `tests/` | Rust integration tests |
+| `docs/` | 项目约定 |
+| `src/`、`cmake/`、旧 `test/` | 旧 C++ 结构，可在 Rust reset 中删除或替换 |
 
-```bash
-cmake --preset=build
-cmake --build build --target all
-```
+## 文档入口
 
-For macOS:
+- `AGENTS.md`：项目级规则和 AI agent 工作流
+- `docs/conventions.md`：代码、文档、测试和环境约定
+- `.gitmessage`：commit message 模板
 
-```bash
-cmake --preset=build-macos
-cmake --build build-macos --target all
-```
+## 许可证
 
-#### 3. Run the Example Application
-
-```bash
-./build/bin/system_test ./obj
-```
-
----
-
-## Understanding the Renderer
-
-### Core Rendering Pipeline
-
-The rendering pipeline in SimpleRenderer is designed to mirror the stages of a typical GPU-based pipeline, providing a clear view of how each component contributes to the final rendered image.
-
-1. **Vertex Processing and Transformations**
-
-   - **Objective**: Understand how 3D models are projected onto a 2D screen.
-   - **Key Concepts**:
-     - **Model Matrix**: Positions and orients models in the world.
-     - **View Matrix**: Represents the camera's position and orientation.
-     - **Projection Matrix**: Defines the camera's lens (field of view, aspect ratio).
-
-2. **Primitive Assembly and Clipping**
-
-   - **Objective**: Learn how individual vertices form triangles and how off-screen parts are handled.
-   - **Key Concepts**:
-     - **Triangle Assembly**: Grouping vertices into drawable primitives.
-     - **Clipping**: Discarding or adjusting primitives outside the view frustum.
-
-3. **Rasterization and Fragment Processing**
-
-   - **Objective**: Discover how triangles are converted into pixel data.
-   - **Key Concepts**:
-     - **Barycentric Coordinates**: Used for interpolating vertex attributes across a triangle.
-     - **Depth Buffering**: Ensures correct rendering of overlapping objects.
-     - **Fragment Shaders**: Calculate the color and other attributes of each pixel.
-
-4. **Shading and Lighting Models**
-
-   - **Objective**: Explore how lighting affects the appearance of surfaces.
-   - **Key Concepts**:
-     - **Phong Shading Model**: Simulates realistic lighting with ambient, diffuse, and specular components.
-     - **Surface Normals**: Determine how light interacts with surfaces.
-     - **Light Sources**: Understand different types of lights (directional, point, ambient).
-
-5. **Optimization Techniques**
-
-   - **Objective**: Learn methods to improve rendering efficiency.
-   - **Key Concepts**:
-     - **Backface Culling**: Eliminates faces not visible to the camera.
-     - **Spatial Partitioning**: Organizes objects to reduce rendering workload.
-
-### Code Structure
-
-- **src/rasterizer.cpp**
-
-  Focuses on the rasterization process, converting vector data into raster images. Key learning points include:
-
-  - Implementing barycentric interpolation.
-  - Managing depth buffering.
-  - Handling edge cases in rasterization.
-
-- **src/renderer.cpp**
-
-  Orchestrates the rendering process. Highlights include:
-
-  - Setting up transformation matrices.
-  - Managing the rendering loop.
-  - Integrating shaders and handling user input.
-
-- **src/include/**
-
-  Contains header files with detailed comments explaining the purpose and functionality of classes and methods.
-
----
-
-## Experimentation and Learning
-
-To maximize learning, consider the following steps:
-
-- **Modify Shaders**
-
-  Experiment with the shader code to see how changes affect rendering.
-
-- **Adjust Transformations**
-
-  Play with the model, view, and projection matrices to understand their impact on the scene.
-
-- **Implement New Features**
-
-  Try adding new lighting models, textures, or shading techniques.
-
----
-
-## Documentation
-
-Generate the documentation to delve deeper into the codebase:
-
-````bash
-cmake --build build --target doc
-xdg-open doc/html/index.html
-````
-
-The documentation provides detailed explanations and diagrams to enhance understanding.
-
----
-
-## Contributions
-
-Your contributions can help others learn. Feel free to:
-
-- Submit pull requests with improvements or new educational features.
-- Report issues or suggest enhancements.
-- Share your learning experiences.
-
----
-
-## License
-
-This project is licensed under the MIT License. See the `LICENSE` file for more information.
+本项目继承 MIT License。详见 `LICENSE`。
