@@ -71,5 +71,5 @@
 
 - 当前阶段：Rust reset 已落地为 Cargo workspace；editor 已通过 `eframe::Renderer::Wgpu` 接入 `render::ViewportRenderer`
 - 已通过证据：人工 host-native editor smoke 已确认真实窗口像素输出、两次 `New Cube`、手动移动第二个 cube、保存并重新打开 `.scene.ron`
-- 已知技术债：`crates/editor/src/lib.rs` 仍超过 500 行；继续扩 editor 功能前应按现有 `model` / `app` / `viewport` 边界瘦身
-- 下一个里程碑：editor 文件瘦身，只拆现有边界，不新增用户可见行为
+- 已完成收口：editor 已按现有 `model` / `app` / `viewport` 边界拆薄，`crates/editor/src/lib.rs` 只保留模块入口和 re-export
+- 下一个里程碑：继续扩 editor 功能前先明确单个用户可见目标，不新增空壳 crate 或大管线
