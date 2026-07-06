@@ -228,21 +228,23 @@ pub const fn viewport_vertex_buffer_layout() -> wgpu::VertexBufferLayout<'static
 #[must_use]
 pub fn viewport_draw_call(scene: &RenderScene) -> Option<ViewportDrawCall> {
     let camera = scene.active_camera.as_ref()?;
-    let mesh = scene
+    let cube_meshes = scene
         .meshes
         .iter()
-        .find(|mesh| mesh.mesh_asset == "primitive:cube")?;
-
-    let x = mesh.transform.translation[0] * 0.12;
-    let y = mesh.transform.translation[1] * 0.12;
+        .filter(|mesh| mesh.mesh_asset == "primitive:cube");
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
     let size = 0.28;
 
-    Some(ViewportDrawCall {
-        label: mesh.mesh_asset.clone(),
-        camera_entity: camera.entity.clone(),
-        vertex_count: 4,
-        index_count: 6,
-        vertices: vec![
+    for mesh in cube_meshes {
+        let x = mesh.transform.translation[0] * 0.12;
+        let y = mesh.transform.translation[1] * 0.12;
+        let base = u16::try_from(vertices.len()).ok()?;
+        let i1 = base.checked_add(1)?;
+        let i2 = base.checked_add(2)?;
+        let i3 = base.checked_add(3)?;
+
+        vertices.extend([
             ViewportVertex {
                 position: [x - size, y - size, 0.0],
                 color: [0.3, 0.64, 1.0, 1.0],
@@ -259,9 +261,46 @@ pub fn viewport_draw_call(scene: &RenderScene) -> Option<ViewportDrawCall> {
                 position: [x - size, y + size, 0.0],
                 color: [0.3, 0.64, 1.0, 1.0],
             },
-        ],
-        indices: vec![0, 1, 2, 0, 2, 3],
+        ]);
+        indices.extend([base, i1, i2, base, i2, i3]);
+    }
+    if vertices.is_empty() {
+        return None;
+    }
+
+    Some(ViewportDrawCall {
+        label: "primitive:cube".to_owned(),
+        camera_entity: camera.entity.clone(),
+        vertex_count: vertices.len(),
+        index_count: indices.len(),
+        vertices,
+        indices,
     })
+}
+
+#[must_use]
+pub fn fit_viewport_draw_to_size(
+    draw: &ViewportDrawCall,
+    viewport_size: [f32; 2],
+) -> ViewportDrawCall {
+    let [width, height] = viewport_size;
+    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+        return draw.clone();
+    }
+
+    let mut fitted = draw.clone();
+    if width < height {
+        let scale = width / height;
+        for vertex in &mut fitted.vertices {
+            vertex.position[1] *= scale;
+        }
+    } else if width > height {
+        let scale = height / width;
+        for vertex in &mut fitted.vertices {
+            vertex.position[0] *= scale;
+        }
+    }
+    fitted
 }
 
 #[must_use]
@@ -300,22 +339,44 @@ fn empty_buffer(
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_render_scene, viewport_draw_call, viewport_pipeline_info,
-        viewport_vertex_buffer_layout, viewport_vertex_bytes,
+        extract_render_scene, fit_viewport_draw_to_size, viewport_draw_call,
+        viewport_pipeline_info, viewport_vertex_buffer_layout, viewport_vertex_bytes,
     };
     use ecs::{Camera, EntityId, MeshRef, Projection, World};
     use math::Transform;
 
-    #[test]
-    fn extracts_mesh_draws_from_ecs() {
+    fn world_with_camera() -> World {
         let mut world = World::new();
-        world.spawn(EntityId::new("cube"), "Cube", Transform::identity());
+        world.spawn(EntityId::new("camera"), "Camera", Transform::identity());
+        world
+            .insert_camera(
+                "camera",
+                Camera::new(Projection::Perspective {
+                    fov_y_degrees: 60.0,
+                }),
+            )
+            .unwrap();
+        world
+    }
+
+    fn add_cube(world: &mut World, id: &str, translation: [f32; 3]) {
+        world.spawn(
+            EntityId::new(id),
+            "Cube",
+            Transform::from_translation(translation),
+        );
         world
             .insert_mesh(
-                "cube",
+                id,
                 MeshRef::new("primitive:cube", "primitive:default_material"),
             )
             .unwrap();
+    }
+
+    #[test]
+    fn extracts_mesh_draws_from_ecs() {
+        let mut world = World::new();
+        add_cube(&mut world, "cube", [0.0, 0.0, 0.0]);
 
         let render_scene = extract_render_scene(&world);
 
@@ -339,27 +400,8 @@ mod tests {
 
     #[test]
     fn viewport_draw_call_uses_camera_and_cube_mesh() {
-        let mut world = World::new();
-        world.spawn(
-            EntityId::new("camera"),
-            "Camera",
-            Transform::from_translation([0.0, 2.0, 5.0]),
-        );
-        world
-            .insert_camera(
-                "camera",
-                Camera::new(Projection::Perspective {
-                    fov_y_degrees: 60.0,
-                }),
-            )
-            .unwrap();
-        world.spawn(EntityId::new("cube"), "Cube", Transform::identity());
-        world
-            .insert_mesh(
-                "cube",
-                MeshRef::new("primitive:cube", "primitive:default_material"),
-            )
-            .unwrap();
+        let mut world = world_with_camera();
+        add_cube(&mut world, "cube", [0.0, 0.0, 0.0]);
 
         let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
 
@@ -367,6 +409,33 @@ mod tests {
         assert_eq!(draw.vertex_count, 4);
         assert_eq!(draw.index_count, 6);
         assert_eq!(draw.camera_entity, EntityId::new("camera"));
+    }
+
+    #[test]
+    fn viewport_draw_call_includes_all_cube_meshes() {
+        let mut world = world_with_camera();
+        add_cube(&mut world, "cube", [0.0, 0.0, 0.0]);
+        add_cube(&mut world, "cube_1", [2.0, 0.0, 0.0]);
+
+        let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
+
+        assert_eq!(draw.vertex_count, 8);
+        assert_eq!(draw.index_count, 12);
+        assert_eq!(draw.indices, vec![0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+    }
+
+    #[test]
+    fn viewport_draw_can_be_fit_to_tall_viewport_without_stretching_pixels() {
+        let mut world = world_with_camera();
+        add_cube(&mut world, "cube", [0.0, 0.0, 0.0]);
+        let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
+
+        let fitted = fit_viewport_draw_to_size(&draw, [300.0, 600.0]);
+        let x_span = fitted.vertices[1].position[0] - fitted.vertices[0].position[0];
+        let y_span = fitted.vertices[2].position[1] - fitted.vertices[1].position[1];
+
+        assert_eq!(x_span, 0.56);
+        assert_eq!(y_span, 0.28);
     }
 
     #[test]
@@ -382,23 +451,8 @@ mod tests {
 
     #[test]
     fn viewport_vertex_bytes_match_vertex_count() {
-        let mut world = World::new();
-        world.spawn(EntityId::new("camera"), "Camera", Transform::identity());
-        world
-            .insert_camera(
-                "camera",
-                Camera::new(Projection::Perspective {
-                    fov_y_degrees: 60.0,
-                }),
-            )
-            .unwrap();
-        world.spawn(EntityId::new("cube"), "Cube", Transform::identity());
-        world
-            .insert_mesh(
-                "cube",
-                MeshRef::new("primitive:cube", "primitive:default_material"),
-            )
-            .unwrap();
+        let mut world = world_with_camera();
+        add_cube(&mut world, "cube", [0.0, 0.0, 0.0]);
         let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
 
         assert_eq!(

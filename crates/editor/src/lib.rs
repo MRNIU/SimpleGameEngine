@@ -15,7 +15,8 @@ use ecs::{Camera, EntityId, MeshRef, Projection, World};
 use eframe::{egui, egui_wgpu, wgpu};
 use math::Transform;
 use render::{
-    RenderScene, ViewportDrawCall, ViewportRenderer, extract_render_scene, viewport_draw_call,
+    RenderScene, ViewportDrawCall, ViewportRenderer, extract_render_scene,
+    fit_viewport_draw_to_size, viewport_draw_call,
 };
 
 const ROOT_ID: &str = "root";
@@ -509,10 +510,11 @@ fn draw_viewport(
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(18, 24, 29));
     if let Some((draw, probe)) = draw.zip(wgpu_probe) {
+        let draw = fit_viewport_draw_to_size(draw, [rect.width(), rect.height()]);
         painter.add(egui_wgpu::Callback::new_paint_callback(
             rect,
             ViewportWgpuCallback {
-                draw: draw.clone(),
+                draw,
                 probe: probe.clone(),
             },
         ));
