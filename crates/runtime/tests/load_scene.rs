@@ -16,6 +16,6 @@ fn runtime_loads_editor_smoke_scene() {
         runtime::load_viewport_draw_from_path(&path)
             .unwrap()
             .index_count,
-        6
+        36
     );
 }

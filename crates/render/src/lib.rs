@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 
 use ecs::{Camera, EntityId, World};
-use math::Transform;
+use math::{Quat, Transform, Vec3};
 use wgpu::util::DeviceExt;
 
 pub const VIEWPORT_SHADER: &str = include_str!("viewport.wgsl");
@@ -21,6 +21,10 @@ const VIEWPORT_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] = [
         shader_location: 1,
     },
 ];
+const CUBE_COLOR: [f32; 4] = [0.3, 0.64, 1.0, 1.0];
+const SELECTED_CUBE_COLOR: [f32; 4] = [1.0, 0.78, 0.25, 1.0];
+const VIEWPORT_WORLD_SCALE: f32 = 0.12;
+const VIEWPORT_DEPTH_SKEW: [f32; 2] = [0.35, 0.2];
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderScene {
@@ -227,6 +231,14 @@ pub const fn viewport_vertex_buffer_layout() -> wgpu::VertexBufferLayout<'static
 
 #[must_use]
 pub fn viewport_draw_call(scene: &RenderScene) -> Option<ViewportDrawCall> {
+    viewport_draw_call_with_selection(scene, None)
+}
+
+#[must_use]
+pub fn viewport_draw_call_with_selection(
+    scene: &RenderScene,
+    selected_entity: Option<&EntityId>,
+) -> Option<ViewportDrawCall> {
     let camera = scene.active_camera.as_ref()?;
     let cube_meshes = scene
         .meshes
@@ -235,34 +247,68 @@ pub fn viewport_draw_call(scene: &RenderScene) -> Option<ViewportDrawCall> {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
     let size = 0.28;
+    let camera_rotation = Quat::from_array(normalized_quaternion(camera.transform.rotation));
+    let view_rotation = camera_rotation.inverse();
+    let camera_translation = Vec3::from_array(camera.transform.translation);
 
     for mesh in cube_meshes {
-        let x = mesh.transform.translation[0] * 0.12;
-        let y = mesh.transform.translation[1] * 0.12;
-        let base = u16::try_from(vertices.len()).ok()?;
-        let i1 = base.checked_add(1)?;
-        let i2 = base.checked_add(2)?;
-        let i3 = base.checked_add(3)?;
+        let mesh_translation = Vec3::from_array(mesh.transform.translation);
+        let center = view_rotation * (mesh_translation - camera_translation) * VIEWPORT_WORLD_SCALE;
+        let corners = transformed_cube_corners(&mesh.transform, view_rotation, size);
+        let color = if selected_entity.is_some_and(|selected| selected == &mesh.entity) {
+            SELECTED_CUBE_COLOR
+        } else {
+            CUBE_COLOR
+        };
 
-        vertices.extend([
-            ViewportVertex {
-                position: [x - size, y - size, 0.0],
-                color: [0.3, 0.64, 1.0, 1.0],
-            },
-            ViewportVertex {
-                position: [x + size, y - size, 0.0],
-                color: [0.3, 0.64, 1.0, 1.0],
-            },
-            ViewportVertex {
-                position: [x + size, y + size, 0.0],
-                color: [0.3, 0.64, 1.0, 1.0],
-            },
-            ViewportVertex {
-                position: [x - size, y + size, 0.0],
-                color: [0.3, 0.64, 1.0, 1.0],
-            },
-        ]);
-        indices.extend([base, i1, i2, base, i2, i3]);
+        push_cube_face(
+            &mut vertices,
+            &mut indices,
+            center,
+            &corners,
+            [0, 1, 2, 3],
+            shade_color(color, 0.38),
+        )?;
+        push_cube_face(
+            &mut vertices,
+            &mut indices,
+            center,
+            &corners,
+            [0, 4, 7, 3],
+            shade_color(color, 0.46),
+        )?;
+        push_cube_face(
+            &mut vertices,
+            &mut indices,
+            center,
+            &corners,
+            [0, 1, 5, 4],
+            shade_color(color, 0.54),
+        )?;
+        push_cube_face(
+            &mut vertices,
+            &mut indices,
+            center,
+            &corners,
+            [4, 5, 6, 7],
+            shade_color(color, 1.0),
+        )?;
+        push_cube_face(
+            &mut vertices,
+            &mut indices,
+            center,
+            &corners,
+            [1, 5, 6, 2],
+            shade_color(color, 0.82),
+        )?;
+        push_cube_face(
+            &mut vertices,
+            &mut indices,
+            center,
+            &corners,
+            [3, 2, 6, 7],
+            shade_color(color, 0.68),
+        )?;
     }
     if vertices.is_empty() {
         return None;
@@ -276,6 +322,83 @@ pub fn viewport_draw_call(scene: &RenderScene) -> Option<ViewportDrawCall> {
         vertices,
         indices,
     })
+}
+
+fn push_cube_face(
+    vertices: &mut Vec<ViewportVertex>,
+    indices: &mut Vec<u16>,
+    center: Vec3,
+    corners: &[Vec3; 8],
+    face: [usize; 4],
+    color: [f32; 4],
+) -> Option<()> {
+    let base = u16::try_from(vertices.len()).ok()?;
+    let i1 = base.checked_add(1)?;
+    let i2 = base.checked_add(2)?;
+    let i3 = base.checked_add(3)?;
+
+    vertices.extend(face.map(|corner| {
+        let projected = project_point(center + corners[corner]);
+        ViewportVertex {
+            position: [projected[0], projected[1], 0.0],
+            color,
+        }
+    }));
+    indices.extend([base, i1, i2, base, i2, i3]);
+    Some(())
+}
+
+fn shade_color(color: [f32; 4], factor: f32) -> [f32; 4] {
+    [
+        (color[0] * factor).min(1.0),
+        (color[1] * factor).min(1.0),
+        (color[2] * factor).min(1.0),
+        color[3],
+    ]
+}
+
+fn transformed_cube_corners(transform: &Transform, view_rotation: Quat, size: f32) -> [Vec3; 8] {
+    let rotation = Quat::from_array(normalized_quaternion(transform.rotation));
+    let scale = Vec3::from_array(transform.scale) * size;
+
+    [
+        transform_corner(view_rotation, rotation, [-scale.x, -scale.y, -scale.z]),
+        transform_corner(view_rotation, rotation, [scale.x, -scale.y, -scale.z]),
+        transform_corner(view_rotation, rotation, [scale.x, scale.y, -scale.z]),
+        transform_corner(view_rotation, rotation, [-scale.x, scale.y, -scale.z]),
+        transform_corner(view_rotation, rotation, [-scale.x, -scale.y, scale.z]),
+        transform_corner(view_rotation, rotation, [scale.x, -scale.y, scale.z]),
+        transform_corner(view_rotation, rotation, [scale.x, scale.y, scale.z]),
+        transform_corner(view_rotation, rotation, [-scale.x, scale.y, scale.z]),
+    ]
+}
+
+fn normalized_quaternion(rotation: [f32; 4]) -> [f32; 4] {
+    let len = rotation
+        .into_iter()
+        .map(|value| value * value)
+        .sum::<f32>()
+        .sqrt();
+    if !len.is_finite() || len == 0.0 {
+        return [0.0, 0.0, 0.0, 1.0];
+    }
+    [
+        rotation[0] / len,
+        rotation[1] / len,
+        rotation[2] / len,
+        rotation[3] / len,
+    ]
+}
+
+fn transform_corner(view_rotation: Quat, mesh_rotation: Quat, point: [f32; 3]) -> Vec3 {
+    view_rotation * (mesh_rotation * Vec3::from_array(point))
+}
+
+fn project_point(point: Vec3) -> [f32; 2] {
+    [
+        point.x + point.z * VIEWPORT_DEPTH_SKEW[0],
+        point.y + point.z * VIEWPORT_DEPTH_SKEW[1],
+    ]
 }
 
 #[must_use]
@@ -340,7 +463,8 @@ fn empty_buffer(
 mod tests {
     use super::{
         extract_render_scene, fit_viewport_draw_to_size, viewport_draw_call,
-        viewport_pipeline_info, viewport_vertex_buffer_layout, viewport_vertex_bytes,
+        viewport_draw_call_with_selection, viewport_pipeline_info, viewport_vertex_buffer_layout,
+        viewport_vertex_bytes,
     };
     use ecs::{Camera, EntityId, MeshRef, Projection, World};
     use math::Transform;
@@ -359,12 +483,36 @@ mod tests {
         world
     }
 
+    fn world_with_camera_transform(transform: Transform) -> World {
+        let mut world = World::new();
+        world.spawn(EntityId::new("camera"), "Camera", transform);
+        world
+            .insert_camera(
+                "camera",
+                Camera::new(Projection::Perspective {
+                    fov_y_degrees: 60.0,
+                }),
+            )
+            .unwrap();
+        world
+    }
+
     fn add_cube(world: &mut World, id: &str, translation: [f32; 3]) {
         world.spawn(
             EntityId::new(id),
             "Cube",
             Transform::from_translation(translation),
         );
+        world
+            .insert_mesh(
+                id,
+                MeshRef::new("primitive:cube", "primitive:default_material"),
+            )
+            .unwrap();
+    }
+
+    fn add_cube_with_transform(world: &mut World, id: &str, transform: Transform) {
+        world.spawn(EntityId::new(id), "Cube", transform);
         world
             .insert_mesh(
                 id,
@@ -406,8 +554,8 @@ mod tests {
         let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
 
         assert_eq!(draw.label, "primitive:cube");
-        assert_eq!(draw.vertex_count, 4);
-        assert_eq!(draw.index_count, 6);
+        assert_eq!(draw.vertex_count, 24);
+        assert_eq!(draw.index_count, 36);
         assert_eq!(draw.camera_entity, EntityId::new("camera"));
     }
 
@@ -419,9 +567,158 @@ mod tests {
 
         let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
 
-        assert_eq!(draw.vertex_count, 8);
-        assert_eq!(draw.index_count, 12);
-        assert_eq!(draw.indices, vec![0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+        assert_eq!(draw.vertex_count, 48);
+        assert_eq!(draw.index_count, 72);
+    }
+
+    #[test]
+    fn viewport_draw_call_marks_selected_cube_with_distinct_color() {
+        let mut world = world_with_camera();
+        add_cube(&mut world, "cube", [0.0, 0.0, 0.0]);
+        add_cube(&mut world, "cube_1", [2.0, 0.0, 0.0]);
+        let scene = extract_render_scene(&world);
+
+        let normal = viewport_draw_call(&scene).unwrap();
+        let selected =
+            viewport_draw_call_with_selection(&scene, Some(&EntityId::new("cube_1"))).unwrap();
+
+        assert_eq!(selected.vertices[0].color, normal.vertices[0].color);
+        assert_ne!(selected.vertices[24].color, normal.vertices[24].color);
+    }
+
+    #[test]
+    fn viewport_draw_call_applies_cube_scale_and_z_rotation() {
+        let mut world = world_with_camera();
+        add_cube_with_transform(
+            &mut world,
+            "cube",
+            Transform {
+                rotation: [
+                    0.0,
+                    0.0,
+                    std::f32::consts::FRAC_1_SQRT_2,
+                    std::f32::consts::FRAC_1_SQRT_2,
+                ],
+                scale: [2.0, 1.0, 1.0],
+                ..Transform::identity()
+            },
+        );
+
+        let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
+        let min_x = draw
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = draw
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let min_y = draw
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[1])
+            .fold(f32::INFINITY, f32::min);
+        let max_y = draw
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[1])
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!((max_x - min_x) < (max_y - min_y));
+    }
+
+    #[test]
+    fn viewport_draw_call_projects_x_axis_rotation() {
+        let mut identity_rotation = world_with_camera();
+        add_cube_with_transform(
+            &mut identity_rotation,
+            "cube",
+            Transform {
+                scale: [1.0, 2.0, 1.0],
+                ..Transform::identity()
+            },
+        );
+        let mut x_rotation = world_with_camera();
+        add_cube_with_transform(
+            &mut x_rotation,
+            "cube",
+            Transform {
+                rotation: [0.5, 0.0, 0.0, 0.866_025_4],
+                scale: [1.0, 2.0, 1.0],
+                ..Transform::identity()
+            },
+        );
+
+        let identity_draw = viewport_draw_call(&extract_render_scene(&identity_rotation)).unwrap();
+        let x_rotation_draw = viewport_draw_call(&extract_render_scene(&x_rotation)).unwrap();
+
+        assert_ne!(identity_draw.vertices, x_rotation_draw.vertices);
+    }
+
+    #[test]
+    fn viewport_draw_call_applies_cube_z_scale() {
+        let mut flat = world_with_camera();
+        add_cube_with_transform(
+            &mut flat,
+            "cube",
+            Transform {
+                scale: [1.0, 1.0, 0.5],
+                ..Transform::identity()
+            },
+        );
+        let mut deep = world_with_camera();
+        add_cube_with_transform(
+            &mut deep,
+            "cube",
+            Transform {
+                scale: [1.0, 1.0, 3.0],
+                ..Transform::identity()
+            },
+        );
+
+        let flat_draw = viewport_draw_call(&extract_render_scene(&flat)).unwrap();
+        let deep_draw = viewport_draw_call(&extract_render_scene(&deep)).unwrap();
+
+        assert_ne!(flat_draw.vertices, deep_draw.vertices);
+    }
+
+    #[test]
+    fn viewport_draw_call_applies_camera_translation_and_rotation() {
+        let mut default_camera = world_with_camera_transform(Transform::identity());
+        add_cube(&mut default_camera, "cube", [1.0, 0.0, 0.0]);
+        let mut moved_camera = world_with_camera_transform(Transform {
+            translation: [1.0, 0.0, 0.0],
+            rotation: [
+                0.0,
+                0.0,
+                std::f32::consts::FRAC_1_SQRT_2,
+                std::f32::consts::FRAC_1_SQRT_2,
+            ],
+            ..Transform::identity()
+        });
+        add_cube(&mut moved_camera, "cube", [1.0, 0.0, 0.0]);
+
+        let default_draw = viewport_draw_call(&extract_render_scene(&default_camera)).unwrap();
+        let moved_draw = viewport_draw_call(&extract_render_scene(&moved_camera)).unwrap();
+
+        assert_ne!(default_draw.vertices, moved_draw.vertices);
+    }
+
+    #[test]
+    fn viewport_draw_call_shades_cube_faces_distinctly() {
+        let mut world = world_with_camera();
+        add_cube(&mut world, "cube", [0.0, 0.0, 0.0]);
+
+        let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
+        let distinct_colors = draw
+            .vertices
+            .iter()
+            .map(|vertex| vertex.color.map(|channel| (channel * 255.0).round() as u16))
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert!(distinct_colors.len() >= 6);
     }
 
     #[test]

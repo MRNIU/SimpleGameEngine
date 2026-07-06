@@ -7,4 +7,4 @@ mod model;
 mod viewport;
 
 pub use app::{EditorApp, EditorLaunchOptions};
-pub use model::{EditorModel, EditorSmokeReport};
+pub use model::{EditorError, EditorModel, EditorSmokeReport};

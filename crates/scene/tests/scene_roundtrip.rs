@@ -24,7 +24,12 @@ fn scene_roundtrip_rebuilds_children_cache_and_render_components() {
             }),
         )
         .unwrap();
-    world.spawn(EntityId::new("cube"), "Cube", Transform::identity());
+    let cube_transform = Transform {
+        translation: [1.0, 2.0, 3.0],
+        rotation: [0.0, 0.0, 1.0, 0.0],
+        scale: [2.0, 1.5, 1.0],
+    };
+    world.spawn(EntityId::new("cube"), "Player Cube", cube_transform);
     world.set_parent("cube", "root").unwrap();
     world
         .insert_mesh(
@@ -40,10 +45,16 @@ fn scene_roundtrip_rebuilds_children_cache_and_render_components() {
         loaded.children_of("root"),
         vec![EntityId::new("camera"), EntityId::new("cube")]
     );
-    assert!(loaded.entity("camera").unwrap().camera.is_some());
+    let camera = loaded.entity("camera").unwrap();
+    let cube = loaded.entity("cube").unwrap();
+    assert!(camera.camera.is_some());
+    assert_eq!(cube.name, "Player Cube");
+    assert_eq!(cube.parent, Some(EntityId::new("root")));
+    assert_eq!(cube.transform, cube_transform);
+    assert_eq!(cube.mesh.as_ref().unwrap().asset, "primitive:cube");
     assert_eq!(
-        loaded.entity("cube").unwrap().mesh.as_ref().unwrap().asset,
-        "primitive:cube"
+        cube.mesh.as_ref().unwrap().material,
+        "primitive:default_material"
     );
     assert!(!serialized.contains("children"));
 }

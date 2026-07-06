@@ -3,13 +3,14 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use ecs::EntityId;
 use eframe::egui;
 
 use crate::{
-    model::{EditorModel, EditorSmokeReport},
+    model::{EditorError, EditorModel, EditorSmokeReport},
     viewport::{ViewportWgpuProbe, draw_viewport, install_viewport_renderer},
 };
 
@@ -63,6 +64,7 @@ impl EditorApp {
         creation_context: &eframe::CreationContext<'_>,
         options: EditorLaunchOptions,
     ) -> Self {
+        install_cjk_font(&creation_context.egui_ctx);
         let wgpu_viewport_available = install_viewport_renderer(creation_context);
         Self {
             options,
@@ -79,28 +81,22 @@ impl EditorApp {
     }
 
     fn reopen_default_scene(&mut self) {
-        match fs::read_to_string(DEFAULT_SCENE_PATH)
-            .map_err(anyhow::Error::from)
-            .and_then(|input| Self::model_from_scene(&input))
-        {
-            Ok(model) => {
-                self.model = model;
-                self.status = format!("Opened {DEFAULT_SCENE_PATH}");
-            }
+        match fs::read_to_string(DEFAULT_SCENE_PATH) {
+            Ok(input) => match self.model.reopen_scene_from_str(&input) {
+                Ok(()) => self.status = format!("Opened {DEFAULT_SCENE_PATH}"),
+                Err(error) => self.status = format!("Open failed: {error}"),
+            },
             Err(error) => self.status = format!("Open failed: {error}"),
         }
     }
 
-    fn save_scene_to_path(&self, path: &Path) -> anyhow::Result<()> {
+    fn save_scene_to_path(&mut self, path: &Path) -> anyhow::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
         fs::write(path, self.model.save_scene_to_string()?)?;
+        self.model.mark_saved();
         Ok(())
-    }
-
-    fn model_from_scene(input: &str) -> anyhow::Result<EditorModel> {
-        Ok(EditorModel::from_scene_str(input)?)
     }
 }
 
@@ -162,11 +158,26 @@ impl eframe::App for EditorApp {
             if ui.button("New Cube").clicked() {
                 self.model.create_cube();
             }
+            if ui.button("Duplicate").clicked() {
+                match self.model.duplicate_selected() {
+                    Ok(_) => self.status = "Duplicated".to_owned(),
+                    Err(error) => self.status = format_editor_error("Duplicate failed", error),
+                }
+            }
+            if ui.button("Delete").clicked() {
+                match self.model.delete_selected() {
+                    Ok(()) => self.status = "Deleted".to_owned(),
+                    Err(error) => self.status = format_editor_error("Delete failed", error),
+                }
+            }
             if ui.button("Save").clicked() {
                 self.save_default_scene();
             }
             if ui.button("Reopen").clicked() {
                 self.reopen_default_scene();
+            }
+            if self.model.is_dirty() {
+                ui.label("Unsaved");
             }
             ui.label(&self.status);
         });
@@ -184,49 +195,184 @@ impl eframe::App for EditorApp {
 
 fn draw_hierarchy(ui: &mut egui::Ui, model: &mut EditorModel) {
     ui.heading("Hierarchy");
-    let rows: Vec<(EntityId, String)> = model
+    let roots: Vec<EntityId> = model
         .world()
         .entities()
-        .map(|entity| (entity.id.clone(), entity.name.clone()))
+        .filter(|entity| entity.parent.is_none())
+        .map(|entity| entity.id.clone())
         .collect();
-    for (id, name) in rows {
-        let selected = model.selected().is_some_and(|selected| selected == &id);
-        if ui.selectable_label(selected, name).clicked() {
-            model.select(id);
+    for id in roots {
+        draw_hierarchy_node(ui, model, &id);
+    }
+}
+
+fn draw_hierarchy_node(ui: &mut egui::Ui, model: &mut EditorModel, id: &EntityId) {
+    let Some(entity) = model.world().entity(id.as_str()).cloned() else {
+        return;
+    };
+    let children = model.world().children_of(id.as_str());
+    let selected = model.selected().is_some_and(|selected| selected == id);
+
+    if children.is_empty() {
+        if ui.selectable_label(selected, entity.name).clicked() {
+            model.select(id.clone());
         }
+        return;
+    }
+
+    let response = egui::CollapsingHeader::new(entity.name)
+        .id_salt(id.as_str())
+        .default_open(true)
+        .show(ui, |ui| {
+            for child in children {
+                draw_hierarchy_node(ui, model, &child);
+            }
+        });
+    if response.header_response.clicked() {
+        model.select(id.clone());
     }
 }
 
 fn draw_inspector(ui: &mut egui::Ui, model: &mut EditorModel, status: &mut String) {
     ui.heading("Inspector");
     if let Some(selected) = model.selected().cloned()
-        && let Some(entity) = model.world().entity(selected.as_str())
+        && let Some(entity) = model.world().entity(selected.as_str()).cloned()
     {
-        ui.label(entity.name.clone());
-        let mut translation = entity.transform.translation;
-        let changed = ui
-            .horizontal(|ui| {
-                ui.label("T");
-                ui.add(egui::DragValue::new(&mut translation[0]).speed(0.1))
-                    .changed()
-                    | ui.add(egui::DragValue::new(&mut translation[1]).speed(0.1))
-                        .changed()
-                    | ui.add(egui::DragValue::new(&mut translation[2]).speed(0.1))
-                        .changed()
-            })
-            .inner;
-        if changed {
-            match model.set_translation(&selected, translation) {
-                Ok(()) => *status = "Transform updated".to_owned(),
-                Err(error) => *status = format!("Edit failed: {error}"),
+        let mut name = entity.name.clone();
+        ui.horizontal(|ui| {
+            ui.label("Name");
+            if ui.text_edit_singleline(&mut name).changed() {
+                match model.rename_entity(&selected, &name) {
+                    Ok(()) => *status = "Name updated".to_owned(),
+                    Err(error) => *status = format_editor_error("Rename failed", error),
+                }
             }
+        });
+
+        let mut transform = entity.transform;
+        let translation_changed = draw_vec3(ui, "Translation", &mut transform.translation);
+        let rotation_changed = draw_vec4(ui, "Rotation", &mut transform.rotation);
+        let fields = inspector_transform_fields(&entity);
+        let scale_changed = fields.show_scale && draw_vec3(ui, "Scale", &mut transform.scale);
+        let transform_changed = translation_changed || rotation_changed || scale_changed;
+        if transform_changed {
+            match model.set_transform(&selected, transform) {
+                Ok(()) => *status = "Transform updated".to_owned(),
+                Err(error) => *status = format_editor_error("Edit failed", error),
+            }
+        }
+
+        if let Some(mesh) = &entity.mesh {
+            ui.label(format!("Mesh: {}", mesh.asset));
+            ui.label(format!("Material: {}", mesh.material));
+        }
+        if let Some(camera) = &entity.camera {
+            ui.label(format!("Camera: {:?}", camera.projection));
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct InspectorTransformFields {
+    show_translation: bool,
+    show_rotation: bool,
+    show_scale: bool,
+}
+
+fn inspector_transform_fields(entity: &ecs::EntityRecord) -> InspectorTransformFields {
+    InspectorTransformFields {
+        show_translation: true,
+        show_rotation: true,
+        show_scale: entity.camera.is_none(),
+    }
+}
+
+fn draw_vec3(ui: &mut egui::Ui, label: &str, values: &mut [f32; 3]) -> bool {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        let x_changed = ui
+            .add(egui::DragValue::new(&mut values[0]).speed(0.1))
+            .changed();
+        let y_changed = ui
+            .add(egui::DragValue::new(&mut values[1]).speed(0.1))
+            .changed();
+        let z_changed = ui
+            .add(egui::DragValue::new(&mut values[2]).speed(0.1))
+            .changed();
+        x_changed || y_changed || z_changed
+    })
+    .inner
+}
+
+fn draw_vec4(ui: &mut egui::Ui, label: &str, values: &mut [f32; 4]) -> bool {
+    ui.horizontal(|ui| {
+        ui.label(label);
+        let x_changed = ui
+            .add(egui::DragValue::new(&mut values[0]).speed(0.1))
+            .changed();
+        let y_changed = ui
+            .add(egui::DragValue::new(&mut values[1]).speed(0.1))
+            .changed();
+        let z_changed = ui
+            .add(egui::DragValue::new(&mut values[2]).speed(0.1))
+            .changed();
+        let w_changed = ui
+            .add(egui::DragValue::new(&mut values[3]).speed(0.1))
+            .changed();
+        x_changed || y_changed || z_changed || w_changed
+    })
+    .inner
+}
+
+fn format_editor_error(action: &str, error: EditorError) -> String {
+    format!("{action}: {error}")
+}
+
+fn install_cjk_font(context: &egui::Context) {
+    let Some(font_bytes) = cjk_font_candidates()
+        .iter()
+        .find_map(|candidate| fs::read(candidate).ok())
+    else {
+        return;
+    };
+
+    let font_name = "sge_system_cjk".to_owned();
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        font_name.clone(),
+        Arc::new(egui::FontData::from_owned(font_bytes)),
+    );
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .insert(0, font_name.clone());
+    }
+    context.set_fonts(fonts);
+}
+
+fn cjk_font_candidates() -> &'static [&'static str] {
+    &[
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.otf",
+        "/usr/share/fonts/opentype/source-han-sans/SourceHanSans-Regular.otf",
+        r"C:\Windows\Fonts\msyh.ttc",
+        r"C:\Windows\Fonts\simsun.ttc",
+    ]
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_SCENE_PATH, EditorLaunchOptions};
+    use super::{
+        DEFAULT_SCENE_PATH, EditorLaunchOptions, cjk_font_candidates, inspector_transform_fields,
+    };
+    use ecs::{Camera, EntityId, EntityRecord, Projection};
+    use math::Transform;
     use std::path::PathBuf;
 
     #[test]
@@ -247,5 +393,36 @@ mod tests {
     #[test]
     fn manual_save_path_stays_out_of_tracked_assets() {
         assert_eq!(DEFAULT_SCENE_PATH, "target/tmp/editor_manual.scene.ron");
+    }
+
+    #[test]
+    fn camera_inspector_hides_scale_field() {
+        let mut camera =
+            EntityRecord::new(EntityId::new("camera"), "Camera", Transform::identity());
+        camera.camera = Some(Camera::new(Projection::Perspective {
+            fov_y_degrees: 60.0,
+        }));
+        let cube = EntityRecord::new(EntityId::new("cube"), "Cube", Transform::identity());
+
+        assert!(inspector_transform_fields(&camera).show_translation);
+        assert!(inspector_transform_fields(&camera).show_rotation);
+        assert!(!inspector_transform_fields(&camera).show_scale);
+        assert!(inspector_transform_fields(&cube).show_scale);
+    }
+
+    #[test]
+    fn cjk_font_candidates_cover_common_desktop_fonts() {
+        let candidates = cjk_font_candidates();
+
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| candidate.ends_with("PingFang.ttc"))
+        );
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| candidate.contains("NotoSansCJK"))
+        );
     }
 }

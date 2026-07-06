@@ -2,7 +2,10 @@
 //
 //! 最小 ECS 真源。
 
-use std::{borrow::Borrow, collections::BTreeMap};
+use std::{
+    borrow::Borrow,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use math::Transform;
 use serde::{Deserialize, Serialize};
@@ -178,6 +181,50 @@ impl World {
         self.entities.values()
     }
 
+    pub fn rename_entity(
+        &mut self,
+        id: impl AsRef<str>,
+        name: impl Into<String>,
+    ) -> Result<(), EcsError> {
+        let id = id.as_ref();
+        let record = self
+            .entities
+            .get_mut(id)
+            .ok_or_else(|| EcsError::MissingEntity(id.to_owned()))?;
+        record.name = name.into();
+        Ok(())
+    }
+
+    pub fn delete_subtree(&mut self, id: impl AsRef<str>) -> Result<Option<EntityId>, EcsError> {
+        let id = id.as_ref();
+        let parent = self
+            .entities
+            .get(id)
+            .ok_or_else(|| EcsError::MissingEntity(id.to_owned()))?
+            .parent
+            .clone();
+        let mut stack = vec![EntityId::new(id)];
+        let mut subtree = BTreeSet::new();
+
+        while let Some(current) = stack.pop() {
+            if !subtree.insert(current.clone()) {
+                continue;
+            }
+            stack.extend(
+                self.entities
+                    .values()
+                    .filter(|record| record.parent.as_ref() == Some(&current))
+                    .map(|record| record.id.clone()),
+            );
+        }
+
+        for entity in subtree {
+            self.entities.remove(&entity);
+        }
+        self.rebuild_children_cache();
+        Ok(parent)
+    }
+
     pub fn set_parent(
         &mut self,
         child: impl AsRef<str>,
@@ -301,7 +348,7 @@ pub enum EcsError {
 
 #[cfg(test)]
 mod tests {
-    use super::{EntityId, World};
+    use super::{EcsError, EntityId, EntityRecord, World};
     use math::Transform;
 
     #[test]
@@ -313,5 +360,47 @@ mod tests {
         world.set_parent("child", "root").unwrap();
 
         assert_eq!(world.children_of("root"), vec![EntityId::new("child")]);
+    }
+
+    #[test]
+    fn renames_entity_without_changing_its_id() {
+        let mut world = World::new();
+        world.spawn(EntityId::new("cube"), "Cube", Transform::identity());
+
+        world.rename_entity("cube", "Player Cube").unwrap();
+
+        let entity = world.entity("cube").unwrap();
+        assert_eq!(entity.id, EntityId::new("cube"));
+        assert_eq!(entity.name, "Player Cube");
+    }
+
+    #[test]
+    fn deletes_subtree_and_rebuilds_children_cache() {
+        let mut world = World::new();
+        world.spawn(EntityId::new("root"), "Root", Transform::identity());
+        world.spawn(EntityId::new("parent"), "Parent", Transform::identity());
+        world.spawn(EntityId::new("child"), "Child", Transform::identity());
+        world.spawn(EntityId::new("sibling"), "Sibling", Transform::identity());
+        world.set_parent("parent", "root").unwrap();
+        world.set_parent("child", "parent").unwrap();
+        world.set_parent("sibling", "root").unwrap();
+
+        let fallback = world.delete_subtree("parent").unwrap();
+
+        assert_eq!(fallback, Some(EntityId::new("root")));
+        assert!(world.entity("parent").is_none());
+        assert!(world.entity("child").is_none());
+        assert_eq!(world.children_of("root"), vec![EntityId::new("sibling")]);
+    }
+
+    #[test]
+    fn from_records_rejects_duplicate_entity_ids() {
+        let first = EntityRecord::new(EntityId::new("cube"), "Cube", Transform::identity());
+        let second = EntityRecord::new(EntityId::new("cube"), "Cube Copy", Transform::identity());
+
+        assert_eq!(
+            World::from_records(vec![first, second]).unwrap_err(),
+            EcsError::DuplicateEntity
+        );
     }
 }
