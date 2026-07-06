@@ -49,9 +49,9 @@
 | 区域 | 职责 |
 | --- | --- |
 | `editor::viewport` | 持有 editor-only `ViewCamera`、输入处理、fit selection/all、screen-space hit test |
-| `editor::app` | 把 egui viewport response、keyboard/mouse state 传给 viewport helper；命中后调用 `EditorModel::select` |
-| `editor::model` | 继续只负责 ECS、selection、dirty、scene save/load |
-| `render` | 继续接收 draw-call 数据，不拥有 editor camera 或 input state |
+| `editor::app` | 把 egui viewport response、keyboard/mouse state 传给 viewport helper；命中后调用 `EditorModel::select` 或 clear selection |
+| `editor::model` | 继续只负责 ECS、selection、dirty、scene save/load；新增不置 dirty 的 clear selection 入口 |
+| `render` | 接收显式 viewport view/projection 输入并产出带 entity span metadata 的 draw-call；不拥有 editor camera 或 input state |
 | `scene` | 继续只保存 ECS 可保存子集，不保存 viewport camera |
 
 核心规则：
@@ -60,8 +60,10 @@
 - Navigation 不修改 scene `Camera` 实体。
 - Navigation 不设置 dirty。
 - Click select 可以改变 `EditorModel::selected`，但不改变 scene 数据，因此不设置 dirty。
-- Picking 首版基于当前 viewport draw vertices 做屏幕空间近似命中，不新增 GPU picking pass。
-- 优先不改 `render` crate；如果必须调整，只允许增加小型数据输入，不让 `render` 拥有 editor 状态。
+- `EditorModel` 需要提供 `clear_selection` 或等价入口；空白点击不能通过构造假 `EntityId` 表达。
+- Render projection 不能继续只读取 ECS 里的 scene `Camera`。`editor::viewport::ViewCamera` 必须转换成一个小的 render-side value object，例如 `ViewportView`，并传给 viewport draw-call builder。
+- Picking 首版基于 viewport draw-call 中的 per-cube entity span metadata 做屏幕空间近似命中，不新增 GPU picking pass。
+- 不让 `render` 拥有 editor 状态；`render` 只接收当前帧 view/projection value，并返回可绘制、可命中的数据。
 
 ## View Camera
 
@@ -69,7 +71,7 @@
 
 ```text
 ViewCamera {
-  target or position,
+  position,
   yaw,
   pitch,
   speed,
@@ -85,6 +87,16 @@ ViewCamera {
 - 初始 camera 能看到默认 root/camera/cube 场景。
 
 该 camera 不等同于 ECS 里的 `Camera` component；它只服务 editor viewport。
+
+`ViewCamera` 在绘制前转换为 render 输入：
+
+```text
+ViewCamera
+-> ViewportView { translation, rotation, scale }
+-> render::viewport_draw_call_with_view(scene, selected, view)
+```
+
+现有 `render::viewport_draw_call_with_selection(scene, selected)` 只能读取 `scene.active_camera`，不能闭合本 milestone 的导航需求。实施时要新增 selected + explicit view 的 draw-call 入口，或调整现有入口签名；二者只选一种，避免保留两条长期并行路径。
 
 ## 输入模型
 
@@ -109,11 +121,16 @@ ViewCamera {
 
 Click select 基于现有 primitive cube viewport draw-call：
 
-1. `EditorModel::viewport_draw_call()` 产生当前可见 cube 几何。
-2. `editor::viewport` 将 draw vertices fit 到 viewport rect。
-3. 点击时在屏幕空间做命中测试。
-4. 多个 cube 命中时选择最接近点击点或绘制顺序更靠前的实体。
-5. 没有命中时清空 selection。
+1. `EditorModel` 产出 `RenderScene` 和当前 selection。
+2. `editor::viewport::ViewCamera` 转换成 explicit viewport view。
+3. `render` 使用该 view 产生当前可见 cube 几何。
+4. `ViewportDrawCall` 同时包含 per-cube entity span metadata，例如 `ViewportCubeSpan { entity, vertex_range, index_range }`。
+5. `editor::viewport` 将 draw vertices fit 到 viewport rect 后，按 span 取回每个 cube 的屏幕空间几何。
+6. 点击时在屏幕空间做命中测试。
+7. 多个 cube 命中时选择最接近点击点或绘制顺序更靠前的实体。
+8. 没有命中时调用 `EditorModel::clear_selection()`。
+
+`editor::viewport` 不应靠“每个 cube 恰好 24 个 vertex / 36 个 index”这类隐含布局反推 entity；该关系必须由 draw-call metadata 明确表达。
 
 限制：
 
@@ -144,9 +161,11 @@ Fit 后：
 egui viewport input
 -> editor::viewport::ViewCameraController
 -> editor-only view camera update
--> existing viewport draw-call fit/projection
+-> ViewCamera converts to render viewport view
+-> render builds draw-call with entity spans
+-> editor::viewport fits draw-call to viewport rect
 -> click hit test returns Option<EntityId>
--> EditorModel::select(entity) or clear selection
+-> EditorModel::select(entity) or EditorModel::clear_selection()
 -> viewport selected feedback updates through existing draw-call path
 ```
 
@@ -180,6 +199,9 @@ Viewport camera 不进入该流程。
   - fit selection/all 产生 finite camera state。
   - hit test 能选中最近可见 cube。
   - 空白点击清空 selection。
+- `render` tests：
+  - explicit viewport view 会改变 draw-call projection，不再只依赖 scene camera。
+  - draw-call 为每个 cube 产出对应 `EntityId` span metadata。
 - `editor::app` 或 model-facing tests：
   - viewport navigation 不设置 dirty。
   - click select 更新 selection。
@@ -210,10 +232,13 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --
 
 ## 实施切片
 
-1. `editor::viewport` 增加 editor-only camera state、speed clamp、pitch clamp 和 movement tests。
-2. 接入 egui viewport 输入：右键 look、右键 + `W/A/S/D` movement、滚轮 speed。
-3. 增加 fit selection/all，保留 finite camera state 测试。
-4. 增加 screen-space hit test 和 click select/clear selection。
-5. 扩展 editor smoke 和手动 smoke 文档，只在命令或验证边界变化时更新 README/architecture。
+1. `render` 增加 explicit viewport view 输入和 per-cube entity span metadata，先用 tests 证明 projection 与 pick metadata 闭合。
+2. `EditorModel` 增加不置 dirty 的 clear selection 入口，并调整 viewport draw-call helper 让 editor-only view 能进入 render。
+3. `editor::viewport` 增加 editor-only camera state、speed clamp、pitch clamp 和 movement tests。
+4. `draw_viewport` 改为分配 click/drag Sense 并返回或消费 `egui::Response`；不能继续使用 `Sense::hover()` 后丢弃 response。
+5. 接入 egui viewport 输入：右键 look、右键 + `W/A/S/D` movement、滚轮 speed。
+6. 增加 fit selection/all，保留 finite camera state 测试。
+7. 增加 screen-space hit test 和 click select/clear selection。
+8. 扩展 editor smoke 和手动 smoke 文档，只在命令或验证边界变化时更新 README/architecture。
 
 每个切片保留最小测试。若后续需要 gizmo、GPU picking、camera bookmark、scene camera sync 或 input 配置，再单独设计。
