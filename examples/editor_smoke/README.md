@@ -6,7 +6,7 @@
 cargo run -p editor
 ```
 
-手动 smoke 目标：打开 editor，看到 hierarchy、inspector 和 viewport preview，创建多个 cube，编辑 transform，右键 look，右键 + `W/A/S/D` 移动 editor-only viewport camera，滚轮调速，左键点击 cube 更新 selection，点击空白清空 selection，按 `F` fit selected/all，保存 `.scene.ron`，再 reopen 并确认 viewport navigation 状态没有写入 scene。
+手动 smoke 目标：打开 editor，看到 hierarchy、inspector 和 viewport preview，创建多个 cube，编辑 transform，右键 look，右键 + `W/A/S/D` 移动 editor-only viewport camera，滚轮调速，左键点击 cube 更新 selection，点击空白清空 selection，按 `F` fit selected/all，使用 Move gizmo 拖 X/Y/Z 改变 translation，使用 Scale gizmo 改变 uniform scale，拖动中按 `Esc` 恢复 drag start transform，保存 `.scene.ron`，再 reopen 并确认 viewport navigation 和 gizmo 状态没有写入 scene。
 
 2026-07-06 人工 host-native GUI smoke 已通过：真实窗口中确认 viewport 像素输出、两次 `New Cube`、手动移动第二个 cube、保存并重新打开 `.scene.ron`。
 
