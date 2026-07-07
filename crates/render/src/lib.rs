@@ -4,7 +4,7 @@
 
 use std::{borrow::Cow, ops::Range};
 
-use ecs::{Camera, EntityId, World};
+use ecs::{Camera, EntityId, Light, Projection, World};
 use math::{Quat, Transform, Vec3};
 use wgpu::util::DeviceExt;
 
@@ -29,6 +29,7 @@ const VIEWPORT_DEPTH_SKEW: [f32; 2] = [0.35, 0.2];
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderScene {
     pub meshes: Vec<MeshDraw>,
+    pub lights: Vec<LightDraw>,
     pub active_camera: Option<CameraView>,
 }
 
@@ -38,6 +39,13 @@ pub struct MeshDraw {
     pub transform: Transform,
     pub mesh_asset: String,
     pub material_asset: String,
+    pub base_color: [f32; 4],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LightDraw {
+    pub entity: EntityId,
+    pub light: Light,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -70,12 +78,17 @@ pub struct ViewportDrawCall {
 pub struct ViewportView {
     pub entity: EntityId,
     pub transform: Transform,
+    pub projection: Projection,
 }
 
 impl ViewportView {
     #[must_use]
-    pub const fn new(entity: EntityId, transform: Transform) -> Self {
-        Self { entity, transform }
+    pub const fn new(entity: EntityId, transform: Transform, projection: Projection) -> Self {
+        Self {
+            entity,
+            transform,
+            projection,
+        }
     }
 
     #[must_use]
@@ -83,6 +96,7 @@ impl ViewportView {
         Self {
             entity: camera.entity.clone(),
             transform: camera.transform,
+            projection: camera.camera.projection.clone(),
         }
     }
 }
@@ -221,6 +235,20 @@ pub fn extract_render_scene(world: &World) -> RenderScene {
                 transform: record.transform,
                 mesh_asset: mesh.asset.clone(),
                 material_asset: mesh.material.clone(),
+                base_color: record
+                    .material_override
+                    .as_ref()
+                    .map_or(CUBE_COLOR, |material| material.base_color),
+            })
+        })
+        .collect();
+
+    let lights = world
+        .entities()
+        .filter_map(|record| {
+            record.light.as_ref().map(|light| LightDraw {
+                entity: record.id.clone(),
+                light: light.clone(),
             })
         })
         .collect();
@@ -235,6 +263,7 @@ pub fn extract_render_scene(world: &World) -> RenderScene {
 
     RenderScene {
         meshes,
+        lights,
         active_camera,
     }
 }
@@ -290,17 +319,24 @@ pub fn viewport_draw_call_with_view(
     let camera_rotation = Quat::from_array(normalized_quaternion(view.transform.rotation));
     let view_rotation = camera_rotation.inverse();
     let camera_translation = Vec3::from_array(view.transform.translation);
+    let projection_scale = projection_scale(&view.projection);
+    let light_multiplier = light_multiplier(scene);
 
     for mesh in cube_meshes {
         let vertex_start = vertices.len();
         let index_start = indices.len();
         let mesh_translation = Vec3::from_array(mesh.transform.translation);
-        let center = view_rotation * (mesh_translation - camera_translation) * VIEWPORT_WORLD_SCALE;
-        let corners = transformed_cube_corners(&mesh.transform, view_rotation, size);
+        let center = view_rotation
+            * (mesh_translation - camera_translation)
+            * VIEWPORT_WORLD_SCALE
+            * projection_scale;
+        let corners =
+            transformed_cube_corners(&mesh.transform, view_rotation, size * projection_scale);
+        let color = lit_material_color(mesh.base_color, light_multiplier);
         let color = if selected_entity.is_some_and(|selected| selected == &mesh.entity) {
-            SELECTED_CUBE_COLOR
+            selected_tint(color)
         } else {
-            CUBE_COLOR
+            color
         };
 
         push_cube_face(
@@ -404,6 +440,45 @@ fn shade_color(color: [f32; 4], factor: f32) -> [f32; 4] {
         (color[2] * factor).min(1.0),
         color[3],
     ]
+}
+
+fn light_multiplier(scene: &RenderScene) -> [f32; 3] {
+    scene.lights.first().map_or([1.0, 1.0, 1.0], |light| {
+        [
+            (0.25 + light.light.color[0] * light.light.intensity).clamp(0.0, 2.0),
+            (0.25 + light.light.color[1] * light.light.intensity).clamp(0.0, 2.0),
+            (0.25 + light.light.color[2] * light.light.intensity).clamp(0.0, 2.0),
+        ]
+    })
+}
+
+fn lit_material_color(base_color: [f32; 4], multiplier: [f32; 3]) -> [f32; 4] {
+    [
+        (base_color[0] * multiplier[0]).clamp(0.0, 1.0),
+        (base_color[1] * multiplier[1]).clamp(0.0, 1.0),
+        (base_color[2] * multiplier[2]).clamp(0.0, 1.0),
+        base_color[3].clamp(0.0, 1.0),
+    ]
+}
+
+fn selected_tint(color: [f32; 4]) -> [f32; 4] {
+    const TINT: f32 = 0.35;
+    [
+        color[0] * (1.0 - TINT) + SELECTED_CUBE_COLOR[0] * TINT,
+        color[1] * (1.0 - TINT) + SELECTED_CUBE_COLOR[1] * TINT,
+        color[2] * (1.0 - TINT) + SELECTED_CUBE_COLOR[2] * TINT,
+        color[3],
+    ]
+}
+
+fn projection_scale(projection: &Projection) -> f32 {
+    match projection {
+        Projection::Perspective { fov_y_degrees } => {
+            let clamped = fov_y_degrees.clamp(1.0, 179.0).to_radians();
+            (60.0_f32.to_radians() * 0.5).tan() / (clamped * 0.5).tan()
+        }
+        Projection::Orthographic { vertical_size } => (5.0 / vertical_size.max(0.01)).min(100.0),
+    }
 }
 
 fn transformed_cube_corners(transform: &Transform, view_rotation: Quat, size: f32) -> [Vec3; 8] {
@@ -515,7 +590,7 @@ mod tests {
         viewport_draw_call_with_selection, viewport_draw_call_with_view, viewport_pipeline_info,
         viewport_vertex_buffer_layout, viewport_vertex_bytes,
     };
-    use ecs::{Camera, EntityId, MeshRef, Projection, World};
+    use ecs::{Camera, EntityId, Light, LightKind, MaterialOverride, MeshRef, Projection, World};
     use math::Transform;
 
     fn world_with_camera() -> World {
@@ -566,6 +641,20 @@ mod tests {
             .insert_mesh(
                 id,
                 MeshRef::new("primitive:cube", "primitive:default_material"),
+            )
+            .unwrap();
+    }
+
+    fn add_light(world: &mut World, id: &str, color: [f32; 3], intensity: f32) {
+        world.spawn(EntityId::new(id), "Light", Transform::identity());
+        world
+            .insert_light(
+                id,
+                Light {
+                    kind: LightKind::Directional,
+                    color,
+                    intensity,
+                },
             )
             .unwrap();
     }
@@ -633,6 +722,71 @@ mod tests {
 
         assert_eq!(selected.vertices[0].color, normal.vertices[0].color);
         assert_ne!(selected.vertices[24].color, normal.vertices[24].color);
+    }
+
+    #[test]
+    fn viewport_draw_call_uses_material_override_color() {
+        let mut world = world_with_camera();
+        add_cube(&mut world, "cube", [0.0, 0.0, 0.0]);
+        world.entity_mut("cube").unwrap().material_override = Some(MaterialOverride {
+            base_color: [0.9, 0.1, 0.2, 0.7],
+        });
+
+        let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
+
+        assert_eq!(draw.vertices[0].color[3], 0.7);
+        assert_ne!(
+            draw.vertices[0].color,
+            [0.3 * 0.38, 0.64 * 0.38, 1.0 * 0.38, 1.0]
+        );
+    }
+
+    #[test]
+    fn viewport_draw_call_applies_first_light_only() {
+        let mut first = world_with_camera();
+        add_cube(&mut first, "cube", [0.0, 0.0, 0.0]);
+        add_light(&mut first, "a_light", [0.1, 1.0, 0.1], 1.0);
+        add_light(&mut first, "z_light", [1.0, 0.1, 0.1], 2.0);
+        let mut changed_second = first.clone();
+        changed_second
+            .entity_mut("z_light")
+            .unwrap()
+            .light
+            .as_mut()
+            .unwrap()
+            .intensity = 0.0;
+
+        let first_draw = viewport_draw_call(&extract_render_scene(&first)).unwrap();
+        let changed_second_draw =
+            viewport_draw_call(&extract_render_scene(&changed_second)).unwrap();
+
+        assert_eq!(first_draw.vertices, changed_second_draw.vertices);
+    }
+
+    #[test]
+    fn viewport_view_projection_changes_projected_positions() {
+        let mut world = world_with_camera();
+        add_cube(&mut world, "cube", [1.0, 0.0, 0.0]);
+        let scene = extract_render_scene(&world);
+        let wide = ViewportView::new(
+            EntityId::new("wide"),
+            Transform::identity(),
+            Projection::Perspective {
+                fov_y_degrees: 30.0,
+            },
+        );
+        let narrow = ViewportView::new(
+            EntityId::new("narrow"),
+            Transform::identity(),
+            Projection::Perspective {
+                fov_y_degrees: 90.0,
+            },
+        );
+
+        let wide_draw = viewport_draw_call_with_view(&scene, None, &wide).unwrap();
+        let narrow_draw = viewport_draw_call_with_view(&scene, None, &narrow).unwrap();
+
+        assert_ne!(wide_draw.vertices, narrow_draw.vertices);
     }
 
     #[test]
@@ -772,6 +926,9 @@ mod tests {
                     std::f32::consts::FRAC_1_SQRT_2,
                 ],
                 ..Transform::identity()
+            },
+            Projection::Perspective {
+                fov_y_degrees: 60.0,
             },
         );
 

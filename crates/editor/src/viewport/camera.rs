@@ -1,6 +1,6 @@
 // Copyright The SimpleGameEngine Contributors
 
-use ecs::EntityId;
+use ecs::{EntityId, Projection};
 use eframe::egui;
 use math::{Quat, Transform, Vec3};
 use render::{ViewportDrawCall, ViewportView};
@@ -98,6 +98,9 @@ impl ViewCamera {
                 translation: self.position,
                 rotation: self.rotation().to_array(),
                 scale: [1.0, 1.0, 1.0],
+            },
+            Projection::Perspective {
+                fov_y_degrees: 60.0,
             },
         )
     }

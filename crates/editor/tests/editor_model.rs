@@ -154,6 +154,9 @@ fn editor_model_can_build_viewport_draw_for_editor_view() {
     let editor_view = ViewportView::new(
         EntityId::new("editor_view"),
         Transform::from_translation([1.0, 0.0, 0.0]),
+        ecs::Projection::Perspective {
+            fov_y_degrees: 60.0,
+        },
     );
 
     let editor_draw = editor.viewport_draw_call_for_view(&editor_view).unwrap();
