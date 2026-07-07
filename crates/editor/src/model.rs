@@ -10,6 +10,7 @@ use thiserror::Error;
 
 const ROOT_ID: &str = "root";
 const CAMERA_ID: &str = "camera";
+const HISTORY_LIMIT: usize = 100;
 
 #[derive(Debug, Clone)]
 pub struct EditorModel {
@@ -17,6 +18,36 @@ pub struct EditorModel {
     selected: Option<EntityId>,
     dirty: bool,
     next_cube_index: u32,
+    undo_stack: Vec<EditorCommand>,
+    redo_stack: Vec<EditorCommand>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum EditorCommand {
+    CreateEntity {
+        record: ecs::EntityRecord,
+        previous_selection: Option<EntityId>,
+    },
+    DeleteEntity {
+        deleted_root: EntityId,
+        records: Vec<ecs::EntityRecord>,
+        previous_selection: Option<EntityId>,
+    },
+    DuplicateEntity {
+        source: EntityId,
+        created: ecs::EntityRecord,
+        previous_selection: Option<EntityId>,
+    },
+    RenameEntity {
+        id: EntityId,
+        before: String,
+        after: String,
+    },
+    SetTransform {
+        id: EntityId,
+        before: Transform,
+        after: Transform,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,6 +100,8 @@ impl EditorModel {
             selected: None,
             dirty: false,
             next_cube_index: 0,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         }
     }
 
@@ -79,6 +112,8 @@ impl EditorModel {
             selected: None,
             dirty: false,
             next_cube_index: 0,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         })
     }
 
@@ -137,12 +172,211 @@ impl EditorModel {
         transform: Transform,
     ) -> Result<(), EditorError> {
         let transform = validated_transform(transform)?;
+        let before = self
+            .world
+            .entity(id.as_str())
+            .ok_or_else(|| ecs::EcsError::MissingEntity(id.to_string()))?
+            .transform;
+        let _ = self.commit_transform_edit(id, before, transform)?;
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+
+    #[must_use]
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
+
+    pub fn clear_history(&mut self) {
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+    }
+
+    pub fn undo(&mut self) -> Result<bool, EditorError> {
+        let Some(command) = self.undo_stack.pop() else {
+            return Ok(false);
+        };
+        self.revert_command(&command)?;
+        self.redo_stack.push(command);
+        Ok(true)
+    }
+
+    pub fn redo(&mut self) -> Result<bool, EditorError> {
+        let Some(command) = self.redo_stack.pop() else {
+            return Ok(false);
+        };
+        self.apply_command(&command)?;
+        self.undo_stack.push(command);
+        Ok(true)
+    }
+
+    pub fn preview_transform(
+        &mut self,
+        id: &EntityId,
+        transform: Transform,
+    ) -> Result<(), EditorError> {
+        let transform = canonical_transform(transform)?;
+        self.write_transform(id, transform)
+    }
+
+    pub fn restore_transform_preview(
+        &mut self,
+        id: &EntityId,
+        transform: Transform,
+        dirty: bool,
+    ) -> Result<(), EditorError> {
+        let transform = canonical_transform(transform)?;
+        self.write_transform(id, transform)?;
+        self.dirty = dirty;
+        Ok(())
+    }
+
+    pub fn commit_transform_edit(
+        &mut self,
+        id: &EntityId,
+        before: Transform,
+        after: Transform,
+    ) -> Result<bool, EditorError> {
+        let before = canonical_transform(before)?;
+        let after = canonical_transform(after)?;
+        if before == after {
+            self.write_transform(id, after)?;
+            return Ok(false);
+        }
+        let command = EditorCommand::SetTransform {
+            id: id.clone(),
+            before,
+            after,
+        };
+        self.apply_command(&command)?;
+        self.push_undo(command);
+        Ok(true)
+    }
+
+    fn push_undo(&mut self, command: EditorCommand) {
+        self.undo_stack.push(command);
+        if self.undo_stack.len() > HISTORY_LIMIT {
+            let overflow = self.undo_stack.len() - HISTORY_LIMIT;
+            self.undo_stack.drain(0..overflow);
+        }
+        self.redo_stack.clear();
+    }
+
+    fn records_with_replacements(
+        &self,
+        replacements: &[ecs::EntityRecord],
+    ) -> Vec<ecs::EntityRecord> {
+        let replacement_ids: std::collections::BTreeSet<_> =
+            replacements.iter().map(|record| record.id.clone()).collect();
+        self.world
+            .entities()
+            .filter(|record| !replacement_ids.contains(&record.id))
+            .cloned()
+            .chain(replacements.iter().cloned())
+            .collect()
+    }
+
+    fn replace_world_records(&mut self, records: Vec<ecs::EntityRecord>) -> Result<(), EditorError> {
+        self.world = World::from_records(records)?;
+        Ok(())
+    }
+
+    fn subtree_records(&self, root: &EntityId) -> Result<Vec<ecs::EntityRecord>, EditorError> {
+        let mut stack = vec![root.clone()];
+        let mut records = Vec::new();
+        while let Some(current) = stack.pop() {
+            let record = self
+                .world
+                .entity(current.as_str())
+                .ok_or_else(|| ecs::EcsError::MissingEntity(current.to_string()))?
+                .clone();
+            stack.extend(self.world.children_of(current.as_str()));
+            records.push(record);
+        }
+        Ok(records)
+    }
+
+    fn apply_command(&mut self, command: &EditorCommand) -> Result<(), EditorError> {
+        match command {
+            EditorCommand::SetTransform { id, after, .. } => {
+                self.write_transform(id, *after)?;
+                self.selected = Some(id.clone());
+            }
+            EditorCommand::RenameEntity { id, after, .. } => {
+                self.world.rename_entity(id.as_str(), after)?;
+                self.selected = Some(id.clone());
+            }
+            EditorCommand::CreateEntity { record, .. }
+            | EditorCommand::DuplicateEntity {
+                created: record, ..
+            } => {
+                let records = self.records_with_replacements(std::slice::from_ref(record));
+                self.replace_world_records(records)?;
+                self.selected = Some(record.id.clone());
+            }
+            EditorCommand::DeleteEntity { deleted_root, .. } => {
+                let fallback = self.world.delete_subtree(deleted_root.as_str())?;
+                self.selected = fallback.filter(|parent| self.world.entity(parent.as_str()).is_some());
+            }
+        }
+        self.dirty = true;
+        Ok(())
+    }
+
+    fn revert_command(&mut self, command: &EditorCommand) -> Result<(), EditorError> {
+        match command {
+            EditorCommand::SetTransform { id, before, .. } => {
+                self.write_transform(id, *before)?;
+                self.selected = Some(id.clone());
+            }
+            EditorCommand::RenameEntity { id, before, .. } => {
+                self.world.rename_entity(id.as_str(), before)?;
+                self.selected = Some(id.clone());
+            }
+            EditorCommand::CreateEntity {
+                record,
+                previous_selection,
+            }
+            | EditorCommand::DuplicateEntity {
+                created: record,
+                previous_selection,
+                ..
+            } => {
+                let _ = self.world.delete_subtree(record.id.as_str())?;
+                self.selected = previous_selection
+                    .clone()
+                    .filter(|id| self.world.entity(id.as_str()).is_some());
+            }
+            EditorCommand::DeleteEntity {
+                deleted_root,
+                records,
+                previous_selection,
+            } => {
+                let world_records = self.records_with_replacements(records);
+                self.replace_world_records(world_records)?;
+                self.selected = Some(deleted_root.clone())
+                    .filter(|id| self.world.entity(id.as_str()).is_some())
+                    .or_else(|| {
+                        previous_selection
+                            .clone()
+                            .filter(|id| self.world.entity(id.as_str()).is_some())
+                    });
+            }
+        }
+        self.dirty = true;
+        Ok(())
+    }
+
+    fn write_transform(&mut self, id: &EntityId, transform: Transform) -> Result<(), EditorError> {
         let record = self
             .world
             .entity_mut(id.as_str())
             .ok_or_else(|| ecs::EcsError::MissingEntity(id.to_string()))?;
         record.transform = transform;
-        self.dirty = true;
         Ok(())
     }
 
@@ -350,7 +584,7 @@ fn duplicate_id_base(source: &str) -> &str {
     source
 }
 
-fn validated_transform(mut transform: Transform) -> Result<Transform, EditorError> {
+fn canonical_transform(mut transform: Transform) -> Result<Transform, EditorError> {
     if !transform
         .translation
         .into_iter()
@@ -377,9 +611,14 @@ fn validated_transform(mut transform: Transform) -> Result<Transform, EditorErro
     Ok(transform)
 }
 
+fn validated_transform(transform: Transform) -> Result<Transform, EditorError> {
+    canonical_transform(transform)
+}
+
 #[cfg(test)]
 mod tests {
     use super::EditorModel;
+    use math::Transform;
 
     #[test]
     fn new_editor_starts_with_camera() {
@@ -391,6 +630,128 @@ mod tests {
                 .entity("camera")
                 .and_then(|entity| entity.camera.as_ref())
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn transform_command_undo_redo_uses_canonical_rotation() {
+        let mut editor = EditorModel::default();
+        let cube = editor.create_cube();
+        editor.mark_saved();
+
+        editor
+            .set_transform(
+                &cube,
+                Transform {
+                    rotation: [0.0, 0.0, 2.0, 0.0],
+                    ..Transform::identity()
+                },
+            )
+            .unwrap();
+
+        assert!(editor.can_undo());
+        assert!(!editor.can_redo());
+        assert_eq!(
+            editor.world().entity(&cube).unwrap().transform.rotation,
+            [0.0, 0.0, 1.0, 0.0]
+        );
+
+        assert_eq!(editor.undo().unwrap(), true);
+        assert_eq!(
+            editor.world().entity(&cube).unwrap().transform.rotation,
+            Transform::identity().rotation
+        );
+        assert!(editor.can_redo());
+
+        assert_eq!(editor.redo().unwrap(), true);
+        assert_eq!(
+            editor.world().entity(&cube).unwrap().transform.rotation,
+            [0.0, 0.0, 1.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn canonical_transform_noop_does_not_push_extra_history() {
+        let mut editor = EditorModel::default();
+        let cube = editor.create_cube();
+        editor
+            .set_transform(
+                &cube,
+                Transform {
+                    rotation: [0.0, 0.0, 2.0, 0.0],
+                    ..Transform::identity()
+                },
+            )
+            .unwrap();
+
+        editor
+            .set_transform(
+                &cube,
+                Transform {
+                    rotation: [0.0, 0.0, 4.0, 0.0],
+                    ..Transform::identity()
+                },
+            )
+            .unwrap();
+
+        assert!(editor.can_undo());
+        assert!(!editor.can_redo());
+        assert_eq!(editor.undo().unwrap(), true);
+        assert_eq!(
+            editor.world().entity(&cube).unwrap().transform.rotation,
+            Transform::identity().rotation
+        );
+        assert!(!editor.can_undo());
+    }
+
+    #[test]
+    fn preview_transform_does_not_touch_history_or_dirty() {
+        let mut editor = EditorModel::default();
+        let cube = editor.create_cube();
+        editor.mark_saved();
+        let before = editor.world().entity(&cube).unwrap().transform;
+
+        editor
+            .preview_transform(&cube, Transform::from_translation([3.0, 0.0, 0.0]))
+            .unwrap();
+
+        assert_eq!(
+            editor.world().entity(&cube).unwrap().transform.translation,
+            [3.0, 0.0, 0.0]
+        );
+        assert!(!editor.is_dirty());
+        assert!(!editor.can_undo());
+
+        editor.restore_transform_preview(&cube, before, false).unwrap();
+        assert_eq!(
+            editor.world().entity(&cube).unwrap().transform.translation,
+            [0.0, 0.0, 0.0]
+        );
+        assert!(!editor.is_dirty());
+    }
+
+    #[test]
+    fn commit_transform_edit_pushes_one_history_entry() {
+        let mut editor = EditorModel::default();
+        let cube = editor.create_cube();
+        editor.mark_saved();
+        let before = editor.world().entity(&cube).unwrap().transform;
+        let after = Transform::from_translation([2.0, 0.0, 0.0]);
+
+        editor.preview_transform(&cube, after).unwrap();
+        assert_eq!(
+            editor
+                .commit_transform_edit(&cube, before, after)
+                .unwrap(),
+            true
+        );
+
+        assert!(editor.is_dirty());
+        assert!(editor.can_undo());
+        assert_eq!(editor.undo().unwrap(), true);
+        assert_eq!(
+            editor.world().entity(&cube).unwrap().transform.translation,
+            [0.0, 0.0, 0.0]
         );
     }
 }
