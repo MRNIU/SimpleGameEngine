@@ -49,6 +49,8 @@ pub(crate) fn draw_viewport(
     selected_transform: Option<Transform>,
     camera: &mut ViewCamera,
     gizmo: &mut TransformGizmoState,
+    keyboard_shortcuts_allowed: bool,
+    fit_view_requested: bool,
     wgpu_probe: Option<&ViewportWgpuProbe>,
 ) -> ViewportAction {
     ui.heading("Viewport");
@@ -84,7 +86,9 @@ pub(crate) fn draw_viewport(
     painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(18, 24, 29));
     let fitted_draw =
         draw.map(|draw| fit_viewport_draw_to_size(draw, [rect.width(), rect.height()]));
-    if ui.input(|input| input.key_pressed(egui::Key::F)) {
+    let f_pressed = ui.input(|input| input.key_pressed(egui::Key::F));
+    let fit_requested = fit_view_requested || (keyboard_shortcuts_allowed && f_pressed);
+    if fit_requested {
         match draw {
             Some(draw) if camera.fit_draw(draw, selected) => {
                 ui.ctx().request_repaint();

@@ -280,6 +280,50 @@ impl EditorApp {
         }
     }
 
+    fn command_shift() -> egui::Modifiers {
+        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT)
+    }
+
+    pub(super) fn keyboard_shortcuts_allowed(context: &egui::Context) -> bool {
+        !context.egui_wants_keyboard_input()
+    }
+
+    fn handle_keyboard_shortcuts(&mut self, context: &egui::Context) {
+        if context.input_mut(|input| input.consume_key(Self::command_shift(), egui::Key::S)) {
+            self.run_ui_action(EditorUiAction::SaveSceneAs);
+        }
+        if context.input_mut(|input| input.consume_key(Self::command_shift(), egui::Key::Z))
+            || context.input_mut(|input| input.consume_key(egui::Modifiers::CTRL, egui::Key::Y))
+        {
+            self.run_ui_action(EditorUiAction::Redo);
+        }
+        if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::N)) {
+            self.run_ui_action(EditorUiAction::NewScene);
+        }
+        if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::O)) {
+            self.run_ui_action(EditorUiAction::OpenScene);
+        }
+        if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
+            self.run_ui_action(EditorUiAction::SaveScene);
+        }
+        if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::Z)) {
+            self.run_ui_action(EditorUiAction::Undo);
+        }
+        if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::D)) {
+            self.run_ui_action(EditorUiAction::DuplicateSelection);
+        }
+
+        if Self::keyboard_shortcuts_allowed(context)
+            && (context
+                .input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Delete))
+                || context.input_mut(|input| {
+                    input.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)
+                }))
+        {
+            self.run_ui_action(EditorUiAction::DeleteSelection);
+        }
+    }
+
     fn begin_name_edit(&mut self, target: EntityId, before: String) {
         self.name_edit = Some(NameEditSession {
             target,
@@ -543,6 +587,8 @@ impl EditorApp {
 
 impl eframe::App for EditorApp {
     fn logic(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
+        self.handle_keyboard_shortcuts(context);
+
         if let Some(path) = self.options.smoke_path.clone() {
             if self.smoke_report.is_none() {
                 match self.run_smoke_file_workflow(&path) {

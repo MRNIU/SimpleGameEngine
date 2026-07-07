@@ -163,6 +163,9 @@ impl EditorApp {
             .and_then(|id| self.model.world().entity(id.as_str()))
             .map(|entity| entity.transform);
         let wgpu_probe = self.wgpu_viewport_available.then_some(&self.viewport_probe);
+        let keyboard_shortcuts_allowed = Self::keyboard_shortcuts_allowed(ui.ctx());
+        let fit_view_requested = self.fit_view_requested;
+        self.fit_view_requested = false;
         let action = draw_viewport(
             ui,
             draw.as_ref(),
@@ -170,6 +173,8 @@ impl EditorApp {
             selected_transform,
             &mut self.viewport_camera,
             &mut self.transform_gizmo,
+            keyboard_shortcuts_allowed,
+            fit_view_requested,
             wgpu_probe,
         );
         self.handle_viewport_action(action);

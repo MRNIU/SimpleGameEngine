@@ -537,3 +537,48 @@ fn cjk_font_candidates_cover_common_desktop_fonts() {
             .any(|candidate| candidate.contains("NotoSansCJK"))
     );
 }
+
+#[test]
+fn keyboard_shortcuts_allowed_is_false_when_widget_has_keyboard_focus() {
+    let context = egui::Context::default();
+
+    assert!(super::EditorApp::keyboard_shortcuts_allowed(&context));
+
+    context.memory_mut(|memory| memory.request_focus(egui::Id::new("path_input")));
+
+    assert!(!super::EditorApp::keyboard_shortcuts_allowed(&context));
+}
+
+#[test]
+fn app_source_keeps_global_modified_shortcuts_outside_focus_guard() {
+    let source = include_str!("../app.rs");
+
+    assert!(source.contains("fn handle_keyboard_shortcuts"));
+    assert!(source.contains("EditorUiAction::SaveScene"));
+    assert!(source.contains("EditorUiAction::Undo"));
+    assert!(source.contains("EditorUiAction::Redo"));
+    assert!(source.contains("keyboard_shortcuts_allowed(context)"));
+}
+
+#[test]
+fn modified_shortcuts_are_checked_before_plain_shortcuts() {
+    let source = include_str!("../app.rs");
+    let shortcut_source = &source[source
+        .find("fn handle_keyboard_shortcuts")
+        .expect("shortcut helper present")..];
+    let save_as = shortcut_source
+        .find("EditorUiAction::SaveSceneAs")
+        .expect("Save As shortcut present");
+    let save = shortcut_source
+        .find("EditorUiAction::SaveScene)")
+        .expect("Save shortcut present");
+    let redo = shortcut_source
+        .find("EditorUiAction::Redo")
+        .expect("Redo shortcut present");
+    let undo = shortcut_source
+        .find("EditorUiAction::Undo")
+        .expect("Undo shortcut present");
+
+    assert!(save_as < save);
+    assert!(redo < undo);
+}

@@ -403,3 +403,12 @@ fn fit_visible_draw_without_selection_centers_all_visible_cubes() {
 
     assert!(view.transform.translation[0].abs() < 0.1);
 }
+
+#[test]
+fn draw_viewport_signature_accepts_keyboard_and_fit_guards() {
+    let source = include_str!("../viewport.rs");
+
+    assert!(source.contains("keyboard_shortcuts_allowed: bool"));
+    assert!(source.contains("fit_view_requested: bool"));
+    assert!(source.contains("fit_view_requested || (keyboard_shortcuts_allowed"));
+}
