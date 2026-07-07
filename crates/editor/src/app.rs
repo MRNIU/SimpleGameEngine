@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use ecs::EntityId;
+use ecs::{Camera, EntityId, Light, MaterialOverride};
 use eframe::egui;
 use math::Transform;
 
@@ -60,6 +60,10 @@ pub struct EditorApp {
     transform_gizmo: TransformGizmoState,
     name_edit: Option<NameEditSession>,
     transform_edit: Option<TransformEditSession>,
+    pilot_camera: bool,
+    material_edit: Option<MaterialEditSession>,
+    light_edit: Option<LightEditSession>,
+    camera_edit: Option<CameraEditSession>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +83,27 @@ struct NameEditSession {
 struct TransformEditSession {
     target: EntityId,
     before: Transform,
+    dirty_before: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct MaterialEditSession {
+    target: EntityId,
+    before: Option<MaterialOverride>,
+    dirty_before: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct LightEditSession {
+    target: EntityId,
+    before: Light,
+    dirty_before: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct CameraEditSession {
+    target: EntityId,
+    before: Camera,
     dirty_before: bool,
 }
 
@@ -227,6 +252,190 @@ impl EditorApp {
             self.status = format_editor_error("Edit restore failed", error);
         }
     }
+
+    fn begin_material_edit(&mut self, target: EntityId, before: Option<MaterialOverride>) {
+        self.material_edit = Some(MaterialEditSession {
+            target,
+            before,
+            dirty_before: self.model.is_dirty(),
+        });
+    }
+
+    fn preview_material_edit(&mut self, target: EntityId, material: Option<MaterialOverride>) {
+        if self.material_edit.is_none() {
+            let before = self
+                .model
+                .world()
+                .entity(target.as_str())
+                .and_then(|entity| entity.material_override);
+            self.begin_material_edit(target.clone(), before);
+        }
+        match self.model.preview_material_override(&target, material) {
+            Ok(()) => self.status = "Material preview".to_owned(),
+            Err(error) => self.status = format_editor_error("Material edit failed", error),
+        }
+    }
+
+    fn finish_material_edit(&mut self, commit: bool) {
+        let Some(edit) = self.material_edit.take() else {
+            return;
+        };
+        let current = self
+            .model
+            .world()
+            .entity(edit.target.as_str())
+            .and_then(|entity| entity.material_override);
+        if commit {
+            match self
+                .model
+                .commit_material_override_edit(&edit.target, edit.before, current)
+            {
+                Ok(true) => self.status = "Material updated".to_owned(),
+                Ok(false) => self.status = "Material unchanged".to_owned(),
+                Err(error) => self.status = format_editor_error("Material edit failed", error),
+            }
+        } else if let Err(error) = self.model.restore_material_override_preview(
+            &edit.target,
+            edit.before,
+            edit.dirty_before,
+        ) {
+            self.status = format_editor_error("Material restore failed", error);
+        }
+    }
+
+    fn begin_light_edit(&mut self, target: EntityId, before: Light) {
+        self.light_edit = Some(LightEditSession {
+            target,
+            before,
+            dirty_before: self.model.is_dirty(),
+        });
+    }
+
+    fn preview_light_edit(&mut self, target: EntityId, light: Light) {
+        if self.light_edit.is_none()
+            && let Some(before) = self
+                .model
+                .world()
+                .entity(target.as_str())
+                .and_then(|entity| entity.light.clone())
+        {
+            self.begin_light_edit(target.clone(), before);
+        }
+        match self.model.preview_light(&target, light) {
+            Ok(()) => self.status = "Light preview".to_owned(),
+            Err(error) => self.status = format_editor_error("Light edit failed", error),
+        }
+    }
+
+    fn finish_light_edit(&mut self, commit: bool) {
+        let Some(edit) = self.light_edit.take() else {
+            return;
+        };
+        let current = self
+            .model
+            .world()
+            .entity(edit.target.as_str())
+            .and_then(|entity| entity.light.clone())
+            .unwrap_or_else(|| edit.before.clone());
+        if commit {
+            match self
+                .model
+                .commit_light_edit(&edit.target, edit.before, current)
+            {
+                Ok(true) => self.status = "Light updated".to_owned(),
+                Ok(false) => self.status = "Light unchanged".to_owned(),
+                Err(error) => self.status = format_editor_error("Light edit failed", error),
+            }
+        } else if let Err(error) =
+            self.model
+                .restore_light_preview(&edit.target, edit.before, edit.dirty_before)
+        {
+            self.status = format_editor_error("Light restore failed", error);
+        }
+    }
+
+    fn begin_camera_edit(&mut self, target: EntityId, before: Camera) {
+        self.camera_edit = Some(CameraEditSession {
+            target,
+            before,
+            dirty_before: self.model.is_dirty(),
+        });
+    }
+
+    fn preview_camera_edit(&mut self, target: EntityId, camera: Camera) {
+        if self.camera_edit.is_none()
+            && let Some(before) = self
+                .model
+                .world()
+                .entity(target.as_str())
+                .and_then(|entity| entity.camera.clone())
+        {
+            self.begin_camera_edit(target.clone(), before);
+        }
+        match self.model.preview_camera(&target, camera) {
+            Ok(()) => self.status = "Camera preview".to_owned(),
+            Err(error) => self.status = format_editor_error("Camera edit failed", error),
+        }
+    }
+
+    fn finish_camera_edit(&mut self, commit: bool) {
+        let Some(edit) = self.camera_edit.take() else {
+            return;
+        };
+        let current = self
+            .model
+            .world()
+            .entity(edit.target.as_str())
+            .and_then(|entity| entity.camera.clone())
+            .unwrap_or_else(|| edit.before.clone());
+        if commit {
+            match self
+                .model
+                .commit_camera_edit(&edit.target, edit.before, current)
+            {
+                Ok(true) => self.status = "Camera updated".to_owned(),
+                Ok(false) => self.status = "Camera unchanged".to_owned(),
+                Err(error) => self.status = format_editor_error("Camera edit failed", error),
+            }
+        } else if let Err(error) =
+            self.model
+                .restore_camera_preview(&edit.target, edit.before, edit.dirty_before)
+        {
+            self.status = format_editor_error("Camera restore failed", error);
+        }
+    }
+
+    fn can_pilot_selected_camera(&self) -> bool {
+        self.model
+            .selected()
+            .and_then(|id| self.model.world().entity(id.as_str()))
+            .is_some_and(|entity| entity.camera.is_some())
+    }
+
+    fn toggle_pilot_camera(&mut self) {
+        if self.pilot_camera {
+            self.pilot_camera = false;
+            self.status = "Pilot camera off".to_owned();
+        } else if self.can_pilot_selected_camera() {
+            self.pilot_camera = true;
+            self.status = "Pilot camera on".to_owned();
+        } else {
+            self.status = "Select a camera to pilot".to_owned();
+        }
+    }
+
+    fn sync_pilot_camera_target(&mut self) {
+        if self.pilot_camera && !self.can_pilot_selected_camera() {
+            self.pilot_camera = false;
+            self.status = "Pilot camera off".to_owned();
+        }
+    }
+
+    fn clear_content_edit_sessions(&mut self) {
+        self.material_edit = None;
+        self.light_edit = None;
+        self.camera_edit = None;
+    }
 }
 
 impl eframe::App for EditorApp {
@@ -289,9 +498,7 @@ impl eframe::App for EditorApp {
         egui::Panel::bottom("editor_status_bar").show(ui, |ui| {
             self.draw_status_bar(ui);
         });
-        egui::CentralPanel::default().show(ui, |ui| {
-            self.draw_editor_body(ui);
-        });
+        self.draw_editor_body(ui);
     }
 }
 

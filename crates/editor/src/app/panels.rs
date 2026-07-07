@@ -10,6 +10,8 @@ use crate::{
 
 use super::{EditorApp, format_editor_error};
 
+type SidePanel = egui::Panel;
+
 impl EditorApp {
     pub(super) fn draw_top_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
@@ -83,6 +85,20 @@ impl EditorApp {
                 viewport::GizmoMode::Scale,
                 "Scale",
             );
+            ui.separator();
+            if ui
+                .add_enabled(
+                    self.pilot_camera || self.can_pilot_selected_camera(),
+                    egui::Button::new(if self.pilot_camera {
+                        "Pilot Camera: On"
+                    } else {
+                        "Pilot Camera"
+                    }),
+                )
+                .clicked()
+            {
+                self.toggle_pilot_camera();
+            }
             if self.model.is_dirty() {
                 ui.label("Unsaved");
             }
@@ -90,10 +106,20 @@ impl EditorApp {
     }
 
     pub(super) fn draw_editor_body(&mut self, ui: &mut egui::Ui) {
-        ui.columns(3, |columns| {
-            draw_hierarchy(&mut columns[0], &mut self.model);
-            self.draw_inspector_panel(&mut columns[1]);
-            self.draw_viewport_column(&mut columns[2]);
+        SidePanel::left("hierarchy_panel")
+            .resizable(false)
+            .default_size(240.0)
+            .size_range(220.0..=260.0)
+            .show(ui, |ui| draw_hierarchy(ui, &mut self.model));
+
+        SidePanel::right("inspector_panel")
+            .resizable(false)
+            .default_size(330.0)
+            .size_range(300.0..=360.0)
+            .show(ui, |ui| self.draw_inspector_panel(ui));
+
+        egui::CentralPanel::default().show(ui, |ui| {
+            self.draw_viewport_column(ui);
         });
     }
 
@@ -109,6 +135,12 @@ impl EditorApp {
             ui.label(selection);
             ui.separator();
             ui.label(format!("{:?}", self.transform_gizmo.mode));
+            ui.separator();
+            ui.label(if self.pilot_camera {
+                "Pilot"
+            } else {
+                "Editor camera"
+            });
             if !self.status.is_empty() {
                 ui.separator();
                 ui.label(&self.status);
@@ -117,8 +149,14 @@ impl EditorApp {
     }
 
     fn draw_viewport_column(&mut self, ui: &mut egui::Ui) {
-        let view = self.viewport_camera.to_viewport_view();
-        let draw = self.model.viewport_draw_call_for_view(&view);
+        self.sync_pilot_camera_target();
+        let piloted_view = self
+            .pilot_camera
+            .then(|| self.model.selected_camera_view())
+            .flatten();
+        let editor_view = self.viewport_camera.to_viewport_view();
+        let view = piloted_view.as_ref().unwrap_or(&editor_view);
+        let draw = self.model.viewport_draw_call_for_view(view);
         let selected = self.model.selected().cloned();
         let selected_transform = selected
             .as_ref()
@@ -214,9 +252,78 @@ impl EditorApp {
         if let Some(mesh) = &entity.mesh {
             ui.label(format!("Mesh: {}", mesh.asset));
             ui.label(format!("Material: {}", mesh.material));
+            let mut material = entity.material_override.unwrap_or(ecs::MaterialOverride {
+                base_color: [0.3, 0.64, 1.0, 1.0],
+            });
+            if ui
+                .color_edit_button_rgba_unmultiplied(&mut material.base_color)
+                .changed()
+            {
+                self.preview_material_edit(selected.clone(), Some(material));
+            }
+            if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+                self.finish_material_edit(false);
+            } else if self.material_edit.is_some()
+                && !ui.input(|input| input.pointer.primary_down())
+            {
+                self.finish_material_edit(true);
+            }
+        }
+        if let Some(light) = &entity.light {
+            let mut edited = light.clone();
+            ui.horizontal(|ui| {
+                ui.label("Light Kind");
+                ui.selectable_value(&mut edited.kind, ecs::LightKind::Directional, "Directional");
+                ui.selectable_value(&mut edited.kind, ecs::LightKind::Point, "Point");
+            });
+            let color_changed = ui.color_edit_button_rgb(&mut edited.color).changed();
+            let intensity_changed = ui
+                .add(
+                    egui::DragValue::new(&mut edited.intensity)
+                        .speed(0.1)
+                        .range(0.0..=100.0),
+                )
+                .changed();
+            if color_changed || intensity_changed || edited.kind != light.kind {
+                self.preview_light_edit(selected.clone(), edited);
+            }
+            if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+                self.finish_light_edit(false);
+            } else if self.light_edit.is_some() && !ui.input(|input| input.pointer.primary_down()) {
+                self.finish_light_edit(true);
+            }
         }
         if let Some(camera) = &entity.camera {
-            ui.label(format!("Camera: {:?}", camera.projection));
+            let mut edited = camera.clone();
+            let changed = match &mut edited.projection {
+                ecs::Projection::Perspective { fov_y_degrees } => {
+                    ui.label("Projection: Perspective");
+                    ui.add(
+                        egui::DragValue::new(fov_y_degrees)
+                            .speed(1.0)
+                            .range(1.0..=179.0),
+                    )
+                    .changed()
+                }
+                ecs::Projection::Orthographic { vertical_size } => {
+                    ui.label("Projection: Orthographic");
+                    ui.add(
+                        egui::DragValue::new(vertical_size)
+                            .speed(0.1)
+                            .range(0.01..=100.0),
+                    )
+                    .changed()
+                }
+            };
+            if changed {
+                self.preview_camera_edit(selected.clone(), edited);
+            }
+            if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+                self.finish_camera_edit(false);
+            } else if self.camera_edit.is_some() && !ui.input(|input| input.pointer.primary_down())
+            {
+                self.finish_camera_edit(true);
+            }
         }
     }
 }

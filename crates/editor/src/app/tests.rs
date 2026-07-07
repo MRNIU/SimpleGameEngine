@@ -1,7 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
 use super::{EditorLaunchOptions, fonts::cjk_font_candidates, panels::inspector_transform_fields};
-use ecs::{Camera, EntityId, EntityRecord, Projection};
+use ecs::{Camera, EntityId, EntityRecord, Light, MaterialOverride, Projection};
 use math::Transform;
 use std::path::PathBuf;
 
@@ -212,6 +212,176 @@ fn transform_edit_session_previews_then_commits_one_history_entry() {
             .translation,
         [0.0, 0.0, 0.0]
     );
+}
+
+#[test]
+fn material_edit_session_previews_then_commits_one_history_entry() {
+    let mut app = super::EditorApp::default();
+    let cube = app.model.create_cube();
+    app.model.mark_saved();
+    app.model.clear_history();
+
+    app.begin_material_edit(cube.clone(), None);
+    app.preview_material_edit(
+        cube.clone(),
+        Some(MaterialOverride {
+            base_color: [0.2, 0.3, 0.4, 1.0],
+        }),
+    );
+    app.preview_material_edit(
+        cube.clone(),
+        Some(MaterialOverride {
+            base_color: [0.5, 0.6, 0.7, 1.0],
+        }),
+    );
+    assert!(!app.model.is_dirty());
+    assert!(!app.model.can_undo());
+
+    app.finish_material_edit(true);
+
+    assert_eq!(
+        app.model
+            .world()
+            .entity(&cube)
+            .unwrap()
+            .material_override
+            .as_ref()
+            .unwrap()
+            .base_color,
+        [0.5, 0.6, 0.7, 1.0]
+    );
+    assert!(app.model.can_undo());
+}
+
+#[test]
+fn light_edit_session_cancel_restores_value_and_dirty() {
+    let mut app = super::EditorApp::default();
+    let light = EntityId::new("directional_light");
+    let before = app
+        .model
+        .world()
+        .entity(&light)
+        .unwrap()
+        .light
+        .as_ref()
+        .unwrap()
+        .clone();
+    app.model.mark_saved();
+    app.model.clear_history();
+
+    app.begin_light_edit(light.clone(), before.clone());
+    app.preview_light_edit(
+        light.clone(),
+        Light {
+            intensity: 3.0,
+            ..before.clone()
+        },
+    );
+    app.finish_light_edit(false);
+
+    assert_eq!(
+        app.model
+            .world()
+            .entity(&light)
+            .unwrap()
+            .light
+            .as_ref()
+            .unwrap()
+            .intensity,
+        before.intensity
+    );
+    assert!(!app.model.is_dirty());
+    assert!(!app.model.can_undo());
+}
+
+#[test]
+fn camera_edit_session_commits_one_history_entry() {
+    let mut app = super::EditorApp::default();
+    let camera = EntityId::new("camera");
+    let before = app
+        .model
+        .world()
+        .entity(&camera)
+        .unwrap()
+        .camera
+        .as_ref()
+        .unwrap()
+        .clone();
+    app.model.mark_saved();
+    app.model.clear_history();
+
+    app.begin_camera_edit(camera.clone(), before);
+    app.preview_camera_edit(
+        camera.clone(),
+        Camera::new(Projection::Perspective {
+            fov_y_degrees: 45.0,
+        }),
+    );
+    app.preview_camera_edit(
+        camera.clone(),
+        Camera::new(Projection::Perspective {
+            fov_y_degrees: 35.0,
+        }),
+    );
+    app.finish_camera_edit(true);
+
+    assert!(app.model.can_undo());
+    assert_eq!(
+        app.model
+            .world()
+            .entity("camera")
+            .unwrap()
+            .camera
+            .as_ref()
+            .unwrap()
+            .projection,
+        Projection::Perspective {
+            fov_y_degrees: 35.0
+        }
+    );
+    app.model.undo().unwrap();
+    assert_eq!(
+        app.model
+            .world()
+            .entity("camera")
+            .unwrap()
+            .camera
+            .as_ref()
+            .unwrap()
+            .projection,
+        Projection::Perspective {
+            fov_y_degrees: 60.0
+        }
+    );
+}
+
+#[test]
+fn pilot_camera_exits_when_selection_or_scene_changes() {
+    let mut app = super::EditorApp::default();
+    app.model.select(EntityId::new("camera"));
+
+    app.toggle_pilot_camera();
+    assert!(app.pilot_camera);
+
+    app.model.select(EntityId::new("root"));
+    app.sync_pilot_camera_target();
+    assert!(!app.pilot_camera);
+
+    app.model.select(EntityId::new("camera"));
+    app.toggle_pilot_camera();
+    assert!(app.pilot_camera);
+    app.replace_with_new_scene();
+    assert!(!app.pilot_camera);
+}
+
+#[test]
+fn editor_body_uses_side_panels_and_central_viewport_contract() {
+    let source = include_str!("panels.rs");
+
+    assert!(source.contains("SidePanel::left"));
+    assert!(source.contains("SidePanel::right"));
+    assert!(source.contains("CentralPanel::default"));
+    assert!(!source.contains("ui.columns(3"));
 }
 
 #[test]

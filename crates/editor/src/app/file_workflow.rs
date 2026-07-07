@@ -86,6 +86,8 @@ impl EditorApp {
         self.model = EditorModel::default();
         self.model.clear_history();
         self.transform_gizmo.clear_drag();
+        self.pilot_camera = false;
+        self.clear_content_edit_sessions();
         self.current_path = None;
         self.pending_action = None;
         self.status = "New scene".to_owned();
@@ -103,6 +105,8 @@ impl EditorApp {
         self.model.reopen_scene_from_str(&input)?;
         self.model.clear_history();
         self.transform_gizmo.clear_drag();
+        self.pilot_camera = false;
+        self.clear_content_edit_sessions();
         self.current_path = Some(path.to_path_buf());
         self.path_input = path.display().to_string();
         Ok(())
