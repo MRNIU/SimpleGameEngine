@@ -57,12 +57,28 @@ pub struct EditorApp {
     wgpu_viewport_available: bool,
     viewport_camera: ViewCamera,
     transform_gizmo: TransformGizmoState,
+    name_edit: Option<NameEditSession>,
+    transform_edit: Option<TransformEditSession>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PendingFileAction {
     New,
     Open(PathBuf),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NameEditSession {
+    target: EntityId,
+    before: String,
+    buffer: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct TransformEditSession {
+    target: EntityId,
+    before: Transform,
+    dirty_before: bool,
 }
 
 impl EditorApp {
@@ -134,6 +150,82 @@ impl EditorApp {
             Err(error) => self.status = format_editor_error("Gizmo restore failed", error),
         }
     }
+
+    fn begin_name_edit(&mut self, target: EntityId, before: String) {
+        self.name_edit = Some(NameEditSession {
+            target,
+            buffer: before.clone(),
+            before,
+        });
+    }
+
+    fn update_name_edit(&mut self, buffer: String) {
+        if let Some(edit) = &mut self.name_edit {
+            edit.buffer = buffer;
+        }
+    }
+
+    fn finish_name_edit(&mut self, commit: bool) {
+        let Some(edit) = self.name_edit.take() else {
+            return;
+        };
+        if !commit {
+            return;
+        }
+        match self.model.rename_entity(&edit.target, &edit.buffer) {
+            Ok(()) => self.status = "Name updated".to_owned(),
+            Err(error) => self.status = format_editor_error("Rename failed", error),
+        }
+    }
+
+    fn begin_transform_edit(&mut self, target: EntityId, before: Transform) {
+        self.transform_edit = Some(TransformEditSession {
+            target,
+            before,
+            dirty_before: self.model.is_dirty(),
+        });
+    }
+
+    fn preview_inspector_transform(&mut self, target: EntityId, transform: Transform) {
+        if self.transform_edit.is_none() {
+            let before = self
+                .model
+                .world()
+                .entity(target.as_str())
+                .map_or(Transform::identity(), |entity| entity.transform);
+            self.begin_transform_edit(target.clone(), before);
+        }
+        match self.model.preview_transform(&target, transform) {
+            Ok(()) => self.status = "Transform preview".to_owned(),
+            Err(error) => self.status = format_editor_error("Edit failed", error),
+        }
+    }
+
+    fn finish_transform_edit(&mut self, commit: bool) {
+        let Some(edit) = self.transform_edit.take() else {
+            return;
+        };
+        let current = self
+            .model
+            .world()
+            .entity(edit.target.as_str())
+            .map_or(edit.before, |entity| entity.transform);
+        if commit {
+            match self
+                .model
+                .commit_transform_edit(&edit.target, edit.before, current)
+            {
+                Ok(true) => self.status = "Transform updated".to_owned(),
+                Ok(false) => self.status = "Transform unchanged".to_owned(),
+                Err(error) => self.status = format_editor_error("Edit failed", error),
+            }
+        } else if let Err(error) =
+            self.model
+                .restore_transform_preview(&edit.target, edit.before, edit.dirty_before)
+        {
+            self.status = format_editor_error("Edit restore failed", error);
+        }
+    }
 }
 
 impl eframe::App for EditorApp {
@@ -190,7 +282,17 @@ impl eframe::App for EditorApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        ui.horizontal(|ui| {
+        self.draw_top_toolbar(ui);
+        ui.separator();
+        self.draw_editor_body(ui);
+        ui.separator();
+        self.draw_status_bar(ui);
+    }
+}
+
+impl EditorApp {
+    fn draw_top_toolbar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
             if ui.button("New").clicked() {
                 self.new_scene();
             }
@@ -203,91 +305,202 @@ impl eframe::App for EditorApp {
             if ui.button("Save As").clicked() {
                 self.save_scene_as();
             }
-            if ui.button("Discard").clicked() {
+            if ui
+                .add_enabled(self.pending_action.is_some(), egui::Button::new("Discard"))
+                .clicked()
+            {
                 self.discard_pending_action();
             }
-        });
-
-        ui.horizontal(|ui| {
+            ui.separator();
             ui.label("Path");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.path_input)
-                    .desired_width(ui.available_width()),
-            );
-        });
-
-        ui.horizontal(|ui| {
+            ui.add(egui::TextEdit::singleline(&mut self.path_input).desired_width(260.0));
+            ui.separator();
+            if ui
+                .add_enabled(self.model.can_undo(), egui::Button::new("Undo"))
+                .clicked()
+                && self.model.undo().unwrap_or(false)
+            {
+                self.status = "Undone".to_owned();
+            }
+            if ui
+                .add_enabled(self.model.can_redo(), egui::Button::new("Redo"))
+                .clicked()
+                && self.model.redo().unwrap_or(false)
+            {
+                self.status = "Redone".to_owned();
+            }
+            ui.separator();
             if ui.button("New Cube").clicked() {
                 self.model.create_cube();
             }
-            if ui.button("Duplicate").clicked() {
+            let has_selection = self.model.selected().is_some();
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Duplicate"))
+                .clicked()
+            {
                 match self.model.duplicate_selected() {
                     Ok(_) => self.status = "Duplicated".to_owned(),
                     Err(error) => self.status = format_editor_error("Duplicate failed", error),
                 }
             }
-            if ui.button("Delete").clicked() {
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Delete"))
+                .clicked()
+            {
                 match self.model.delete_selected() {
                     Ok(()) => self.status = "Deleted".to_owned(),
                     Err(error) => self.status = format_editor_error("Delete failed", error),
                 }
             }
+            ui.separator();
+            ui.selectable_value(
+                &mut self.transform_gizmo.mode,
+                crate::viewport::GizmoMode::Move,
+                "Move",
+            );
+            ui.selectable_value(
+                &mut self.transform_gizmo.mode,
+                crate::viewport::GizmoMode::Scale,
+                "Scale",
+            );
             if self.model.is_dirty() {
                 ui.label("Unsaved");
             }
         });
-        if !self.status.is_empty() {
-            ui.add(egui::Label::new(&self.status).wrap());
-        }
+    }
 
-        ui.separator();
+    fn draw_editor_body(&mut self, ui: &mut egui::Ui) {
         ui.columns(3, |columns| {
             draw_hierarchy(&mut columns[0], &mut self.model);
-            draw_inspector(&mut columns[1], &mut self.model, &mut self.status);
-            let view = self.viewport_camera.to_viewport_view();
-            let draw = self.model.viewport_draw_call_for_view(&view);
-            let selected = self.model.selected().cloned();
-            let selected_transform = selected
-                .as_ref()
-                .and_then(|id| self.model.world().entity(id.as_str()))
-                .map(|entity| entity.transform);
-            let wgpu_probe = self.wgpu_viewport_available.then_some(&self.viewport_probe);
-            match draw_viewport(
-                &mut columns[2],
-                draw.as_ref(),
-                selected.as_ref(),
-                selected_transform,
-                &mut self.viewport_camera,
-                &mut self.transform_gizmo,
-                wgpu_probe,
-            ) {
-                ViewportAction::None => {}
-                ViewportAction::Select(entity) => {
-                    self.model.select(entity);
-                    self.status = "Selected".to_owned();
-                }
-                ViewportAction::ClearSelection => {
-                    self.model.clear_selection();
-                    self.status = "Selection cleared".to_owned();
-                }
-                ViewportAction::PreviewTransform { target, transform } => {
-                    self.preview_viewport_transform(target, transform);
-                }
-                ViewportAction::CommitTransform {
-                    target,
-                    before,
-                    after,
-                } => {
-                    self.commit_viewport_transform(target, before, after);
-                }
-                ViewportAction::RestoreTransform { target, transform } => {
-                    self.restore_viewport_transform(target, transform);
-                }
-                ViewportAction::Status(status) => {
-                    self.status = status;
-                }
+            self.draw_inspector_panel(&mut columns[1]);
+            self.draw_viewport_column(&mut columns[2]);
+        });
+    }
+
+    fn draw_status_bar(&mut self, ui: &mut egui::Ui) {
+        let path = self
+            .current_path
+            .as_ref()
+            .map_or_else(|| "No file".to_owned(), |path| path.display().to_string());
+        let selection = self
+            .model
+            .selected()
+            .map_or_else(|| "No selection".to_owned(), ToString::to_string);
+        ui.horizontal_wrapped(|ui| {
+            ui.label(path);
+            ui.separator();
+            ui.label(selection);
+            ui.separator();
+            ui.label(format!("{:?}", self.transform_gizmo.mode));
+            if !self.status.is_empty() {
+                ui.separator();
+                ui.label(&self.status);
             }
         });
+    }
+
+    fn draw_viewport_column(&mut self, ui: &mut egui::Ui) {
+        let view = self.viewport_camera.to_viewport_view();
+        let draw = self.model.viewport_draw_call_for_view(&view);
+        let selected = self.model.selected().cloned();
+        let selected_transform = selected
+            .as_ref()
+            .and_then(|id| self.model.world().entity(id.as_str()))
+            .map(|entity| entity.transform);
+        let wgpu_probe = self.wgpu_viewport_available.then_some(&self.viewport_probe);
+        match draw_viewport(
+            ui,
+            draw.as_ref(),
+            selected.as_ref(),
+            selected_transform,
+            &mut self.viewport_camera,
+            &mut self.transform_gizmo,
+            wgpu_probe,
+        ) {
+            ViewportAction::None => {}
+            ViewportAction::Select(entity) => {
+                self.model.select(entity);
+                self.status = "Selected".to_owned();
+            }
+            ViewportAction::ClearSelection => {
+                self.model.clear_selection();
+                self.status = "Selection cleared".to_owned();
+            }
+            ViewportAction::PreviewTransform { target, transform } => {
+                self.preview_viewport_transform(target, transform);
+            }
+            ViewportAction::CommitTransform {
+                target,
+                before,
+                after,
+            } => {
+                self.commit_viewport_transform(target, before, after);
+            }
+            ViewportAction::RestoreTransform { target, transform } => {
+                self.restore_viewport_transform(target, transform);
+            }
+            ViewportAction::Status(status) => {
+                self.status = status;
+            }
+        }
+    }
+
+    fn draw_inspector_panel(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Inspector");
+        let Some(selected) = self.model.selected().cloned() else {
+            return;
+        };
+        let Some(entity) = self.model.world().entity(selected.as_str()).cloned() else {
+            return;
+        };
+
+        let mut name = self
+            .name_edit
+            .as_ref()
+            .filter(|edit| edit.target == selected)
+            .map_or_else(|| entity.name.clone(), |edit| edit.buffer.clone());
+        ui.horizontal(|ui| {
+            ui.label("Name");
+            let response = ui.text_edit_singleline(&mut name);
+            if response.gained_focus() {
+                self.begin_name_edit(selected.clone(), entity.name.clone());
+            }
+            if response.changed() {
+                self.update_name_edit(name);
+            }
+            if response.lost_focus() || ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+                self.finish_name_edit(true);
+            }
+            if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+                self.finish_name_edit(false);
+            }
+        });
+
+        let mut transform = entity.transform;
+        let translation_changed = draw_vec3(ui, "Translation", &mut transform.translation);
+        let rotation_changed = draw_vec4(ui, "Rotation", &mut transform.rotation);
+        let fields = inspector_transform_fields(&entity);
+        let scale_changed = fields.show_scale && draw_vec3(ui, "Scale", &mut transform.scale);
+        let transform_changed = translation_changed || rotation_changed || scale_changed;
+        if transform_changed {
+            if self.transform_edit.is_none() {
+                self.begin_transform_edit(selected.clone(), entity.transform);
+            }
+            self.preview_inspector_transform(selected.clone(), transform);
+        }
+        if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+            self.finish_transform_edit(false);
+        } else if self.transform_edit.is_some() && !ui.input(|input| input.pointer.primary_down()) {
+            self.finish_transform_edit(true);
+        }
+
+        if let Some(mesh) = &entity.mesh {
+            ui.label(format!("Mesh: {}", mesh.asset));
+            ui.label(format!("Material: {}", mesh.material));
+        }
+        if let Some(camera) = &entity.camera {
+            ui.label(format!("Camera: {:?}", camera.projection));
+        }
     }
 }
 
@@ -328,45 +541,6 @@ fn draw_hierarchy_node(ui: &mut egui::Ui, model: &mut EditorModel, id: &EntityId
         });
     if response.header_response.clicked() {
         model.select(id.clone());
-    }
-}
-
-fn draw_inspector(ui: &mut egui::Ui, model: &mut EditorModel, status: &mut String) {
-    ui.heading("Inspector");
-    if let Some(selected) = model.selected().cloned()
-        && let Some(entity) = model.world().entity(selected.as_str()).cloned()
-    {
-        let mut name = entity.name.clone();
-        ui.horizontal(|ui| {
-            ui.label("Name");
-            if ui.text_edit_singleline(&mut name).changed() {
-                match model.rename_entity(&selected, &name) {
-                    Ok(()) => *status = "Name updated".to_owned(),
-                    Err(error) => *status = format_editor_error("Rename failed", error),
-                }
-            }
-        });
-
-        let mut transform = entity.transform;
-        let translation_changed = draw_vec3(ui, "Translation", &mut transform.translation);
-        let rotation_changed = draw_vec4(ui, "Rotation", &mut transform.rotation);
-        let fields = inspector_transform_fields(&entity);
-        let scale_changed = fields.show_scale && draw_vec3(ui, "Scale", &mut transform.scale);
-        let transform_changed = translation_changed || rotation_changed || scale_changed;
-        if transform_changed {
-            match model.set_transform(&selected, transform) {
-                Ok(()) => *status = "Transform updated".to_owned(),
-                Err(error) => *status = format_editor_error("Edit failed", error),
-            }
-        }
-
-        if let Some(mesh) = &entity.mesh {
-            ui.label(format!("Mesh: {}", mesh.asset));
-            ui.label(format!("Material: {}", mesh.material));
-        }
-        if let Some(camera) = &entity.camera {
-            ui.label(format!("Camera: {:?}", camera.projection));
-        }
     }
 }
 
@@ -508,10 +682,7 @@ mod tests {
         app.model.mark_saved();
         app.model.clear_history();
 
-        app.preview_viewport_transform(
-            cube.clone(),
-            Transform::from_translation([3.0, 0.0, 0.0]),
-        );
+        app.preview_viewport_transform(cube.clone(), Transform::from_translation([3.0, 0.0, 0.0]));
 
         assert_eq!(
             app.model
@@ -564,10 +735,7 @@ mod tests {
             start_transform: Transform::identity(),
         });
 
-        app.preview_viewport_transform(
-            cube.clone(),
-            Transform::from_translation([3.0, 0.0, 0.0]),
-        );
+        app.preview_viewport_transform(cube.clone(), Transform::from_translation([3.0, 0.0, 0.0]));
 
         assert_eq!(
             app.model
@@ -580,6 +748,64 @@ mod tests {
         );
         assert_eq!(app.transform_gizmo.drag(), None);
         assert_eq!(app.status, "Gizmo target changed");
+    }
+
+    #[test]
+    fn name_edit_session_commits_one_history_entry() {
+        let mut app = super::EditorApp::default();
+        let cube = app.model.create_cube();
+        app.model.mark_saved();
+        app.model.clear_history();
+
+        app.begin_name_edit(cube.clone(), "Cube".to_owned());
+        app.update_name_edit("Cube A".to_owned());
+        app.update_name_edit("Cube B".to_owned());
+        assert!(!app.model.can_undo());
+
+        app.finish_name_edit(true);
+
+        assert_eq!(app.model.world().entity(&cube).unwrap().name, "Cube B");
+        assert!(app.model.can_undo());
+        app.model.undo().unwrap();
+        assert_eq!(app.model.world().entity(&cube).unwrap().name, "Cube");
+    }
+
+    #[test]
+    fn transform_edit_session_previews_then_commits_one_history_entry() {
+        let mut app = super::EditorApp::default();
+        let cube = app.model.create_cube();
+        app.model.mark_saved();
+        app.model.clear_history();
+        let before = app.model.world().entity(&cube).unwrap().transform;
+
+        app.begin_transform_edit(cube.clone(), before);
+        app.preview_inspector_transform(cube.clone(), Transform::from_translation([1.0, 0.0, 0.0]));
+        app.preview_inspector_transform(cube.clone(), Transform::from_translation([2.0, 0.0, 0.0]));
+        assert!(!app.model.is_dirty());
+        assert!(!app.model.can_undo());
+
+        app.finish_transform_edit(true);
+
+        assert_eq!(
+            app.model
+                .world()
+                .entity(&cube)
+                .unwrap()
+                .transform
+                .translation,
+            [2.0, 0.0, 0.0]
+        );
+        assert!(app.model.can_undo());
+        app.model.undo().unwrap();
+        assert_eq!(
+            app.model
+                .world()
+                .entity(&cube)
+                .unwrap()
+                .transform
+                .translation,
+            [0.0, 0.0, 0.0]
+        );
     }
 
     #[test]

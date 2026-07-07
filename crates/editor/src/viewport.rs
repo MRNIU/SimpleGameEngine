@@ -377,10 +377,6 @@ pub(crate) fn draw_viewport(
     wgpu_probe: Option<&ViewportWgpuProbe>,
 ) -> ViewportAction {
     ui.heading("Viewport");
-    ui.horizontal(|ui| {
-        ui.selectable_value(&mut gizmo.mode, GizmoMode::Move, "Move");
-        ui.selectable_value(&mut gizmo.mode, GizmoMode::Scale, "Scale");
-    });
     let (rect, response) = ui.allocate_exact_size(
         viewport_canvas_size(ui.available_size_before_wrap()),
         egui::Sense::click_and_drag(),
