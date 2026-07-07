@@ -3,7 +3,8 @@
 use ecs::{Camera, EntityId, MeshRef, Projection, World};
 use math::Transform;
 use render::{
-    RenderScene, ViewportDrawCall, extract_render_scene, viewport_draw_call_with_selection,
+    RenderScene, ViewportDrawCall, ViewportView, extract_render_scene,
+    viewport_draw_call_with_selection, viewport_draw_call_with_view,
 };
 use thiserror::Error;
 
@@ -93,6 +94,10 @@ impl EditorModel {
 
     pub fn select(&mut self, entity: EntityId) {
         self.selected = Some(entity);
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selected = None;
     }
 
     pub fn create_cube(&mut self) -> EntityId {
@@ -220,6 +225,11 @@ impl EditorModel {
         viewport_draw_call_with_selection(&self.render_scene(), self.selected.as_ref())
     }
 
+    #[must_use]
+    pub fn viewport_draw_call_for_view(&self, view: &ViewportView) -> Option<ViewportDrawCall> {
+        viewport_draw_call_with_view(&self.render_scene(), self.selected.as_ref(), view)
+    }
+
     pub fn run_smoke_actions(mut self) -> anyhow::Result<EditorSmokeReport> {
         self.run_smoke_actions_in_place()
     }
@@ -244,6 +254,20 @@ impl EditorModel {
         let render_scene = self.render_scene();
         let viewport_draw = self
             .viewport_draw_call()
+            .ok_or_else(|| anyhow::anyhow!("viewport draw call missing after reopen"))?;
+
+        let report = EditorSmokeReport {
+            mesh_count: render_scene.meshes.len(),
+            has_camera: render_scene.active_camera.is_some(),
+            viewport_index_count: viewport_draw.index_count,
+        };
+        Ok(report)
+    }
+
+    pub fn smoke_report_for_view(&self, view: &ViewportView) -> anyhow::Result<EditorSmokeReport> {
+        let render_scene = self.render_scene();
+        let viewport_draw = self
+            .viewport_draw_call_for_view(view)
             .ok_or_else(|| anyhow::anyhow!("viewport draw call missing after reopen"))?;
 
         let report = EditorSmokeReport {

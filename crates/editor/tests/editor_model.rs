@@ -5,6 +5,7 @@
 use ecs::EntityId;
 use editor::{EditorError, EditorModel};
 use math::Transform;
+use render::ViewportView;
 
 #[test]
 fn editor_model_can_create_save_and_reopen_a_cube_scene() {
@@ -130,6 +131,36 @@ fn editor_model_delete_falls_back_to_parent_selection() {
 
     assert!(editor.world().entity(&cube).is_none());
     assert_eq!(editor.selected(), Some(&EntityId::new("root")));
+}
+
+#[test]
+fn editor_model_can_clear_selection_without_dirtying_scene() {
+    let mut editor = EditorModel::default();
+    let cube = editor.create_cube();
+    assert_eq!(editor.selected(), Some(&cube));
+    editor.mark_saved();
+
+    editor.clear_selection();
+
+    assert_eq!(editor.selected(), None);
+    assert!(!editor.is_dirty());
+}
+
+#[test]
+fn editor_model_can_build_viewport_draw_for_editor_view() {
+    let mut editor = EditorModel::default();
+    editor.create_cube();
+    let scene_camera_draw = editor.viewport_draw_call().unwrap();
+    let editor_view = ViewportView::new(
+        EntityId::new("editor_view"),
+        Transform::from_translation([1.0, 0.0, 0.0]),
+    );
+
+    let editor_draw = editor.viewport_draw_call_for_view(&editor_view).unwrap();
+
+    assert_eq!(editor_draw.camera_entity, EntityId::new("editor_view"));
+    assert_ne!(scene_camera_draw.vertices, editor_draw.vertices);
+    assert_eq!(editor_draw.cube_spans.len(), 1);
 }
 
 #[test]
