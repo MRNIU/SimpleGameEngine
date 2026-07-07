@@ -653,6 +653,9 @@ impl eframe::App for EditorApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        egui::Panel::top("editor_menu_bar").show(ui, |ui| {
+            self.draw_menu_bar(ui);
+        });
         egui::Panel::top("editor_toolbar").show(ui, |ui| {
             self.draw_top_toolbar(ui);
         });

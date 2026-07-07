@@ -582,3 +582,27 @@ fn modified_shortcuts_are_checked_before_plain_shortcuts() {
     assert!(save_as < save);
     assert!(redo < undo);
 }
+
+#[test]
+fn menu_bar_source_contains_expected_top_level_menus() {
+    let source = include_str!("panels.rs");
+
+    assert!(source.contains("draw_menu_bar"));
+    assert!(source.contains("\"File\""));
+    assert!(source.contains("\"Edit\""));
+    assert!(source.contains("\"Create\""));
+    assert!(source.contains("\"View\""));
+    assert!(source.contains("EditorUiAction::NewScene"));
+    assert!(source.contains("EditorUiAction::FitView"));
+}
+
+#[test]
+fn editor_app_draws_menu_before_toolbar() {
+    let source = include_str!("../app.rs");
+    let menu_index = source.find("editor_menu_bar").expect("menu panel present");
+    let toolbar_index = source
+        .find("editor_toolbar")
+        .expect("toolbar panel present");
+
+    assert!(menu_index < toolbar_index);
+}

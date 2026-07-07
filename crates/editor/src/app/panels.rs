@@ -13,6 +13,82 @@ use super::{EditorApp, EditorUiAction};
 type SidePanel = egui::Panel;
 
 impl EditorApp {
+    pub(super) fn draw_menu_bar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
+            ui.menu_button("File", |ui| {
+                if ui.button("New Scene").clicked() {
+                    self.run_ui_action(EditorUiAction::NewScene);
+                    ui.close();
+                }
+                if ui.button("Open Scene").clicked() {
+                    self.run_ui_action(EditorUiAction::OpenScene);
+                    ui.close();
+                }
+                if ui.button("Save").clicked() {
+                    self.run_ui_action(EditorUiAction::SaveScene);
+                    ui.close();
+                }
+                if ui.button("Save As").clicked() {
+                    self.run_ui_action(EditorUiAction::SaveSceneAs);
+                    ui.close();
+                }
+            });
+            ui.menu_button("Edit", |ui| {
+                if ui
+                    .add_enabled(self.model.can_undo(), egui::Button::new("Undo"))
+                    .clicked()
+                {
+                    self.run_ui_action(EditorUiAction::Undo);
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(self.model.can_redo(), egui::Button::new("Redo"))
+                    .clicked()
+                {
+                    self.run_ui_action(EditorUiAction::Redo);
+                    ui.close();
+                }
+                let has_selection = self.model.selected().is_some();
+                if ui
+                    .add_enabled(has_selection, egui::Button::new("Duplicate"))
+                    .clicked()
+                {
+                    self.run_ui_action(EditorUiAction::DuplicateSelection);
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(has_selection, egui::Button::new("Delete"))
+                    .clicked()
+                {
+                    self.run_ui_action(EditorUiAction::DeleteSelection);
+                    ui.close();
+                }
+            });
+            ui.menu_button("Create", |ui| {
+                if ui.button("Cube").clicked() {
+                    self.run_ui_action(EditorUiAction::CreateCube);
+                    ui.close();
+                }
+            });
+            ui.menu_button("View", |ui| {
+                if ui.button("Fit View").clicked() {
+                    self.run_ui_action(EditorUiAction::FitView);
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(
+                        self.pilot_camera || self.can_pilot_selected_camera(),
+                        egui::Button::new("Pilot Camera"),
+                    )
+                    .clicked()
+                {
+                    self.run_ui_action(EditorUiAction::TogglePilotCamera);
+                    ui.close();
+                }
+            });
+        });
+    }
+
     pub(super) fn draw_top_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
             if ui.button("New").clicked() {
