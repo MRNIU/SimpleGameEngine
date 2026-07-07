@@ -1,8 +1,12 @@
+use std::collections::BTreeMap;
+
 use super::{
     ViewportView, extract_render_scene, fit_viewport_draw_to_size, viewport_draw_call,
-    viewport_draw_call_with_selection, viewport_draw_call_with_view, viewport_pipeline_info,
-    viewport_vertex_buffer_layout, viewport_vertex_bytes,
+    viewport_draw_call_with_selection, viewport_draw_call_with_view,
+    viewport_draw_call_with_view_and_meshes, viewport_pipeline_info, viewport_vertex_buffer_layout,
+    viewport_vertex_bytes,
 };
+use asset::{AssetUuid, ImportedMesh, ImportedVertex};
 use ecs::{Camera, EntityId, Light, LightKind, MaterialOverride, MeshRef, Projection, World};
 use math::Transform;
 
@@ -70,6 +74,29 @@ fn add_light(world: &mut World, id: &str, color: [f32; 3], intensity: f32) {
             },
         )
         .unwrap();
+}
+
+fn imported_triangle_mesh() -> ImportedMesh {
+    ImportedMesh {
+        vertices: vec![
+            ImportedVertex {
+                position: [0.0, 0.0, 0.0],
+                normal: None,
+                uv: None,
+            },
+            ImportedVertex {
+                position: [1.0, 0.0, 0.0],
+                normal: None,
+                uv: None,
+            },
+            ImportedVertex {
+                position: [0.0, 1.0, 0.0],
+                normal: None,
+                uv: None,
+            },
+        ],
+        indices: vec![0, 1, 2],
+    }
 }
 
 #[test]
@@ -388,13 +415,81 @@ fn viewport_draw_call_records_entity_spans_for_each_cube() {
 
     let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
 
-    assert_eq!(draw.cube_spans.len(), 2);
-    assert_eq!(draw.cube_spans[0].entity, EntityId::new("cube"));
-    assert_eq!(draw.cube_spans[0].vertex_range, 0..24);
-    assert_eq!(draw.cube_spans[0].index_range, 0..36);
-    assert_eq!(draw.cube_spans[1].entity, EntityId::new("cube_1"));
-    assert_eq!(draw.cube_spans[1].vertex_range, 24..48);
-    assert_eq!(draw.cube_spans[1].index_range, 36..72);
+    assert_eq!(draw.mesh_spans.len(), 2);
+    assert_eq!(draw.mesh_spans[0].entity, EntityId::new("cube"));
+    assert_eq!(draw.mesh_spans[0].vertex_range, 0..24);
+    assert_eq!(draw.mesh_spans[0].index_range, 0..36);
+    assert_eq!(draw.mesh_spans[1].entity, EntityId::new("cube_1"));
+    assert_eq!(draw.mesh_spans[1].vertex_range, 24..48);
+    assert_eq!(draw.mesh_spans[1].index_range, 36..72);
+}
+
+#[test]
+fn viewport_draw_call_renders_imported_mesh_and_span() {
+    let uuid = AssetUuid::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    let mut world = world_with_camera();
+    world.spawn(EntityId::new("imported"), "Imported", Transform::identity());
+    world
+        .insert_mesh(
+            "imported",
+            MeshRef::new(uuid.to_asset_ref(), "primitive:default_material"),
+        )
+        .unwrap();
+    let mut meshes = BTreeMap::new();
+    meshes.insert(uuid, imported_triangle_mesh());
+
+    let draw = viewport_draw_call_with_view_and_meshes(
+        &extract_render_scene(&world),
+        Some(&EntityId::new("imported")),
+        &ViewportView::new(
+            EntityId::new("view"),
+            Transform::identity(),
+            Projection::Perspective {
+                fov_y_degrees: 60.0,
+            },
+        ),
+        &meshes,
+    )
+    .unwrap();
+
+    assert_eq!(draw.vertex_count, 3);
+    assert_eq!(draw.index_count, 3);
+    assert_eq!(draw.mesh_spans.len(), 1);
+    assert_eq!(draw.mesh_spans[0].entity, EntityId::new("imported"));
+    assert_eq!(draw.mesh_spans[0].vertex_range, 0..3);
+    assert_eq!(draw.mesh_spans[0].index_range, 0..3);
+}
+
+#[test]
+fn viewport_draw_call_skips_missing_imported_mesh_but_keeps_cubes() {
+    let uuid = AssetUuid::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    let mut world = world_with_camera();
+    add_cube(&mut world, "cube", [0.0, 0.0, 0.0]);
+    world.spawn(EntityId::new("missing"), "Missing", Transform::identity());
+    world
+        .insert_mesh(
+            "missing",
+            MeshRef::new(uuid.to_asset_ref(), "primitive:default_material"),
+        )
+        .unwrap();
+
+    let draw = viewport_draw_call_with_view_and_meshes(
+        &extract_render_scene(&world),
+        None,
+        &ViewportView::new(
+            EntityId::new("view"),
+            Transform::identity(),
+            Projection::Perspective {
+                fov_y_degrees: 60.0,
+            },
+        ),
+        &BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(draw.index_count, 36);
+    assert_eq!(draw.mesh_spans.len(), 1);
+    assert_eq!(draw.mesh_spans[0].entity, EntityId::new("cube"));
 }
 
 #[test]

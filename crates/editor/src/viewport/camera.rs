@@ -111,11 +111,11 @@ impl ViewCamera {
         selected: Option<&EntityId>,
     ) -> bool {
         let selected_span = selected
-            .and_then(|id| draw.cube_spans.iter().find(|span| &span.entity == id))
-            .or_else(|| draw.cube_spans.first().filter(|_| selected.is_some()));
+            .and_then(|id| draw.mesh_spans.iter().find(|span| &span.entity == id))
+            .or_else(|| draw.mesh_spans.first().filter(|_| selected.is_some()));
         let mut center = Vec3::ZERO;
         let mut count = 0usize;
-        let mut accumulate_span = |span: &render::ViewportCubeSpan| {
+        let mut accumulate_span = |span: &render::ViewportMeshSpan| {
             for index in span.vertex_range.clone() {
                 let Some(vertex) = draw.vertices.get(index) else {
                     continue;
@@ -128,7 +128,7 @@ impl ViewCamera {
         if let Some(span) = selected_span {
             accumulate_span(span);
         } else {
-            for span in &draw.cube_spans {
+            for span in &draw.mesh_spans {
                 accumulate_span(span);
             }
         }

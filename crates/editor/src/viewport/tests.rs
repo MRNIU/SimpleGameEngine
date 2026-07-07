@@ -7,9 +7,9 @@ use super::{
 };
 use ecs::EntityId;
 use math::{Transform, Vec3};
-use render::{ViewportCubeSpan, ViewportDrawCall, ViewportVertex};
+use render::{ViewportDrawCall, ViewportMeshSpan, ViewportVertex};
 
-fn draw_with_two_cube_spans() -> ViewportDrawCall {
+fn draw_with_two_mesh_spans() -> ViewportDrawCall {
     ViewportDrawCall {
         label: "primitive:cube".to_owned(),
         camera_entity: EntityId::new("editor_view"),
@@ -50,13 +50,13 @@ fn draw_with_two_cube_spans() -> ViewportDrawCall {
             },
         ],
         indices: vec![0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7],
-        cube_spans: vec![
-            ViewportCubeSpan {
+        mesh_spans: vec![
+            ViewportMeshSpan {
                 entity: EntityId::new("cube"),
                 vertex_range: 0..4,
                 index_range: 0..6,
             },
-            ViewportCubeSpan {
+            ViewportMeshSpan {
                 entity: EntityId::new("cube_1"),
                 vertex_range: 4..8,
                 index_range: 6..12,
@@ -137,7 +137,7 @@ fn view_camera_movement_changes_editor_only_view() {
 
 #[test]
 fn hit_test_uses_entity_span_metadata() {
-    let draw = draw_with_two_cube_spans();
+    let draw = draw_with_two_mesh_spans();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
     let hit = screen_position_for_vertex(rect, draw.vertices[5].position);
 
@@ -148,7 +148,7 @@ fn hit_test_uses_entity_span_metadata() {
 
 #[test]
 fn hit_test_empty_space_clears_selection() {
-    let draw = draw_with_two_cube_spans();
+    let draw = draw_with_two_mesh_spans();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
 
     let action = hit_test_viewport_draw(&draw, rect, egui::pos2(100.0, 100.0));
@@ -158,7 +158,7 @@ fn hit_test_empty_space_clears_selection() {
 
 #[test]
 fn gizmo_layout_uses_fitted_draw_and_selected_span() {
-    let draw = draw_with_two_cube_spans();
+    let draw = draw_with_two_mesh_spans();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
 
     let handles = super::gizmo_layout(&draw, rect, Some(&EntityId::new("cube_1")), GizmoMode::Move);
@@ -372,7 +372,7 @@ fn viewport_transform_actions_distinguish_preview_commit_and_restore() {
 
 #[test]
 fn fit_visible_draw_keeps_camera_finite() {
-    let draw = draw_with_two_cube_spans();
+    let draw = draw_with_two_mesh_spans();
     let mut camera = ViewCamera::default();
 
     assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube"))));
@@ -384,7 +384,7 @@ fn fit_visible_draw_keeps_camera_finite() {
 
 #[test]
 fn fit_visible_draw_pans_edge_selection_toward_center() {
-    let draw = draw_with_two_cube_spans();
+    let draw = draw_with_two_mesh_spans();
     let mut camera = ViewCamera::default();
 
     assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
@@ -395,7 +395,7 @@ fn fit_visible_draw_pans_edge_selection_toward_center() {
 
 #[test]
 fn fit_visible_draw_without_selection_centers_all_visible_cubes() {
-    let draw = draw_with_two_cube_spans();
+    let draw = draw_with_two_mesh_spans();
     let mut camera = ViewCamera::default();
 
     assert!(camera.fit_draw(&draw, None));

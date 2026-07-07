@@ -2,7 +2,7 @@
 //
 //! 渲染数据抽取与 wgpu viewport 边界。
 
-use std::{borrow::Cow, ops::Range};
+use std::{borrow::Cow, collections::BTreeMap, ops::Range};
 
 use ecs::{Camera, EntityId, Light, Projection, World};
 use math::{Quat, Transform, Vec3};
@@ -71,7 +71,7 @@ pub struct ViewportDrawCall {
     pub index_count: usize,
     pub vertices: Vec<ViewportVertex>,
     pub indices: Vec<u16>,
-    pub cube_spans: Vec<ViewportCubeSpan>,
+    pub mesh_spans: Vec<ViewportMeshSpan>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -102,7 +102,7 @@ impl ViewportView {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ViewportCubeSpan {
+pub struct ViewportMeshSpan {
     pub entity: EntityId,
     pub vertex_range: Range<usize>,
     pub index_range: Range<usize>,
@@ -308,21 +308,31 @@ pub fn viewport_draw_call_with_view(
     selected_entity: Option<&EntityId>,
     view: &ViewportView,
 ) -> Option<ViewportDrawCall> {
-    let cube_meshes = scene
-        .meshes
-        .iter()
-        .filter(|mesh| mesh.mesh_asset == "primitive:cube");
+    viewport_draw_call_with_view_and_meshes(scene, selected_entity, view, &BTreeMap::new())
+}
+
+#[must_use]
+pub fn viewport_draw_call_with_view_and_meshes(
+    scene: &RenderScene,
+    selected_entity: Option<&EntityId>,
+    view: &ViewportView,
+    imported_meshes: &BTreeMap<asset::AssetUuid, asset::ImportedMesh>,
+) -> Option<ViewportDrawCall> {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
-    let mut cube_spans = Vec::new();
+    let mut mesh_spans = Vec::new();
     let size = 0.28;
     let camera_rotation = Quat::from_array(normalized_quaternion(view.transform.rotation));
     let view_rotation = camera_rotation.inverse();
     let camera_translation = Vec3::from_array(view.transform.translation);
     let projection_scale = projection_scale(&view.projection);
     let light_multiplier = light_multiplier(scene);
+    let mut has_imported_mesh = false;
 
-    for mesh in cube_meshes {
+    for mesh in &scene.meshes {
+        if mesh.mesh_asset != "primitive:cube" {
+            continue;
+        }
         let vertex_start = vertices.len();
         let index_start = indices.len();
         let mesh_translation = Vec3::from_array(mesh.transform.translation);
@@ -388,25 +398,101 @@ pub fn viewport_draw_call_with_view(
             shade_color(color, 0.68),
         )?;
 
-        cube_spans.push(ViewportCubeSpan {
+        mesh_spans.push(ViewportMeshSpan {
             entity: mesh.entity.clone(),
             vertex_range: vertex_start..vertices.len(),
             index_range: index_start..indices.len(),
         });
     }
+
+    for mesh in &scene.meshes {
+        let Ok(uuid) = asset::AssetUuid::parse_asset_ref(&mesh.mesh_asset) else {
+            continue;
+        };
+        let Some(imported_mesh) = imported_meshes.get(&uuid) else {
+            continue;
+        };
+        has_imported_mesh = true;
+        push_imported_mesh(
+            &mut vertices,
+            &mut indices,
+            &mut mesh_spans,
+            mesh,
+            imported_mesh,
+            selected_entity,
+            view_rotation,
+            camera_translation,
+            projection_scale,
+            light_multiplier,
+        )?;
+    }
+
     if vertices.is_empty() {
         return None;
     }
 
     Some(ViewportDrawCall {
-        label: "primitive:cube".to_owned(),
+        label: if has_imported_mesh {
+            "viewport:mesh".to_owned()
+        } else {
+            "primitive:cube".to_owned()
+        },
         camera_entity: view.entity.clone(),
         vertex_count: vertices.len(),
         index_count: indices.len(),
         vertices,
         indices,
-        cube_spans,
+        mesh_spans,
     })
+}
+
+fn push_imported_mesh(
+    vertices: &mut Vec<ViewportVertex>,
+    indices: &mut Vec<u16>,
+    mesh_spans: &mut Vec<ViewportMeshSpan>,
+    mesh: &MeshDraw,
+    imported_mesh: &asset::ImportedMesh,
+    selected_entity: Option<&EntityId>,
+    view_rotation: Quat,
+    camera_translation: Vec3,
+    projection_scale: f32,
+    light_multiplier: [f32; 3],
+) -> Option<()> {
+    let vertex_start = vertices.len();
+    let index_start = indices.len();
+    let transform_rotation = Quat::from_array(normalized_quaternion(mesh.transform.rotation));
+    let transform_translation = Vec3::from_array(mesh.transform.translation);
+    let transform_scale = Vec3::from_array(mesh.transform.scale);
+    let color = lit_material_color(mesh.base_color, light_multiplier);
+    let color = if selected_entity.is_some_and(|selected| selected == &mesh.entity) {
+        selected_tint(color)
+    } else {
+        color
+    };
+
+    for vertex in &imported_mesh.vertices {
+        let local = Vec3::from_array(vertex.position) * transform_scale;
+        let world = transform_rotation * local + transform_translation;
+        let view_position =
+            view_rotation * (world - camera_translation) * VIEWPORT_WORLD_SCALE * projection_scale;
+        let projected = project_point(view_position);
+        vertices.push(ViewportVertex {
+            position: [projected[0], projected[1], 0.0],
+            color,
+        });
+    }
+
+    for index in &imported_mesh.indices {
+        let index = vertex_start.checked_add(usize::from(*index))?;
+        indices.push(u16::try_from(index).ok()?);
+    }
+
+    mesh_spans.push(ViewportMeshSpan {
+        entity: mesh.entity.clone(),
+        vertex_range: vertex_start..vertices.len(),
+        index_range: index_start..indices.len(),
+    });
+    Some(())
 }
 
 fn push_cube_face(

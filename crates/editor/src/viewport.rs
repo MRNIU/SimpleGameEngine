@@ -107,7 +107,7 @@ pub(crate) fn draw_viewport(
             Some(draw) if camera.fit_draw(draw, selected) => {
                 ui.ctx().request_repaint();
             }
-            Some(_) | None => action = ViewportAction::Status("No visible cube to fit".to_owned()),
+            Some(_) | None => action = ViewportAction::Status("No visible mesh to fit".to_owned()),
         }
     }
     let handles = fitted_draw.as_ref().map_or_else(Vec::new, |draw| {
@@ -261,7 +261,7 @@ pub(crate) fn hit_test_viewport_draw(
         return ViewportAction::None;
     }
     let mut best: Option<(f32, EntityId)> = None;
-    for span in &draw.cube_spans {
+    for span in &draw.mesh_spans {
         let mut min = egui::pos2(f32::INFINITY, f32::INFINITY);
         let mut max = egui::pos2(f32::NEG_INFINITY, f32::NEG_INFINITY);
         for index in span.vertex_range.clone() {

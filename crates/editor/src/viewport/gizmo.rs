@@ -120,7 +120,7 @@ pub(crate) fn gizmo_layout(
     let Some(selected) = selected else {
         return Vec::new();
     };
-    let Some(span) = draw.cube_spans.iter().find(|span| &span.entity == selected) else {
+    let Some(span) = draw.mesh_spans.iter().find(|span| &span.entity == selected) else {
         return Vec::new();
     };
     let Some(bounds) = span_screen_bounds(draw, span, rect) else {
@@ -290,7 +290,7 @@ fn move_gizmo_handles(center: egui::Pos2) -> Vec<GizmoHandleRect> {
 
 fn span_screen_bounds(
     draw: &ViewportDrawCall,
-    span: &render::ViewportCubeSpan,
+    span: &render::ViewportMeshSpan,
     rect: egui::Rect,
 ) -> Option<egui::Rect> {
     let mut min = egui::pos2(f32::INFINITY, f32::INFINITY);
