@@ -12,6 +12,49 @@ use super::{EditorApp, EditorUiAction};
 
 type SidePanel = egui::Panel;
 
+const VIEWPORT_MIN_WIDTH: f32 = 360.0;
+const HIERARCHY_MIN_WIDTH: f32 = 160.0;
+const INSPECTOR_MIN_WIDTH: f32 = 240.0;
+const HIERARCHY_DEFAULT_RATIO: f32 = 0.20;
+const INSPECTOR_DEFAULT_RATIO: f32 = 0.27;
+const SIDE_PANEL_MAX_RATIO: f32 = 0.45;
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct SidePanelLayout {
+    pub(super) hierarchy_default: f32,
+    pub(super) hierarchy_min: f32,
+    pub(super) hierarchy_max: f32,
+    pub(super) inspector_default: f32,
+    pub(super) inspector_min: f32,
+    pub(super) inspector_max: f32,
+    pub(super) viewport_min: f32,
+}
+
+pub(super) fn side_panel_layout(available_width: f32) -> SidePanelLayout {
+    let width = available_width.max(0.0);
+    let side_budget = (width - VIEWPORT_MIN_WIDTH).max(0.0);
+    let inspector_min = INSPECTOR_MIN_WIDTH.min(side_budget * 0.6);
+    let hierarchy_min = HIERARCHY_MIN_WIDTH.min((side_budget - inspector_min).max(0.0));
+    let hierarchy_max = (width * SIDE_PANEL_MAX_RATIO)
+        .min((width - VIEWPORT_MIN_WIDTH - inspector_min).max(0.0))
+        .max(hierarchy_min);
+    let inspector_max = (width * SIDE_PANEL_MAX_RATIO)
+        .min((width - VIEWPORT_MIN_WIDTH - hierarchy_min).max(0.0))
+        .max(inspector_min);
+    let hierarchy_default = (width * HIERARCHY_DEFAULT_RATIO).clamp(hierarchy_min, hierarchy_max);
+    let inspector_default = (width * INSPECTOR_DEFAULT_RATIO).clamp(inspector_min, inspector_max);
+
+    SidePanelLayout {
+        hierarchy_default,
+        hierarchy_min,
+        hierarchy_max,
+        inspector_default,
+        inspector_min,
+        inspector_max,
+        viewport_min: VIEWPORT_MIN_WIDTH,
+    }
+}
+
 impl EditorApp {
     pub(super) fn draw_menu_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
@@ -196,19 +239,29 @@ impl EditorApp {
     }
 
     pub(super) fn draw_editor_body(&mut self, ui: &mut egui::Ui) {
+        let panel_layout = side_panel_layout(ui.available_width());
+
         SidePanel::left("hierarchy_panel")
             .resizable(true)
-            .default_size(240.0)
-            .size_range(160.0..=520.0)
+            .default_size(panel_layout.hierarchy_default)
+            .size_range(panel_layout.hierarchy_min..=panel_layout.hierarchy_max)
             .show(ui, |ui| {
                 ui.take_available_width();
                 draw_hierarchy(ui, &mut self.model);
             });
 
+        let inspector_max = panel_layout
+            .inspector_max
+            .min((ui.available_width() - panel_layout.viewport_min).max(0.0));
+        let inspector_min = panel_layout.inspector_min.min(inspector_max);
+        let inspector_default = panel_layout
+            .inspector_default
+            .clamp(inspector_min, inspector_max);
+
         SidePanel::right("inspector_panel")
             .resizable(true)
-            .default_size(340.0)
-            .size_range(240.0..=720.0)
+            .default_size(inspector_default)
+            .size_range(inspector_min..=inspector_max)
             .show(ui, |ui| {
                 ui.take_available_width();
                 self.draw_inspector_panel(ui);

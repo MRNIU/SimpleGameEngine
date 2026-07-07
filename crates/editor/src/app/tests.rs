@@ -633,17 +633,45 @@ fn status_bar_contains_bounded_path_field() {
 fn editor_body_uses_resizable_side_panels_with_polish_widths() {
     let source = include_str!("panels.rs");
 
-    assert!(source.contains("default_size(240.0)"));
-    assert!(source.contains("default_size(340.0)"));
+    assert!(source.contains("side_panel_layout(ui.available_width())"));
+    assert!(!source.contains("default_size(240.0)"));
+    assert!(!source.contains("default_size(340.0)"));
     assert!(source.contains(".resizable(true)"));
 }
 
 #[test]
-fn side_panel_resize_ranges_leave_room_for_manual_dragging() {
+fn side_panel_resize_ranges_are_not_fixed_pixels() {
     let source = include_str!("panels.rs");
 
-    assert!(source.contains("size_range(160.0..=520.0)"));
-    assert!(source.contains("size_range(240.0..=720.0)"));
+    assert!(!source.contains("size_range(160.0..=520.0)"));
+    assert!(!source.contains("size_range(240.0..=720.0)"));
+}
+
+#[test]
+fn proportional_side_panel_layout_keeps_viewport_minimum() {
+    for width in [640.0, 760.0, 960.0, 1280.0, 2560.0] {
+        let layout = super::panels::side_panel_layout(width);
+
+        assert!(layout.hierarchy_min <= layout.hierarchy_default);
+        assert!(layout.hierarchy_default <= layout.hierarchy_max);
+        assert!(layout.inspector_min <= layout.inspector_default);
+        assert!(layout.inspector_default <= layout.inspector_max);
+        assert!(layout.hierarchy_default + layout.inspector_default + layout.viewport_min <= width);
+
+        let remaining_after_hierarchy_max = width - layout.hierarchy_max;
+        let inspector_max_after_hierarchy = layout
+            .inspector_max
+            .min((remaining_after_hierarchy_max - layout.viewport_min).max(0.0));
+        assert!(
+            layout.hierarchy_max + inspector_max_after_hierarchy + layout.viewport_min <= width
+        );
+    }
+
+    let compact = super::panels::side_panel_layout(960.0);
+    let wide = super::panels::side_panel_layout(1920.0);
+
+    assert!(compact.hierarchy_default < wide.hierarchy_default);
+    assert!(compact.inspector_default < wide.inspector_default);
 }
 
 #[test]
