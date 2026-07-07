@@ -199,13 +199,13 @@ impl EditorApp {
         SidePanel::left("hierarchy_panel")
             .resizable(true)
             .default_size(240.0)
-            .size_range(220.0..=320.0)
+            .size_range(160.0..=520.0)
             .show(ui, |ui| draw_hierarchy(ui, &mut self.model));
 
         SidePanel::right("inspector_panel")
             .resizable(true)
             .default_size(340.0)
-            .size_range(300.0..=460.0)
+            .size_range(240.0..=720.0)
             .show(ui, |ui| self.draw_inspector_panel(ui));
 
         egui::CentralPanel::default().show(ui, |ui| {

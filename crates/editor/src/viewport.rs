@@ -100,7 +100,8 @@ pub(crate) fn draw_viewport(
     let fitted_draw =
         draw.map(|draw| fit_viewport_draw_to_size(draw, [rect.width(), rect.height()]));
     let f_pressed = ui.input(|input| input.key_pressed(egui::Key::F));
-    let fit_requested = fit_view_requested || (keyboard_shortcuts_allowed && f_pressed);
+    let keyboard_fit_requested = response.hovered() && keyboard_shortcuts_allowed && f_pressed;
+    let fit_requested = fit_view_requested || keyboard_fit_requested;
     if fit_requested {
         match draw {
             Some(draw) if camera.fit_draw(draw, selected) => {

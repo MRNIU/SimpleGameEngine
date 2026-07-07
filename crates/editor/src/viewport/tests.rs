@@ -410,7 +410,14 @@ fn draw_viewport_signature_accepts_keyboard_and_fit_guards() {
 
     assert!(source.contains("keyboard_shortcuts_allowed: bool"));
     assert!(source.contains("fit_view_requested: bool"));
-    assert!(source.contains("fit_view_requested || (keyboard_shortcuts_allowed"));
+    assert!(source.contains("let fit_requested = fit_view_requested || keyboard_fit_requested"));
+}
+
+#[test]
+fn viewport_keyboard_fit_requires_pointer_hover() {
+    let source = include_str!("../viewport.rs");
+
+    assert!(source.contains("response.hovered() && keyboard_shortcuts_allowed && f_pressed"));
 }
 
 #[test]

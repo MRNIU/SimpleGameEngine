@@ -639,6 +639,14 @@ fn editor_body_uses_resizable_side_panels_with_polish_widths() {
 }
 
 #[test]
+fn side_panel_resize_ranges_leave_room_for_manual_dragging() {
+    let source = include_str!("panels.rs");
+
+    assert!(source.contains("size_range(160.0..=520.0)"));
+    assert!(source.contains("size_range(240.0..=720.0)"));
+}
+
+#[test]
 fn app_installs_compact_dark_tool_style() {
     let source = include_str!("../app.rs");
 

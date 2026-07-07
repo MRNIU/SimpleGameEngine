@@ -6,7 +6,7 @@
 cargo run -p editor
 ```
 
-手动 smoke 目标：打开 editor，看到 menu bar、分组 toolbar、左 Hierarchy、中 Viewport、右 Inspector 和底部状态栏；创建多个 cube，编辑 transform，右键 look，右键 + `W/A/S/D` 移动 editor-only viewport camera，滚轮调速，左键点击 cube 更新 selection，点击空白清空 selection，按 `F` fit selected/all，确认路径输入或数值输入 active 时 `F` 不触发 Fit View，使用 Move gizmo 拖 X/Y/Z 改变 translation，使用 Scale gizmo 改变 uniform scale，拖动中按 `Esc` 恢复 drag start transform，使用菜单、toolbar 和快捷键执行 Save、Undo/Redo、Duplicate/Delete，dirty scene 下尝试 New/Open 并确认 Save 只保存且取消 pending、Discard 才执行 pending action，保存 `.scene.ron`，再 reopen 并确认 viewport navigation、Pilot Camera 和 gizmo 状态没有写入 scene。
+手动 smoke 目标：打开 editor，看到 menu bar、分组 toolbar、左 Hierarchy、中 Viewport、右 Inspector 和底部状态栏；创建多个 cube，编辑 transform，右键 look，右键 + `W/A/S/D` 移动 editor-only viewport camera，滚轮调速，左键点击 cube 更新 selection，点击空白清空 selection，鼠标在 Viewport 内时按 `F` fit selected/all，确认鼠标不在 Viewport 内、路径输入或数值输入 active 时 `F` 不触发 Fit View，使用 Move gizmo 拖 X/Y/Z 改变 translation，使用 Scale gizmo 改变 uniform scale，拖动中按 `Esc` 恢复 drag start transform，使用菜单、toolbar 和快捷键执行 Save、Undo/Redo、Duplicate/Delete，dirty scene 下尝试 New/Open 并确认 Save 只保存且取消 pending、Discard 才执行 pending action，保存 `.scene.ron`，再 reopen 并确认 viewport navigation、Pilot Camera 和 gizmo 状态没有写入 scene。
 
 2026-07-06 人工 host-native GUI smoke 已通过：真实窗口中确认 viewport 像素输出、两次 `New Cube`、手动移动第二个 cube、保存并重新打开 `.scene.ron`。
 
