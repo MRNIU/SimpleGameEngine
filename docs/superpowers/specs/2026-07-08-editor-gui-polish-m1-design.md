@@ -57,7 +57,8 @@
 
 核心规则：
 
-- 菜单项、toolbar 按钮和快捷键必须走同一 action helper，不能复制业务逻辑。
+- 菜单项、toolbar 按钮和快捷键必须走同一组轻量 app 私有 helper，不能复制业务逻辑。
+- 该 helper 固定为私有 `EditorUiAction` 枚举加 `EditorApp::run_ui_action(&mut self, action: EditorUiAction)`；它只分发 UI 命令到现有 app/model 方法，不引入 command registry、trait object、插件式 action 系统或可配置命令表。
 - 文件 IO 和 path/session state 继续留在 `editor::app`。
 - `EditorModel` 不知道当前文件路径、菜单、快捷键或 layout。
 - `.scene.ron` 不保存菜单状态、快捷键配置、panel 宽度、toolbar mode、viewport camera、Pilot Camera、gizmo drag 或 edit sessions。
@@ -95,6 +96,7 @@ View
 - `Save` 优先写回 current path；没有 current path 时使用 path input。
 - `Save As` 始终写到 path input。
 - `New/Open` 遇到 dirty 时沿用现有 pending guard，提示 Save 或 Discard。
+- dirty guard 后执行 `Save` 或 `Save As` 只保存当前 scene 并取消 pending New/Open，不自动继续执行 pending destructive action；用户需要重新触发 New/Open。
 - `Discard` 保留为 dirty guard 后的显式解决动作，放在 toolbar 的 `Unsaved` 状态旁边。
 
 ## 快捷键
@@ -111,11 +113,11 @@ View
 | Redo | `Cmd+Shift+Z` | `Ctrl+Y` 和 `Ctrl+Shift+Z` | 两套常见 redo 都支持 |
 | Duplicate | `Cmd+D` | `Ctrl+D` | 需要 selection |
 | Delete | `Delete` / `Backspace` | `Delete` / `Backspace` | 需要 selection，文本输入 active 时不触发 |
-| Fit View | `F` | `F` | 保留 viewport 行为 |
+| Fit View | `F` | `F` | 保留 viewport 行为，但文本/数值输入 active 时不触发 |
 
 输入焦点规则：
 
-- 路径输入、名称输入和数值编辑 active 时，`Delete` / `Backspace` 不删除实体。
+- 路径输入、名称输入和数值编辑 active 时，`Delete` / `Backspace` 不删除实体，`F` 不执行 Fit View。
 - `Esc` 继续取消当前 edit/gizmo，不引入 command palette。
 - `Cmd/Ctrl+S/Z/Y` 等全局命令可以在文本输入时生效，因为它们不和普通文本输入冲突。
 
@@ -188,6 +190,7 @@ Dirty 规则不变：
 - Save 不清 undo/redo history。
 - New/Open 成功替换 world 后 dirty = false，并清 undo/redo history、gizmo drag、Pilot Camera 和 edit sessions。
 - New/Open 被 dirty guard 阻止时不改变 scene 和 history。
+- dirty guard 设置 pending New/Open 后，Save/Save As 成功会清 dirty 并取消 pending action，不继续执行 New/Open；Discard 才执行 pending destructive action。
 
 错误处理：
 
@@ -204,10 +207,11 @@ Dirty 规则不变：
   - 菜单、toolbar 和快捷键调用同一 action helper。
   - shortcut New/Open/Save/Save As 复用现有 dirty guard 和 file workflow。
   - shortcut Undo/Redo/Duplicate/Delete 状态来自 `EditorModel`。
-  - 文本输入 active 时 `Delete` / `Backspace` 不删除实体。
+  - 文本输入 active 时 `Delete` / `Backspace` 不删除实体，`F` 不触发 Fit View。
+  - dirty guard 后 Save/Save As 清 pending action 但不自动继续 New/Open。
   - Save 成功不清 history，New/Open 成功清 history、gizmo drag、Pilot Camera 和 edit sessions。
 - `editor::viewport` tests：
-  - `F` fit 行为不被全局快捷键分发破坏。
+  - `F` fit 只在 shortcut focus guard 允许时执行。
   - gizmo preview/commit/restore 行为保持。
 - 现有 `scene`、`render`、`runtime` 和 editor smoke 测试继续保留。
 
@@ -232,13 +236,38 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --
 
 默认 gate 仍是 fmt、clippy、test。GUI smoke 是证据层，不代表跨平台 GPU 兼容性证明。
 
-## 实施切片
+## 实施切片边界
 
-1. `editor::app` action helper：把菜单、toolbar 和 shortcut 统一到同一组 helper。
-2. Shortcut input：实现固定快捷键和文本输入焦点保护。
-3. Menu bar：增加 `File`、`Edit`、`Create`、`View`。
-4. Toolbar/status polish：重排按钮分组，移动 path/status 信息，保留 dirty guard。
-5. Layout/visual polish：收紧 side panel、viewport overlay、disabled/dirty/selected/hover 状态。
-6. Smoke/docs：只在用户可见行为或验证边界变化时更新 README、architecture 和 manual smoke 文档。
+后续 implementation plan 需要按以下边界展开，每片必须有文件、helper、测试入口和验收标准。
+
+1. App action helper
+   - 文件：`crates/editor/src/app.rs`、`crates/editor/src/app/panels.rs`、`crates/editor/src/app/tests.rs`。
+   - Helper：新增私有 `EditorUiAction` 和 `EditorApp::run_ui_action(&mut self, action: EditorUiAction)`。
+   - 验收：现有 toolbar、后续 menu 和快捷键都只调用 `run_ui_action`；不新增 command registry 或公共 action API。
+   - 测试入口：`cargo test -p editor app::tests::`.
+2. Shortcut input 与焦点保护
+   - 文件：`crates/editor/src/app.rs`、`crates/editor/src/viewport.rs`、`crates/editor/src/app/tests.rs`、`crates/editor/src/viewport/tests.rs`。
+   - Helper：新增私有 `EditorApp::keyboard_shortcuts_allowed(context: &egui::Context) -> bool`；`draw_viewport` 签名增加 `keyboard_shortcuts_allowed: bool` 参数，只有该参数为 true 时才处理 `F`。
+   - 验收：文本/数值输入 active 时 `Delete` / `Backspace` 不删除实体，`F` 不执行 Fit View；`Cmd/Ctrl+S/Z/Y` 仍可触发全局命令。
+   - 测试入口：`cargo test -p editor keyboard_shortcuts` 和 `cargo test -p editor viewport`.
+3. Menu bar
+   - 文件：`crates/editor/src/app/panels.rs`、`crates/editor/src/app/tests.rs`。
+   - Helper：新增 `EditorApp::draw_menu_bar(&mut self, ui: &mut egui::Ui)`，菜单项全部转成 `EditorUiAction`。
+   - 验收：`File`、`Edit`、`Create`、`View` 菜单可见；enabled/disabled 状态和 toolbar 一致。
+   - 测试入口：`cargo test -p editor menu_bar`.
+4. Toolbar 与 status bar polish
+   - 文件：`crates/editor/src/app/panels.rs`、`crates/editor/src/app/file_workflow.rs`、`crates/editor/src/app/tests.rs`。
+   - Helper：收紧 `draw_top_toolbar`、`draw_status_bar`，保留现有 file workflow helper。
+   - 验收：toolbar 按 File/Edit/Create/Transform/View/State 分组；底部状态栏左侧有最大约 360px path field；dirty guard 后 Save/Save As 清 pending action 但不自动继续 New/Open，Discard 才执行 pending action。
+   - 测试入口：`cargo test -p editor file_workflow`.
+5. Layout 与 visual polish
+   - 文件：`crates/editor/src/app/panels.rs`、`crates/editor/src/viewport.rs`、`crates/editor/src/app/tests.rs`。
+   - Helper：保留 `draw_editor_body`、`draw_viewport_column` 边界；只在 app/panel 层设置少量 egui style。
+   - 验收：左 240px、右 340px 默认宽度，左右 panel 可 resize 但不持久化；viewport 中央优先；selected、hover、active、disabled、dirty 状态可区分。
+   - 测试入口：`cargo test -p editor layout`.
+6. Smoke/docs
+   - 文件：`README.md`、`docs/architecture/overview.md`、`examples/editor_smoke/README.md`，只在用户可见行为或验证边界变化时更新。
+   - 验收：README 命令仍是 truth source；manual smoke 覆盖菜单、toolbar、快捷键、dirty guard、Save/Reopen 和 editor-only 状态边界。
+   - 验证入口：README 中 fmt、clippy、test、build 和 `editor --smoke` 命令。
 
 若后续需要 docking、Content Browser、系统文件对话框、快捷键配置、图标库或完整主题系统，再单独设计。
