@@ -2,7 +2,7 @@
 //
 //! 渲染数据抽取与 wgpu viewport 边界。
 
-use std::borrow::Cow;
+use std::{borrow::Cow, ops::Range};
 
 use ecs::{Camera, EntityId, World};
 use math::{Quat, Transform, Vec3};
@@ -63,6 +63,35 @@ pub struct ViewportDrawCall {
     pub index_count: usize,
     pub vertices: Vec<ViewportVertex>,
     pub indices: Vec<u16>,
+    pub cube_spans: Vec<ViewportCubeSpan>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ViewportView {
+    pub entity: EntityId,
+    pub transform: Transform,
+}
+
+impl ViewportView {
+    #[must_use]
+    pub const fn new(entity: EntityId, transform: Transform) -> Self {
+        Self { entity, transform }
+    }
+
+    #[must_use]
+    pub fn from_camera(camera: &CameraView) -> Self {
+        Self {
+            entity: camera.entity.clone(),
+            transform: camera.transform,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ViewportCubeSpan {
+    pub entity: EntityId,
+    pub vertex_range: Range<usize>,
+    pub index_range: Range<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -240,18 +269,31 @@ pub fn viewport_draw_call_with_selection(
     selected_entity: Option<&EntityId>,
 ) -> Option<ViewportDrawCall> {
     let camera = scene.active_camera.as_ref()?;
+    let view = ViewportView::from_camera(camera);
+    viewport_draw_call_with_view(scene, selected_entity, &view)
+}
+
+#[must_use]
+pub fn viewport_draw_call_with_view(
+    scene: &RenderScene,
+    selected_entity: Option<&EntityId>,
+    view: &ViewportView,
+) -> Option<ViewportDrawCall> {
     let cube_meshes = scene
         .meshes
         .iter()
         .filter(|mesh| mesh.mesh_asset == "primitive:cube");
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
+    let mut cube_spans = Vec::new();
     let size = 0.28;
-    let camera_rotation = Quat::from_array(normalized_quaternion(camera.transform.rotation));
+    let camera_rotation = Quat::from_array(normalized_quaternion(view.transform.rotation));
     let view_rotation = camera_rotation.inverse();
-    let camera_translation = Vec3::from_array(camera.transform.translation);
+    let camera_translation = Vec3::from_array(view.transform.translation);
 
     for mesh in cube_meshes {
+        let vertex_start = vertices.len();
+        let index_start = indices.len();
         let mesh_translation = Vec3::from_array(mesh.transform.translation);
         let center = view_rotation * (mesh_translation - camera_translation) * VIEWPORT_WORLD_SCALE;
         let corners = transformed_cube_corners(&mesh.transform, view_rotation, size);
@@ -309,6 +351,12 @@ pub fn viewport_draw_call_with_selection(
             [3, 2, 6, 7],
             shade_color(color, 0.68),
         )?;
+
+        cube_spans.push(ViewportCubeSpan {
+            entity: mesh.entity.clone(),
+            vertex_range: vertex_start..vertices.len(),
+            index_range: index_start..indices.len(),
+        });
     }
     if vertices.is_empty() {
         return None;
@@ -316,11 +364,12 @@ pub fn viewport_draw_call_with_selection(
 
     Some(ViewportDrawCall {
         label: "primitive:cube".to_owned(),
-        camera_entity: camera.entity.clone(),
+        camera_entity: view.entity.clone(),
         vertex_count: vertices.len(),
         index_count: indices.len(),
         vertices,
         indices,
+        cube_spans,
     })
 }
 
@@ -462,9 +511,9 @@ fn empty_buffer(
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_render_scene, fit_viewport_draw_to_size, viewport_draw_call,
-        viewport_draw_call_with_selection, viewport_pipeline_info, viewport_vertex_buffer_layout,
-        viewport_vertex_bytes,
+        ViewportView, extract_render_scene, fit_viewport_draw_to_size, viewport_draw_call,
+        viewport_draw_call_with_selection, viewport_draw_call_with_view,
+        viewport_pipeline_info, viewport_vertex_buffer_layout, viewport_vertex_bytes,
     };
     use ecs::{Camera, EntityId, MeshRef, Projection, World};
     use math::Transform;
@@ -704,6 +753,49 @@ mod tests {
         let moved_draw = viewport_draw_call(&extract_render_scene(&moved_camera)).unwrap();
 
         assert_ne!(default_draw.vertices, moved_draw.vertices);
+    }
+
+    #[test]
+    fn viewport_draw_call_with_view_uses_explicit_view() {
+        let mut world = world_with_camera_transform(Transform::identity());
+        add_cube(&mut world, "cube", [1.0, 0.0, 0.0]);
+        let scene = extract_render_scene(&world);
+        let scene_camera_draw = viewport_draw_call(&scene).unwrap();
+        let editor_view = ViewportView::new(
+            EntityId::new("editor_view"),
+            Transform {
+                translation: [1.0, 0.0, 0.0],
+                rotation: [
+                    0.0,
+                    0.0,
+                    std::f32::consts::FRAC_1_SQRT_2,
+                    std::f32::consts::FRAC_1_SQRT_2,
+                ],
+                ..Transform::identity()
+            },
+        );
+
+        let editor_draw = viewport_draw_call_with_view(&scene, None, &editor_view).unwrap();
+
+        assert_eq!(editor_draw.camera_entity, EntityId::new("editor_view"));
+        assert_ne!(scene_camera_draw.vertices, editor_draw.vertices);
+    }
+
+    #[test]
+    fn viewport_draw_call_records_entity_spans_for_each_cube() {
+        let mut world = world_with_camera();
+        add_cube(&mut world, "cube", [0.0, 0.0, 0.0]);
+        add_cube(&mut world, "cube_1", [2.0, 0.0, 0.0]);
+
+        let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
+
+        assert_eq!(draw.cube_spans.len(), 2);
+        assert_eq!(draw.cube_spans[0].entity, EntityId::new("cube"));
+        assert_eq!(draw.cube_spans[0].vertex_range, 0..24);
+        assert_eq!(draw.cube_spans[0].index_range, 0..36);
+        assert_eq!(draw.cube_spans[1].entity, EntityId::new("cube_1"));
+        assert_eq!(draw.cube_spans[1].vertex_range, 24..48);
+        assert_eq!(draw.cube_spans[1].index_range, 36..72);
     }
 
     #[test]
