@@ -55,6 +55,7 @@ pub struct EntityRecord {
     children: Vec<EntityId>,
     pub camera: Option<Camera>,
     pub mesh: Option<MeshRef>,
+    pub material_override: Option<MaterialOverride>,
     pub light: Option<Light>,
 }
 
@@ -69,6 +70,7 @@ impl EntityRecord {
             children: Vec::new(),
             camera: None,
             mesh: None,
+            material_override: None,
             light: None,
         }
     }
@@ -101,6 +103,11 @@ impl MeshRef {
             material: material.into(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MaterialOverride {
+    pub base_color: [f32; 4],
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
