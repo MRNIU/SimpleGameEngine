@@ -114,9 +114,14 @@ pub(crate) enum ViewportAction {
     None,
     Select(EntityId),
     ClearSelection,
-    ApplyTransform {
+    PreviewTransform {
         target: EntityId,
         transform: Transform,
+    },
+    CommitTransform {
+        target: EntityId,
+        before: Transform,
+        after: Transform,
     },
     RestoreTransform {
         target: EntityId,
@@ -433,9 +438,21 @@ pub(crate) fn draw_viewport(
         };
     }
 
-    if !primary_down && gizmo.drag().is_some() {
+    if !primary_down && let Some(drag) = gizmo.drag().cloned() {
         pointer_consumed_by_gizmo = true;
         gizmo.clear_drag();
+        if let Some(pointer) = response.interact_pointer_pos() {
+            return ViewportAction::CommitTransform {
+                target: drag.target,
+                before: drag.start_transform,
+                after: transform_for_gizmo_drag(
+                    drag.handle,
+                    drag.start_transform,
+                    drag.start_pointer,
+                    pointer,
+                ),
+            };
+        }
     }
 
     if let Some(drag) = gizmo.drag().cloned() {
@@ -443,7 +460,7 @@ pub(crate) fn draw_viewport(
         match selected {
             Some(selected) if selected == &drag.target => {
                 if let Some(pointer) = response.interact_pointer_pos() {
-                    action = ViewportAction::ApplyTransform {
+                    action = ViewportAction::PreviewTransform {
                         target: drag.target,
                         transform: transform_for_gizmo_drag(
                             drag.handle,
@@ -1093,24 +1110,37 @@ mod tests {
     }
 
     #[test]
-    fn viewport_action_transform_variants_carry_explicit_target() {
+    fn viewport_transform_actions_distinguish_preview_commit_and_restore() {
         let target = EntityId::new("cube");
-        let transform = Transform::from_translation([1.0, 2.0, 3.0]);
+        let before = Transform::identity();
+        let after = Transform::from_translation([1.0, 2.0, 3.0]);
 
         assert_eq!(
-            ViewportAction::ApplyTransform {
+            ViewportAction::PreviewTransform {
                 target: target.clone(),
-                transform,
+                transform: after,
             },
-            ViewportAction::ApplyTransform {
+            ViewportAction::PreviewTransform {
                 target: EntityId::new("cube"),
                 transform: Transform::from_translation([1.0, 2.0, 3.0]),
             }
         );
         assert_eq!(
+            ViewportAction::CommitTransform {
+                target: target.clone(),
+                before,
+                after,
+            },
+            ViewportAction::CommitTransform {
+                target: EntityId::new("cube"),
+                before: Transform::identity(),
+                after: Transform::from_translation([1.0, 2.0, 3.0]),
+            }
+        );
+        assert_eq!(
             ViewportAction::RestoreTransform {
                 target,
-                transform: Transform::identity(),
+                transform: before,
             },
             ViewportAction::RestoreTransform {
                 target: EntityId::new("cube"),

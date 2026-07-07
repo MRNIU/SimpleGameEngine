@@ -85,24 +85,53 @@ impl EditorApp {
         }
     }
 
-    fn apply_viewport_transform(&mut self, target: EntityId, transform: Transform, status: &str) {
-        let selected_matches = self
-            .model
+    fn target_is_current_selection(&self, target: &EntityId) -> bool {
+        self.model
             .selected()
-            .is_some_and(|selected| selected == &target);
-        let target_exists = self.model.world().entity(target.as_str()).is_some();
-        if !selected_matches || !target_exists {
+            .is_some_and(|selected| selected == target)
+            && self.model.world().entity(target.as_str()).is_some()
+    }
+
+    fn preview_viewport_transform(&mut self, target: EntityId, transform: Transform) {
+        if !self.target_is_current_selection(&target) {
             self.transform_gizmo.clear_drag();
             self.status = "Gizmo target changed".to_owned();
             return;
         }
 
-        match self.model.set_transform(&target, transform) {
-            Ok(()) => self.status = status.to_owned(),
+        match self.model.preview_transform(&target, transform) {
+            Ok(()) => self.status = "Gizmo preview".to_owned(),
             Err(error) => {
                 self.transform_gizmo.clear_drag();
                 self.status = format_editor_error("Gizmo failed", error);
             }
+        }
+    }
+
+    fn commit_viewport_transform(&mut self, target: EntityId, before: Transform, after: Transform) {
+        if !self.target_is_current_selection(&target) {
+            self.transform_gizmo.clear_drag();
+            self.status = "Gizmo target changed".to_owned();
+            return;
+        }
+
+        match self.model.commit_transform_edit(&target, before, after) {
+            Ok(true) => self.status = "Gizmo updated".to_owned(),
+            Ok(false) => self.status = "Gizmo unchanged".to_owned(),
+            Err(error) => {
+                self.transform_gizmo.clear_drag();
+                self.status = format_editor_error("Gizmo failed", error);
+            }
+        }
+    }
+
+    fn restore_viewport_transform(&mut self, target: EntityId, transform: Transform) {
+        match self
+            .model
+            .restore_transform_preview(&target, transform, self.model.is_dirty())
+        {
+            Ok(()) => self.status = "Gizmo restored".to_owned(),
+            Err(error) => self.status = format_editor_error("Gizmo restore failed", error),
         }
     }
 }
@@ -241,11 +270,18 @@ impl eframe::App for EditorApp {
                     self.model.clear_selection();
                     self.status = "Selection cleared".to_owned();
                 }
-                ViewportAction::ApplyTransform { target, transform } => {
-                    self.apply_viewport_transform(target, transform, "Gizmo updated");
+                ViewportAction::PreviewTransform { target, transform } => {
+                    self.preview_viewport_transform(target, transform);
+                }
+                ViewportAction::CommitTransform {
+                    target,
+                    before,
+                    after,
+                } => {
+                    self.commit_viewport_transform(target, before, after);
                 }
                 ViewportAction::RestoreTransform { target, transform } => {
-                    self.apply_viewport_transform(target, transform, "Gizmo restored");
+                    self.restore_viewport_transform(target, transform);
                 }
                 ViewportAction::Status(status) => {
                     self.status = status;
@@ -466,15 +502,15 @@ mod tests {
     }
 
     #[test]
-    fn viewport_transform_action_writes_current_selected_target() {
+    fn viewport_preview_transform_does_not_write_history_or_dirty() {
         let mut app = super::EditorApp::default();
         let cube = app.model.create_cube();
         app.model.mark_saved();
+        app.model.clear_history();
 
-        app.apply_viewport_transform(
+        app.preview_viewport_transform(
             cube.clone(),
             Transform::from_translation([3.0, 0.0, 0.0]),
-            "Gizmo updated",
         );
 
         assert_eq!(
@@ -486,8 +522,34 @@ mod tests {
                 .translation,
             [3.0, 0.0, 0.0]
         );
+        assert!(!app.model.is_dirty());
+        assert!(!app.model.can_undo());
+    }
+
+    #[test]
+    fn viewport_commit_transform_writes_one_history_entry() {
+        let mut app = super::EditorApp::default();
+        let cube = app.model.create_cube();
+        app.model.mark_saved();
+        app.model.clear_history();
+        let before = Transform::identity();
+        let after = Transform::from_translation([3.0, 0.0, 0.0]);
+
+        app.preview_viewport_transform(cube.clone(), after);
+        app.commit_viewport_transform(cube.clone(), before, after);
+
         assert!(app.model.is_dirty());
-        assert_eq!(app.status, "Gizmo updated");
+        assert!(app.model.can_undo());
+        app.model.undo().unwrap();
+        assert_eq!(
+            app.model
+                .world()
+                .entity(&cube)
+                .unwrap()
+                .transform
+                .translation,
+            [0.0, 0.0, 0.0]
+        );
     }
 
     #[test]
@@ -502,10 +564,9 @@ mod tests {
             start_transform: Transform::identity(),
         });
 
-        app.apply_viewport_transform(
+        app.preview_viewport_transform(
             cube.clone(),
             Transform::from_translation([3.0, 0.0, 0.0]),
-            "Gizmo updated",
         );
 
         assert_eq!(
