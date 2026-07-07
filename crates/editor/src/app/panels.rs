@@ -8,84 +8,206 @@ use crate::{
     viewport::{self, draw_viewport},
 };
 
-use super::{EditorApp, format_editor_error};
+use super::{EditorApp, EditorUiAction};
 
 type SidePanel = egui::Panel;
 
+const VIEWPORT_MIN_WIDTH: f32 = 360.0;
+const HIERARCHY_MIN_WIDTH: f32 = 160.0;
+const INSPECTOR_MIN_WIDTH: f32 = 240.0;
+const HIERARCHY_DEFAULT_RATIO: f32 = 0.20;
+const INSPECTOR_DEFAULT_RATIO: f32 = 0.27;
+const SIDE_PANEL_MAX_RATIO: f32 = 0.45;
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct SidePanelLayout {
+    pub(super) hierarchy_default: f32,
+    pub(super) hierarchy_min: f32,
+    pub(super) hierarchy_max: f32,
+    pub(super) inspector_default: f32,
+    pub(super) inspector_min: f32,
+    pub(super) inspector_max: f32,
+    pub(super) viewport_min: f32,
+}
+
+pub(super) fn side_panel_layout(available_width: f32) -> SidePanelLayout {
+    let width = available_width.max(0.0);
+    let side_budget = (width - VIEWPORT_MIN_WIDTH).max(0.0);
+    let inspector_min = INSPECTOR_MIN_WIDTH.min(side_budget * 0.6);
+    let hierarchy_min = HIERARCHY_MIN_WIDTH.min((side_budget - inspector_min).max(0.0));
+    let hierarchy_max = (width * SIDE_PANEL_MAX_RATIO)
+        .min((width - VIEWPORT_MIN_WIDTH - inspector_min).max(0.0))
+        .max(hierarchy_min);
+    let inspector_max = (width * SIDE_PANEL_MAX_RATIO)
+        .min((width - VIEWPORT_MIN_WIDTH - hierarchy_min).max(0.0))
+        .max(inspector_min);
+    let hierarchy_default = (width * HIERARCHY_DEFAULT_RATIO).clamp(hierarchy_min, hierarchy_max);
+    let inspector_default = (width * INSPECTOR_DEFAULT_RATIO).clamp(inspector_min, inspector_max);
+
+    SidePanelLayout {
+        hierarchy_default,
+        hierarchy_min,
+        hierarchy_max,
+        inspector_default,
+        inspector_min,
+        inspector_max,
+        viewport_min: VIEWPORT_MIN_WIDTH,
+    }
+}
+
 impl EditorApp {
+    pub(super) fn draw_menu_bar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
+            ui.menu_button("File", |ui| {
+                if ui.button("New Scene").clicked() {
+                    self.run_ui_action(EditorUiAction::NewScene);
+                    ui.close();
+                }
+                if ui.button("Open Scene").clicked() {
+                    self.run_ui_action(EditorUiAction::OpenScene);
+                    ui.close();
+                }
+                if ui.button("Save").clicked() {
+                    self.run_ui_action(EditorUiAction::SaveScene);
+                    ui.close();
+                }
+                if ui.button("Save As").clicked() {
+                    self.run_ui_action(EditorUiAction::SaveSceneAs);
+                    ui.close();
+                }
+            });
+            ui.menu_button("Edit", |ui| {
+                if ui
+                    .add_enabled(self.model.can_undo(), egui::Button::new("Undo"))
+                    .clicked()
+                {
+                    self.run_ui_action(EditorUiAction::Undo);
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(self.model.can_redo(), egui::Button::new("Redo"))
+                    .clicked()
+                {
+                    self.run_ui_action(EditorUiAction::Redo);
+                    ui.close();
+                }
+                let has_selection = self.model.selected().is_some();
+                if ui
+                    .add_enabled(has_selection, egui::Button::new("Duplicate"))
+                    .clicked()
+                {
+                    self.run_ui_action(EditorUiAction::DuplicateSelection);
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(has_selection, egui::Button::new("Delete"))
+                    .clicked()
+                {
+                    self.run_ui_action(EditorUiAction::DeleteSelection);
+                    ui.close();
+                }
+            });
+            ui.menu_button("Create", |ui| {
+                if ui.button("Cube").clicked() {
+                    self.run_ui_action(EditorUiAction::CreateCube);
+                    ui.close();
+                }
+            });
+            ui.menu_button("View", |ui| {
+                if ui.button("Fit View").clicked() {
+                    self.run_ui_action(EditorUiAction::FitView);
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(
+                        self.pilot_camera || self.can_pilot_selected_camera(),
+                        egui::Button::new("Pilot Camera"),
+                    )
+                    .clicked()
+                {
+                    self.run_ui_action(EditorUiAction::TogglePilotCamera);
+                    ui.close();
+                }
+            });
+        });
+    }
+
     pub(super) fn draw_top_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
+            ui.label("File");
             if ui.button("New").clicked() {
-                self.new_scene();
+                self.run_ui_action(EditorUiAction::NewScene);
             }
             if ui.button("Open").clicked() {
-                self.open_scene();
+                self.run_ui_action(EditorUiAction::OpenScene);
             }
             if ui.button("Save").clicked() {
-                self.save_scene();
+                self.run_ui_action(EditorUiAction::SaveScene);
             }
             if ui.button("Save As").clicked() {
-                self.save_scene_as();
-            }
-            if ui
-                .add_enabled(self.pending_action.is_some(), egui::Button::new("Discard"))
-                .clicked()
-            {
-                self.discard_pending_action();
+                self.run_ui_action(EditorUiAction::SaveSceneAs);
             }
             ui.separator();
-            ui.label("Path");
-            ui.add(egui::TextEdit::singleline(&mut self.path_input).desired_width(260.0));
-            ui.separator();
+
+            ui.label("Edit");
             if ui
                 .add_enabled(self.model.can_undo(), egui::Button::new("Undo"))
                 .clicked()
-                && self.model.undo().unwrap_or(false)
             {
-                self.status = "Undone".to_owned();
+                self.run_ui_action(EditorUiAction::Undo);
             }
             if ui
                 .add_enabled(self.model.can_redo(), egui::Button::new("Redo"))
                 .clicked()
-                && self.model.redo().unwrap_or(false)
             {
-                self.status = "Redone".to_owned();
+                self.run_ui_action(EditorUiAction::Redo);
             }
             ui.separator();
-            if ui.button("New Cube").clicked() {
-                self.model.create_cube();
+
+            ui.label("Create");
+            if ui.button("Cube").clicked() {
+                self.run_ui_action(EditorUiAction::CreateCube);
             }
             let has_selection = self.model.selected().is_some();
             if ui
                 .add_enabled(has_selection, egui::Button::new("Duplicate"))
                 .clicked()
             {
-                match self.model.duplicate_selected() {
-                    Ok(_) => self.status = "Duplicated".to_owned(),
-                    Err(error) => self.status = format_editor_error("Duplicate failed", error),
-                }
+                self.run_ui_action(EditorUiAction::DuplicateSelection);
             }
             if ui
                 .add_enabled(has_selection, egui::Button::new("Delete"))
                 .clicked()
             {
-                match self.model.delete_selected() {
-                    Ok(()) => self.status = "Deleted".to_owned(),
-                    Err(error) => self.status = format_editor_error("Delete failed", error),
-                }
+                self.run_ui_action(EditorUiAction::DeleteSelection);
             }
             ui.separator();
-            ui.selectable_value(
-                &mut self.transform_gizmo.mode,
-                viewport::GizmoMode::Move,
-                "Move",
-            );
-            ui.selectable_value(
-                &mut self.transform_gizmo.mode,
-                viewport::GizmoMode::Scale,
-                "Scale",
-            );
+
+            ui.label("Transform");
+            if ui
+                .selectable_label(
+                    self.transform_gizmo.mode == viewport::GizmoMode::Move,
+                    "Move",
+                )
+                .clicked()
+            {
+                self.run_ui_action(EditorUiAction::SetGizmoMode(viewport::GizmoMode::Move));
+            }
+            if ui
+                .selectable_label(
+                    self.transform_gizmo.mode == viewport::GizmoMode::Scale,
+                    "Scale",
+                )
+                .clicked()
+            {
+                self.run_ui_action(EditorUiAction::SetGizmoMode(viewport::GizmoMode::Scale));
+            }
             ui.separator();
+
+            ui.label("View");
+            if ui.button("Fit").clicked() {
+                self.run_ui_action(EditorUiAction::FitView);
+            }
             if ui
                 .add_enabled(
                     self.pilot_camera || self.can_pilot_selected_camera(),
@@ -97,26 +219,53 @@ impl EditorApp {
                 )
                 .clicked()
             {
-                self.toggle_pilot_camera();
+                self.run_ui_action(EditorUiAction::TogglePilotCamera);
             }
+            ui.separator();
+
+            ui.label("State");
             if self.model.is_dirty() {
                 ui.label("Unsaved");
+                if ui
+                    .add_enabled(self.pending_action.is_some(), egui::Button::new("Discard"))
+                    .clicked()
+                {
+                    self.run_ui_action(EditorUiAction::DiscardPendingAction);
+                }
+            } else {
+                ui.label("Saved");
             }
         });
     }
 
     pub(super) fn draw_editor_body(&mut self, ui: &mut egui::Ui) {
+        let panel_layout = side_panel_layout(ui.available_width());
+
         SidePanel::left("hierarchy_panel")
-            .resizable(false)
-            .default_size(240.0)
-            .size_range(220.0..=260.0)
-            .show(ui, |ui| draw_hierarchy(ui, &mut self.model));
+            .resizable(true)
+            .default_size(panel_layout.hierarchy_default)
+            .size_range(panel_layout.hierarchy_min..=panel_layout.hierarchy_max)
+            .show(ui, |ui| {
+                ui.take_available_width();
+                draw_hierarchy(ui, &mut self.model);
+            });
+
+        let inspector_max = panel_layout
+            .inspector_max
+            .min((ui.available_width() - panel_layout.viewport_min).max(0.0));
+        let inspector_min = panel_layout.inspector_min.min(inspector_max);
+        let inspector_default = panel_layout
+            .inspector_default
+            .clamp(inspector_min, inspector_max);
 
         SidePanel::right("inspector_panel")
-            .resizable(false)
-            .default_size(330.0)
-            .size_range(300.0..=360.0)
-            .show(ui, |ui| self.draw_inspector_panel(ui));
+            .resizable(true)
+            .default_size(inspector_default)
+            .size_range(inspector_min..=inspector_max)
+            .show(ui, |ui| {
+                ui.take_available_width();
+                self.draw_inspector_panel(ui);
+            });
 
         egui::CentralPanel::default().show(ui, |ui| {
             self.draw_viewport_column(ui);
@@ -124,13 +273,20 @@ impl EditorApp {
     }
 
     pub(super) fn draw_status_bar(&mut self, ui: &mut egui::Ui) {
-        let path = self
-            .current_path
-            .as_ref()
-            .map_or_else(|| "No file".to_owned(), |path| path.display().to_string());
         let selection = status_bar_selection_text(&self.model);
         ui.horizontal_wrapped(|ui| {
-            ui.label(path);
+            ui.add(egui::TextEdit::singleline(&mut self.path_input).desired_width(360.0));
+            if let Some(path) = &self.current_path {
+                ui.label(path.display().to_string());
+            } else {
+                ui.label("No file");
+            }
+            ui.separator();
+            ui.label(if self.model.is_dirty() {
+                "Unsaved"
+            } else {
+                "Saved"
+            });
             ui.separator();
             ui.label(selection);
             ui.separator();
@@ -163,6 +319,14 @@ impl EditorApp {
             .and_then(|id| self.model.world().entity(id.as_str()))
             .map(|entity| entity.transform);
         let wgpu_probe = self.wgpu_viewport_available.then_some(&self.viewport_probe);
+        let keyboard_shortcuts_allowed = Self::keyboard_shortcuts_allowed(ui.ctx());
+        let fit_view_requested = self.fit_view_requested;
+        self.fit_view_requested = false;
+        let view_mode_label = if self.pilot_camera {
+            viewport::PILOT_CAMERA_LABEL
+        } else {
+            viewport::EDITOR_CAMERA_LABEL
+        };
         let action = draw_viewport(
             ui,
             draw.as_ref(),
@@ -170,7 +334,12 @@ impl EditorApp {
             selected_transform,
             &mut self.viewport_camera,
             &mut self.transform_gizmo,
-            wgpu_probe,
+            viewport::ViewportUiOptions {
+                keyboard_shortcuts_allowed,
+                fit_view_requested,
+                view_mode_label,
+                wgpu_probe,
+            },
         );
         self.handle_viewport_action(action);
     }

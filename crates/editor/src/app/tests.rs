@@ -190,6 +190,72 @@ fn status_bar_selection_uses_entity_name() {
 }
 
 #[test]
+fn ui_action_save_clears_pending_without_running_new() {
+    let mut app = super::EditorApp::default();
+    let cube = app.model.create_cube();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/tmp")
+        .join(format!(
+            "ui_action_save_clears_pending_without_running_new_{}.scene.ron",
+            std::process::id()
+        ));
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    let _ = std::fs::remove_file(&path);
+    app.path_input = path.display().to_string();
+    app.pending_action = Some(super::PendingFileAction::New);
+
+    app.run_ui_action(super::EditorUiAction::SaveScene);
+
+    assert_eq!(app.pending_action, None);
+    assert!(app.model.world().entity(cube.as_str()).is_some());
+    assert_eq!(app.current_path, Some(path.clone()));
+    assert!(!app.model.is_dirty());
+    assert_eq!(app.status, "Saved");
+    assert!(path.exists());
+}
+
+#[test]
+fn ui_action_create_duplicate_delete_undo_redo_use_model_state() {
+    let mut app = super::EditorApp::default();
+
+    app.run_ui_action(super::EditorUiAction::CreateCube);
+    let first = app
+        .model
+        .selected()
+        .cloned()
+        .expect("created cube selected");
+    assert!(app.model.world().entity(first.as_str()).is_some());
+
+    app.run_ui_action(super::EditorUiAction::DuplicateSelection);
+    let duplicate = app.model.selected().cloned().expect("duplicate selected");
+    assert_ne!(first, duplicate);
+    assert!(app.model.world().entity(duplicate.as_str()).is_some());
+
+    app.run_ui_action(super::EditorUiAction::DeleteSelection);
+    assert!(app.model.world().entity(duplicate.as_str()).is_none());
+
+    app.run_ui_action(super::EditorUiAction::Undo);
+    assert!(app.model.world().entity(duplicate.as_str()).is_some());
+
+    app.run_ui_action(super::EditorUiAction::Redo);
+    assert!(app.model.world().entity(duplicate.as_str()).is_none());
+}
+
+#[test]
+fn ui_action_fit_view_sets_one_shot_request() {
+    let mut app = super::EditorApp::default();
+
+    assert!(!app.fit_view_requested);
+
+    app.run_ui_action(super::EditorUiAction::FitView);
+
+    assert!(app.fit_view_requested);
+    assert_eq!(app.status, "Fit view requested");
+}
+
+#[test]
 fn name_edit_session_cancel_keeps_model_clean() {
     let mut app = super::EditorApp::default();
     let cube = app.model.create_cube();
@@ -470,4 +536,156 @@ fn cjk_font_candidates_cover_common_desktop_fonts() {
             .iter()
             .any(|candidate| candidate.contains("NotoSansCJK"))
     );
+}
+
+#[test]
+fn keyboard_shortcuts_allowed_is_false_when_widget_has_keyboard_focus() {
+    let context = egui::Context::default();
+
+    assert!(super::EditorApp::keyboard_shortcuts_allowed(&context));
+
+    context.memory_mut(|memory| memory.request_focus(egui::Id::new("path_input")));
+
+    assert!(!super::EditorApp::keyboard_shortcuts_allowed(&context));
+}
+
+#[test]
+fn app_source_keeps_global_modified_shortcuts_outside_focus_guard() {
+    let source = include_str!("../app.rs");
+
+    assert!(source.contains("fn handle_keyboard_shortcuts"));
+    assert!(source.contains("EditorUiAction::SaveScene"));
+    assert!(source.contains("EditorUiAction::Undo"));
+    assert!(source.contains("EditorUiAction::Redo"));
+    assert!(source.contains("keyboard_shortcuts_allowed(context)"));
+}
+
+#[test]
+fn modified_shortcuts_are_checked_before_plain_shortcuts() {
+    let source = include_str!("../app.rs");
+    let shortcut_source = &source[source
+        .find("fn handle_keyboard_shortcuts")
+        .expect("shortcut helper present")..];
+    let save_as = shortcut_source
+        .find("EditorUiAction::SaveSceneAs")
+        .expect("Save As shortcut present");
+    let save = shortcut_source
+        .find("EditorUiAction::SaveScene)")
+        .expect("Save shortcut present");
+    let redo = shortcut_source
+        .find("EditorUiAction::Redo")
+        .expect("Redo shortcut present");
+    let undo = shortcut_source
+        .find("EditorUiAction::Undo")
+        .expect("Undo shortcut present");
+
+    assert!(save_as < save);
+    assert!(redo < undo);
+}
+
+#[test]
+fn menu_bar_source_contains_expected_top_level_menus() {
+    let source = include_str!("panels.rs");
+
+    assert!(source.contains("draw_menu_bar"));
+    assert!(source.contains("\"File\""));
+    assert!(source.contains("\"Edit\""));
+    assert!(source.contains("\"Create\""));
+    assert!(source.contains("\"View\""));
+    assert!(source.contains("EditorUiAction::NewScene"));
+    assert!(source.contains("EditorUiAction::FitView"));
+}
+
+#[test]
+fn editor_app_draws_menu_before_toolbar() {
+    let source = include_str!("../app.rs");
+    let menu_index = source.find("editor_menu_bar").expect("menu panel present");
+    let toolbar_index = source
+        .find("editor_toolbar")
+        .expect("toolbar panel present");
+
+    assert!(menu_index < toolbar_index);
+}
+
+#[test]
+fn toolbar_source_uses_polish_groups_and_no_toolbar_path_label() {
+    let source = include_str!("panels.rs");
+
+    assert!(source.contains("\"File\""));
+    assert!(source.contains("\"Edit\""));
+    assert!(source.contains("\"Create\""));
+    assert!(source.contains("\"Transform\""));
+    assert!(source.contains("\"View\""));
+    assert!(source.contains("\"State\""));
+    assert!(!source.contains("ui.label(\"Path\")"));
+}
+
+#[test]
+fn status_bar_contains_bounded_path_field() {
+    let source = include_str!("panels.rs");
+
+    assert!(source.contains("desired_width(360.0)"));
+    assert!(source.contains("self.path_input"));
+    assert!(source.contains("status_bar_selection_text"));
+}
+
+#[test]
+fn editor_body_uses_resizable_side_panels_with_polish_widths() {
+    let source = include_str!("panels.rs");
+
+    assert!(source.contains("side_panel_layout(ui.available_width())"));
+    assert!(!source.contains("default_size(240.0)"));
+    assert!(!source.contains("default_size(340.0)"));
+    assert!(source.contains(".resizable(true)"));
+}
+
+#[test]
+fn side_panel_resize_ranges_are_not_fixed_pixels() {
+    let source = include_str!("panels.rs");
+
+    assert!(!source.contains("size_range(160.0..=520.0)"));
+    assert!(!source.contains("size_range(240.0..=720.0)"));
+}
+
+#[test]
+fn proportional_side_panel_layout_keeps_viewport_minimum() {
+    for width in [640.0, 760.0, 960.0, 1280.0, 2560.0] {
+        let layout = super::panels::side_panel_layout(width);
+
+        assert!(layout.hierarchy_min <= layout.hierarchy_default);
+        assert!(layout.hierarchy_default <= layout.hierarchy_max);
+        assert!(layout.inspector_min <= layout.inspector_default);
+        assert!(layout.inspector_default <= layout.inspector_max);
+        assert!(layout.hierarchy_default + layout.inspector_default + layout.viewport_min <= width);
+
+        let remaining_after_hierarchy_max = width - layout.hierarchy_max;
+        let inspector_max_after_hierarchy = layout
+            .inspector_max
+            .min((remaining_after_hierarchy_max - layout.viewport_min).max(0.0));
+        assert!(
+            layout.hierarchy_max + inspector_max_after_hierarchy + layout.viewport_min <= width
+        );
+    }
+
+    let compact = super::panels::side_panel_layout(960.0);
+    let wide = super::panels::side_panel_layout(1920.0);
+
+    assert!(compact.hierarchy_default < wide.hierarchy_default);
+    assert!(compact.inspector_default < wide.inspector_default);
+}
+
+#[test]
+fn resizable_side_panel_contents_take_available_width() {
+    let source = include_str!("panels.rs");
+
+    assert_eq!(source.matches("ui.take_available_width();").count(), 2);
+}
+
+#[test]
+fn app_installs_compact_dark_tool_style() {
+    let source = include_str!("../app.rs");
+
+    assert!(source.contains("install_editor_style"));
+    assert!(source.contains("egui::Visuals::dark()"));
+    assert!(source.contains("panel_fill"));
 }

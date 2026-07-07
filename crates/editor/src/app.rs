@@ -9,7 +9,7 @@ use math::Transform;
 use crate::{
     model::{EditorError, EditorModel, EditorSmokeReport},
     viewport::{
-        TransformGizmoState, ViewCamera, ViewportAction, ViewportWgpuProbe,
+        GizmoMode, TransformGizmoState, ViewCamera, ViewportAction, ViewportWgpuProbe,
         install_viewport_renderer,
     },
 };
@@ -74,6 +74,7 @@ pub struct EditorApp {
     wgpu_viewport_available: bool,
     viewport_camera: ViewCamera,
     transform_gizmo: TransformGizmoState,
+    fit_view_requested: bool,
     name_edit: Option<NameEditSession>,
     transform_edit: Option<TransformEditSession>,
     pilot_camera: bool,
@@ -86,6 +87,23 @@ pub struct EditorApp {
 enum PendingFileAction {
     New,
     Open(PathBuf),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EditorUiAction {
+    NewScene,
+    OpenScene,
+    SaveScene,
+    SaveSceneAs,
+    DiscardPendingAction,
+    Undo,
+    Redo,
+    CreateCube,
+    DuplicateSelection,
+    DeleteSelection,
+    SetGizmoMode(GizmoMode),
+    FitView,
+    TogglePilotCamera,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,6 +153,7 @@ impl EditorApp {
         options: EditorLaunchOptions,
     ) -> Self {
         install_cjk_font(&creation_context.egui_ctx);
+        install_editor_style(&creation_context.egui_ctx);
         let wgpu_viewport_available = install_viewport_renderer(creation_context);
         Self {
             options,
@@ -220,6 +239,89 @@ impl EditorApp {
             ViewportAction::Status(status) => {
                 self.status = status;
             }
+        }
+    }
+
+    pub(super) fn run_ui_action(&mut self, action: EditorUiAction) {
+        match action {
+            EditorUiAction::NewScene => self.new_scene(),
+            EditorUiAction::OpenScene => self.open_scene(),
+            EditorUiAction::SaveScene => self.save_scene(),
+            EditorUiAction::SaveSceneAs => self.save_scene_as(),
+            EditorUiAction::DiscardPendingAction => self.discard_pending_action(),
+            EditorUiAction::Undo => {
+                if self.model.undo().unwrap_or(false) {
+                    self.status = "Undone".to_owned();
+                }
+            }
+            EditorUiAction::Redo => {
+                if self.model.redo().unwrap_or(false) {
+                    self.status = "Redone".to_owned();
+                }
+            }
+            EditorUiAction::CreateCube => {
+                self.model.create_cube();
+            }
+            EditorUiAction::DuplicateSelection => match self.model.duplicate_selected() {
+                Ok(_) => self.status = "Duplicated".to_owned(),
+                Err(error) => self.status = format_editor_error("Duplicate failed", error),
+            },
+            EditorUiAction::DeleteSelection => match self.model.delete_selected() {
+                Ok(()) => self.status = "Deleted".to_owned(),
+                Err(error) => self.status = format_editor_error("Delete failed", error),
+            },
+            EditorUiAction::SetGizmoMode(mode) => {
+                self.transform_gizmo.mode = mode;
+            }
+            EditorUiAction::FitView => {
+                self.fit_view_requested = true;
+                self.status = "Fit view requested".to_owned();
+            }
+            EditorUiAction::TogglePilotCamera => self.toggle_pilot_camera(),
+        }
+    }
+
+    fn command_shift() -> egui::Modifiers {
+        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT)
+    }
+
+    pub(super) fn keyboard_shortcuts_allowed(context: &egui::Context) -> bool {
+        !context.egui_wants_keyboard_input()
+    }
+
+    fn handle_keyboard_shortcuts(&mut self, context: &egui::Context) {
+        if context.input_mut(|input| input.consume_key(Self::command_shift(), egui::Key::S)) {
+            self.run_ui_action(EditorUiAction::SaveSceneAs);
+        }
+        if context.input_mut(|input| input.consume_key(Self::command_shift(), egui::Key::Z))
+            || context.input_mut(|input| input.consume_key(egui::Modifiers::CTRL, egui::Key::Y))
+        {
+            self.run_ui_action(EditorUiAction::Redo);
+        }
+        if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::N)) {
+            self.run_ui_action(EditorUiAction::NewScene);
+        }
+        if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::O)) {
+            self.run_ui_action(EditorUiAction::OpenScene);
+        }
+        if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
+            self.run_ui_action(EditorUiAction::SaveScene);
+        }
+        if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::Z)) {
+            self.run_ui_action(EditorUiAction::Undo);
+        }
+        if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::D)) {
+            self.run_ui_action(EditorUiAction::DuplicateSelection);
+        }
+
+        if Self::keyboard_shortcuts_allowed(context)
+            && (context
+                .input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Delete))
+                || context.input_mut(|input| {
+                    input.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)
+                }))
+        {
+            self.run_ui_action(EditorUiAction::DeleteSelection);
         }
     }
 
@@ -486,6 +588,8 @@ impl EditorApp {
 
 impl eframe::App for EditorApp {
     fn logic(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
+        self.handle_keyboard_shortcuts(context);
+
         if let Some(path) = self.options.smoke_path.clone() {
             if self.smoke_report.is_none() {
                 match self.run_smoke_file_workflow(&path) {
@@ -550,6 +654,9 @@ impl eframe::App for EditorApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        egui::Panel::top("editor_menu_bar").show(ui, |ui| {
+            self.draw_menu_bar(ui);
+        });
         egui::Panel::top("editor_toolbar").show(ui, |ui| {
             self.draw_top_toolbar(ui);
         });
@@ -562,6 +669,20 @@ impl eframe::App for EditorApp {
 
 fn format_editor_error(action: &str, error: EditorError) -> String {
     format!("{action}: {error}")
+}
+
+fn install_editor_style(context: &egui::Context) {
+    context.set_theme(egui::Theme::Dark);
+    let mut style = (*context.style_of(egui::Theme::Dark)).clone();
+    style.visuals = egui::Visuals::dark();
+    style.visuals.panel_fill = egui::Color32::from_rgb(26, 29, 33);
+    style.visuals.window_fill = egui::Color32::from_rgb(30, 34, 39);
+    style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(42, 47, 54);
+    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(55, 63, 72);
+    style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(66, 104, 145);
+    style.spacing.item_spacing = egui::vec2(6.0, 4.0);
+    style.spacing.button_padding = egui::vec2(8.0, 4.0);
+    context.set_style_of(egui::Theme::Dark, style);
 }
 
 #[cfg(test)]
