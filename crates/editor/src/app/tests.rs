@@ -190,6 +190,72 @@ fn status_bar_selection_uses_entity_name() {
 }
 
 #[test]
+fn ui_action_save_clears_pending_without_running_new() {
+    let mut app = super::EditorApp::default();
+    let cube = app.model.create_cube();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/tmp")
+        .join(format!(
+            "ui_action_save_clears_pending_without_running_new_{}.scene.ron",
+            std::process::id()
+        ));
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    let _ = std::fs::remove_file(&path);
+    app.path_input = path.display().to_string();
+    app.pending_action = Some(super::PendingFileAction::New);
+
+    app.run_ui_action(super::EditorUiAction::SaveScene);
+
+    assert_eq!(app.pending_action, None);
+    assert!(app.model.world().entity(cube.as_str()).is_some());
+    assert_eq!(app.current_path, Some(path.clone()));
+    assert!(!app.model.is_dirty());
+    assert_eq!(app.status, "Saved");
+    assert!(path.exists());
+}
+
+#[test]
+fn ui_action_create_duplicate_delete_undo_redo_use_model_state() {
+    let mut app = super::EditorApp::default();
+
+    app.run_ui_action(super::EditorUiAction::CreateCube);
+    let first = app
+        .model
+        .selected()
+        .cloned()
+        .expect("created cube selected");
+    assert!(app.model.world().entity(first.as_str()).is_some());
+
+    app.run_ui_action(super::EditorUiAction::DuplicateSelection);
+    let duplicate = app.model.selected().cloned().expect("duplicate selected");
+    assert_ne!(first, duplicate);
+    assert!(app.model.world().entity(duplicate.as_str()).is_some());
+
+    app.run_ui_action(super::EditorUiAction::DeleteSelection);
+    assert!(app.model.world().entity(duplicate.as_str()).is_none());
+
+    app.run_ui_action(super::EditorUiAction::Undo);
+    assert!(app.model.world().entity(duplicate.as_str()).is_some());
+
+    app.run_ui_action(super::EditorUiAction::Redo);
+    assert!(app.model.world().entity(duplicate.as_str()).is_none());
+}
+
+#[test]
+fn ui_action_fit_view_sets_one_shot_request() {
+    let mut app = super::EditorApp::default();
+
+    assert!(!app.fit_view_requested);
+
+    app.run_ui_action(super::EditorUiAction::FitView);
+
+    assert!(app.fit_view_requested);
+    assert_eq!(app.status, "Fit view requested");
+}
+
+#[test]
 fn name_edit_session_cancel_keeps_model_clean() {
     let mut app = super::EditorApp::default();
     let cube = app.model.create_cube();

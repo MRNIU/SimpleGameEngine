@@ -8,7 +8,7 @@ use crate::{
     viewport::{self, draw_viewport},
 };
 
-use super::{EditorApp, format_editor_error};
+use super::{EditorApp, EditorUiAction};
 
 type SidePanel = egui::Panel;
 
@@ -16,22 +16,22 @@ impl EditorApp {
     pub(super) fn draw_top_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
             if ui.button("New").clicked() {
-                self.new_scene();
+                self.run_ui_action(EditorUiAction::NewScene);
             }
             if ui.button("Open").clicked() {
-                self.open_scene();
+                self.run_ui_action(EditorUiAction::OpenScene);
             }
             if ui.button("Save").clicked() {
-                self.save_scene();
+                self.run_ui_action(EditorUiAction::SaveScene);
             }
             if ui.button("Save As").clicked() {
-                self.save_scene_as();
+                self.run_ui_action(EditorUiAction::SaveSceneAs);
             }
             if ui
                 .add_enabled(self.pending_action.is_some(), egui::Button::new("Discard"))
                 .clicked()
             {
-                self.discard_pending_action();
+                self.run_ui_action(EditorUiAction::DiscardPendingAction);
             }
             ui.separator();
             ui.label("Path");
@@ -40,51 +40,51 @@ impl EditorApp {
             if ui
                 .add_enabled(self.model.can_undo(), egui::Button::new("Undo"))
                 .clicked()
-                && self.model.undo().unwrap_or(false)
             {
-                self.status = "Undone".to_owned();
+                self.run_ui_action(EditorUiAction::Undo);
             }
             if ui
                 .add_enabled(self.model.can_redo(), egui::Button::new("Redo"))
                 .clicked()
-                && self.model.redo().unwrap_or(false)
             {
-                self.status = "Redone".to_owned();
+                self.run_ui_action(EditorUiAction::Redo);
             }
             ui.separator();
             if ui.button("New Cube").clicked() {
-                self.model.create_cube();
+                self.run_ui_action(EditorUiAction::CreateCube);
             }
             let has_selection = self.model.selected().is_some();
             if ui
                 .add_enabled(has_selection, egui::Button::new("Duplicate"))
                 .clicked()
             {
-                match self.model.duplicate_selected() {
-                    Ok(_) => self.status = "Duplicated".to_owned(),
-                    Err(error) => self.status = format_editor_error("Duplicate failed", error),
-                }
+                self.run_ui_action(EditorUiAction::DuplicateSelection);
             }
             if ui
                 .add_enabled(has_selection, egui::Button::new("Delete"))
                 .clicked()
             {
-                match self.model.delete_selected() {
-                    Ok(()) => self.status = "Deleted".to_owned(),
-                    Err(error) => self.status = format_editor_error("Delete failed", error),
-                }
+                self.run_ui_action(EditorUiAction::DeleteSelection);
             }
             ui.separator();
-            ui.selectable_value(
-                &mut self.transform_gizmo.mode,
-                viewport::GizmoMode::Move,
-                "Move",
-            );
-            ui.selectable_value(
-                &mut self.transform_gizmo.mode,
-                viewport::GizmoMode::Scale,
-                "Scale",
-            );
+            if ui
+                .selectable_label(
+                    self.transform_gizmo.mode == viewport::GizmoMode::Move,
+                    "Move",
+                )
+                .clicked()
+            {
+                self.run_ui_action(EditorUiAction::SetGizmoMode(viewport::GizmoMode::Move));
+            }
+            if ui
+                .selectable_label(
+                    self.transform_gizmo.mode == viewport::GizmoMode::Scale,
+                    "Scale",
+                )
+                .clicked()
+            {
+                self.run_ui_action(EditorUiAction::SetGizmoMode(viewport::GizmoMode::Scale));
+            }
             ui.separator();
             if ui
                 .add_enabled(
@@ -97,7 +97,7 @@ impl EditorApp {
                 )
                 .clicked()
             {
-                self.toggle_pilot_camera();
+                self.run_ui_action(EditorUiAction::TogglePilotCamera);
             }
             if self.model.is_dirty() {
                 ui.label("Unsaved");

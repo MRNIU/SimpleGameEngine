@@ -9,7 +9,7 @@ use math::Transform;
 use crate::{
     model::{EditorError, EditorModel, EditorSmokeReport},
     viewport::{
-        TransformGizmoState, ViewCamera, ViewportAction, ViewportWgpuProbe,
+        GizmoMode, TransformGizmoState, ViewCamera, ViewportAction, ViewportWgpuProbe,
         install_viewport_renderer,
     },
 };
@@ -74,6 +74,7 @@ pub struct EditorApp {
     wgpu_viewport_available: bool,
     viewport_camera: ViewCamera,
     transform_gizmo: TransformGizmoState,
+    fit_view_requested: bool,
     name_edit: Option<NameEditSession>,
     transform_edit: Option<TransformEditSession>,
     pilot_camera: bool,
@@ -86,6 +87,23 @@ pub struct EditorApp {
 enum PendingFileAction {
     New,
     Open(PathBuf),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EditorUiAction {
+    NewScene,
+    OpenScene,
+    SaveScene,
+    SaveSceneAs,
+    DiscardPendingAction,
+    Undo,
+    Redo,
+    CreateCube,
+    DuplicateSelection,
+    DeleteSelection,
+    SetGizmoMode(GizmoMode),
+    FitView,
+    TogglePilotCamera,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -220,6 +238,45 @@ impl EditorApp {
             ViewportAction::Status(status) => {
                 self.status = status;
             }
+        }
+    }
+
+    pub(super) fn run_ui_action(&mut self, action: EditorUiAction) {
+        match action {
+            EditorUiAction::NewScene => self.new_scene(),
+            EditorUiAction::OpenScene => self.open_scene(),
+            EditorUiAction::SaveScene => self.save_scene(),
+            EditorUiAction::SaveSceneAs => self.save_scene_as(),
+            EditorUiAction::DiscardPendingAction => self.discard_pending_action(),
+            EditorUiAction::Undo => {
+                if self.model.undo().unwrap_or(false) {
+                    self.status = "Undone".to_owned();
+                }
+            }
+            EditorUiAction::Redo => {
+                if self.model.redo().unwrap_or(false) {
+                    self.status = "Redone".to_owned();
+                }
+            }
+            EditorUiAction::CreateCube => {
+                self.model.create_cube();
+            }
+            EditorUiAction::DuplicateSelection => match self.model.duplicate_selected() {
+                Ok(_) => self.status = "Duplicated".to_owned(),
+                Err(error) => self.status = format_editor_error("Duplicate failed", error),
+            },
+            EditorUiAction::DeleteSelection => match self.model.delete_selected() {
+                Ok(()) => self.status = "Deleted".to_owned(),
+                Err(error) => self.status = format_editor_error("Delete failed", error),
+            },
+            EditorUiAction::SetGizmoMode(mode) => {
+                self.transform_gizmo.mode = mode;
+            }
+            EditorUiAction::FitView => {
+                self.fit_view_requested = true;
+                self.status = "Fit view requested".to_owned();
+            }
+            EditorUiAction::TogglePilotCamera => self.toggle_pilot_camera(),
         }
     }
 
