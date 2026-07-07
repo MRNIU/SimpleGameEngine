@@ -269,8 +269,10 @@ impl EditorModel {
         &self,
         replacements: &[ecs::EntityRecord],
     ) -> Vec<ecs::EntityRecord> {
-        let replacement_ids: std::collections::BTreeSet<_> =
-            replacements.iter().map(|record| record.id.clone()).collect();
+        let replacement_ids: std::collections::BTreeSet<_> = replacements
+            .iter()
+            .map(|record| record.id.clone())
+            .collect();
         self.world
             .entities()
             .filter(|record| !replacement_ids.contains(&record.id))
@@ -279,7 +281,10 @@ impl EditorModel {
             .collect()
     }
 
-    fn replace_world_records(&mut self, records: Vec<ecs::EntityRecord>) -> Result<(), EditorError> {
+    fn replace_world_records(
+        &mut self,
+        records: Vec<ecs::EntityRecord>,
+    ) -> Result<(), EditorError> {
         self.world = World::from_records(records)?;
         Ok(())
     }
@@ -319,7 +324,8 @@ impl EditorModel {
             }
             EditorCommand::DeleteEntity { deleted_root, .. } => {
                 let fallback = self.world.delete_subtree(deleted_root.as_str())?;
-                self.selected = fallback.filter(|parent| self.world.entity(parent.as_str()).is_some());
+                self.selected =
+                    fallback.filter(|parent| self.world.entity(parent.as_str()).is_some());
             }
         }
         self.dirty = true;
@@ -673,14 +679,14 @@ mod tests {
             [0.0, 0.0, 1.0, 0.0]
         );
 
-        assert_eq!(editor.undo().unwrap(), true);
+        assert!(editor.undo().unwrap());
         assert_eq!(
             editor.world().entity(&cube).unwrap().transform.rotation,
             Transform::identity().rotation
         );
         assert!(editor.can_redo());
 
-        assert_eq!(editor.redo().unwrap(), true);
+        assert!(editor.redo().unwrap());
         assert_eq!(
             editor.world().entity(&cube).unwrap().transform.rotation,
             [0.0, 0.0, 1.0, 0.0]
@@ -714,7 +720,7 @@ mod tests {
 
         assert!(editor.can_undo());
         assert!(!editor.can_redo());
-        assert_eq!(editor.undo().unwrap(), true);
+        assert!(editor.undo().unwrap());
         assert_eq!(
             editor.world().entity(&cube).unwrap().transform.rotation,
             Transform::identity().rotation
@@ -741,7 +747,9 @@ mod tests {
         assert!(!editor.is_dirty());
         assert!(!editor.can_undo());
 
-        editor.restore_transform_preview(&cube, before, false).unwrap();
+        editor
+            .restore_transform_preview(&cube, before, false)
+            .unwrap();
         assert_eq!(
             editor.world().entity(&cube).unwrap().transform.translation,
             [0.0, 0.0, 0.0]
@@ -759,16 +767,11 @@ mod tests {
         let after = Transform::from_translation([2.0, 0.0, 0.0]);
 
         editor.preview_transform(&cube, after).unwrap();
-        assert_eq!(
-            editor
-                .commit_transform_edit(&cube, before, after)
-                .unwrap(),
-            true
-        );
+        assert!(editor.commit_transform_edit(&cube, before, after).unwrap());
 
         assert!(editor.is_dirty());
         assert!(editor.can_undo());
-        assert_eq!(editor.undo().unwrap(), true);
+        assert!(editor.undo().unwrap());
         assert_eq!(
             editor.world().entity(&cube).unwrap().transform.translation,
             [0.0, 0.0, 0.0]

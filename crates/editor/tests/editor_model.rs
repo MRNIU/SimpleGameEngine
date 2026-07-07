@@ -171,11 +171,11 @@ fn editor_model_undo_redo_create_cube() {
     assert!(editor.world().entity(&cube).is_some());
     assert_eq!(editor.selected(), Some(&cube));
 
-    assert_eq!(editor.undo().unwrap(), true);
+    assert!(editor.undo().unwrap());
     assert!(editor.world().entity(&cube).is_none());
     assert_eq!(editor.selected(), None);
 
-    assert_eq!(editor.redo().unwrap(), true);
+    assert!(editor.redo().unwrap());
     assert!(editor.world().entity(&cube).is_some());
     assert_eq!(editor.selected(), Some(&cube));
 }
@@ -214,7 +214,9 @@ fn editor_model_new_command_clears_redo_stack() {
 
     editor.undo().unwrap();
     assert!(editor.can_redo());
-    editor.rename_entity(&EntityId::new("camera"), "Scene Camera").unwrap();
+    editor
+        .rename_entity(&EntityId::new("camera"), "Scene Camera")
+        .unwrap();
 
     assert!(!editor.can_redo());
     assert!(editor.world().entity(&cube).is_none());

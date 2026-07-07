@@ -66,6 +66,8 @@ pub(crate) struct GizmoDrag {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct TransformGizmoState {
     pub(crate) mode: GizmoMode,
+    hovered: Option<GizmoHandle>,
+    active: Option<GizmoHandle>,
     drag: Option<GizmoDrag>,
 }
 
@@ -76,11 +78,22 @@ impl TransformGizmoState {
 
     pub(crate) fn clear_drag(&mut self) {
         self.drag = None;
+        self.active = None;
     }
 
     #[must_use]
     pub(crate) fn drag(&self) -> Option<&GizmoDrag> {
         self.drag.as_ref()
+    }
+
+    #[must_use]
+    pub(crate) fn hovered(&self) -> Option<GizmoHandle> {
+        self.hovered
+    }
+
+    #[must_use]
+    pub(crate) fn active(&self) -> Option<GizmoHandle> {
+        self.active
     }
 }
 
@@ -420,6 +433,10 @@ pub(crate) fn draw_viewport(
     let handles = fitted_draw.as_ref().map_or_else(Vec::new, |draw| {
         gizmo_layout(draw, rect, selected, gizmo.mode)
     });
+    gizmo.hovered = response
+        .hover_pos()
+        .and_then(|pointer| hit_test_gizmo(&handles, pointer));
+    gizmo.active = gizmo.drag().map(|drag| drag.handle);
     let primary_down = ui.input(|input| input.pointer.primary_down());
     let primary_pressed = ui.input(|input| input.pointer.primary_pressed());
     let press_origin = ui.input(|input| input.pointer.press_origin());
@@ -500,7 +517,7 @@ pub(crate) fn draw_viewport(
     } else if let Some(draw) = fitted_draw.as_ref() {
         paint_fallback_viewport(rect, &painter, draw);
     }
-    paint_gizmo_handles(&painter, &handles);
+    paint_gizmo_handles(&painter, &handles, gizmo.hovered(), gizmo.active());
     action
 }
 
@@ -543,8 +560,20 @@ fn paint_fallback_viewport(rect: egui::Rect, painter: &egui::Painter, draw: &Vie
     );
 }
 
-fn paint_gizmo_handles(painter: &egui::Painter, handles: &[GizmoHandleRect]) {
+fn paint_gizmo_handles(
+    painter: &egui::Painter,
+    handles: &[GizmoHandleRect],
+    hovered: Option<GizmoHandle>,
+    active: Option<GizmoHandle>,
+) {
     for handle in handles {
+        let width = if active == Some(handle.handle) {
+            4.0
+        } else if hovered == Some(handle.handle) {
+            3.0
+        } else {
+            2.0
+        };
         match handle.handle {
             GizmoHandle::MoveX => {
                 painter.line_segment(
@@ -552,7 +581,7 @@ fn paint_gizmo_handles(painter: &egui::Painter, handles: &[GizmoHandleRect]) {
                         handle.center - handle.axis * GIZMO_HANDLE_LENGTH,
                         handle.center,
                     ],
-                    egui::Stroke::new(2.0, egui::Color32::from_rgb(230, 80, 80)),
+                    egui::Stroke::new(width, egui::Color32::from_rgb(230, 80, 80)),
                 );
                 painter.rect_filled(handle.rect, 1.0, egui::Color32::from_rgb(230, 80, 80));
             }
@@ -562,7 +591,7 @@ fn paint_gizmo_handles(painter: &egui::Painter, handles: &[GizmoHandleRect]) {
                         handle.center - handle.axis * GIZMO_HANDLE_LENGTH,
                         handle.center,
                     ],
-                    egui::Stroke::new(2.0, egui::Color32::from_rgb(80, 210, 110)),
+                    egui::Stroke::new(width, egui::Color32::from_rgb(80, 210, 110)),
                 );
                 painter.rect_filled(handle.rect, 1.0, egui::Color32::from_rgb(80, 210, 110));
             }
@@ -572,7 +601,7 @@ fn paint_gizmo_handles(painter: &egui::Painter, handles: &[GizmoHandleRect]) {
                         handle.center - handle.axis * GIZMO_HANDLE_LENGTH,
                         handle.center,
                     ],
-                    egui::Stroke::new(2.0, egui::Color32::from_rgb(90, 150, 240)),
+                    egui::Stroke::new(width, egui::Color32::from_rgb(90, 150, 240)),
                 );
                 painter.rect_filled(handle.rect, 1.0, egui::Color32::from_rgb(90, 150, 240));
             }
@@ -581,7 +610,7 @@ fn paint_gizmo_handles(painter: &egui::Painter, handles: &[GizmoHandleRect]) {
                 painter.rect_stroke(
                     handle.rect,
                     1.0,
-                    egui::Stroke::new(1.0, egui::Color32::BLACK),
+                    egui::Stroke::new(width, egui::Color32::BLACK),
                     egui::StrokeKind::Inside,
                 );
             }
@@ -1074,6 +1103,25 @@ mod tests {
 
         state.clear_drag();
         assert_eq!(state.drag(), None);
+    }
+
+    #[test]
+    fn gizmo_state_tracks_hovered_and_active_handle() {
+        let mut state = TransformGizmoState::default();
+        assert_eq!(state.hovered(), None);
+        assert_eq!(state.active(), None);
+
+        state.hovered = Some(GizmoHandle::MoveX);
+        state.start_drag(GizmoDrag {
+            target: EntityId::new("cube"),
+            handle: GizmoHandle::MoveY,
+            start_pointer: egui::pos2(0.0, 0.0),
+            start_transform: Transform::identity(),
+        });
+        state.active = state.drag().map(|drag| drag.handle);
+
+        assert_eq!(state.hovered(), Some(GizmoHandle::MoveX));
+        assert_eq!(state.active(), Some(GizmoHandle::MoveY));
     }
 
     #[test]
