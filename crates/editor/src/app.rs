@@ -459,9 +459,10 @@ impl eframe::App for EditorApp {
                     .as_ref()
                     .expect("smoke report is set before viewport completion");
                 println!(
-                    "editor smoke ok: meshes={}, camera={}, viewport_indices={}, viewport_prepare={}, viewport_paint={}",
+                    "editor smoke ok: meshes={}, camera={}, light={}, viewport_indices={}, viewport_prepare={}, viewport_paint={}",
                     report.mesh_count,
                     report.has_camera,
+                    report.has_light,
                     report.viewport_index_count,
                     viewport_report.prepare_count,
                     viewport_report.paint_count
@@ -471,10 +472,11 @@ impl eframe::App for EditorApp {
             } else if self.smoke_frame_count > SMOKE_MAX_VIEWPORT_FRAMES {
                 match self.smoke_report.as_ref() {
                     Some(report) => eprintln!(
-                        "editor smoke failed: wgpu viewport path not reached after {} frames: meshes={}, camera={}, viewport_indices={}, viewport_prepare={}, viewport_paint={}",
+                        "editor smoke failed: wgpu viewport path not reached after {} frames: meshes={}, camera={}, light={}, viewport_indices={}, viewport_prepare={}, viewport_paint={}",
                         self.smoke_frame_count,
                         report.mesh_count,
                         report.has_camera,
+                        report.has_light,
                         report.viewport_index_count,
                         viewport_report.prepare_count,
                         viewport_report.paint_count

@@ -323,6 +323,7 @@ mod tests {
 
         assert_eq!(report.mesh_count, 3);
         assert!(report.has_camera);
+        assert!(report.has_light);
         assert_eq!(report.viewport_index_count, 108);
         assert_eq!(app.current_path, Some(path.clone()));
         assert!(!app.model.is_dirty());

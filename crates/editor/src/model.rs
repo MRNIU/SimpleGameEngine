@@ -70,6 +70,7 @@ enum EditorCommand {
 pub struct EditorSmokeReport {
     pub mesh_count: usize,
     pub has_camera: bool,
+    pub has_light: bool,
     pub viewport_index_count: usize,
 }
 
@@ -767,7 +768,27 @@ impl EditorModel {
                 scale: [2.0, 1.5, 1.0],
             },
         )?;
+        self.set_material_override(
+            &second,
+            Some(MaterialOverride {
+                base_color: [0.4, 0.9, 0.5, 1.0],
+            }),
+        )?;
         let _duplicate = self.duplicate_selected()?;
+        self.set_light(
+            &EntityId::new(LIGHT_ID),
+            Light {
+                kind: LightKind::Directional,
+                color: [0.8, 0.9, 1.0],
+                intensity: 1.25,
+            },
+        )?;
+        self.set_camera(
+            &EntityId::new(CAMERA_ID),
+            Camera::new(Projection::Perspective {
+                fov_y_degrees: 55.0,
+            }),
+        )?;
         self.smoke_report()
     }
 
@@ -780,6 +801,7 @@ impl EditorModel {
         let report = EditorSmokeReport {
             mesh_count: render_scene.meshes.len(),
             has_camera: render_scene.active_camera.is_some(),
+            has_light: self.world.entities().any(|entity| entity.light.is_some()),
             viewport_index_count: viewport_draw.index_count,
         };
         Ok(report)
@@ -794,6 +816,7 @@ impl EditorModel {
         let report = EditorSmokeReport {
             mesh_count: render_scene.meshes.len(),
             has_camera: render_scene.active_camera.is_some(),
+            has_light: self.world.entities().any(|entity| entity.light.is_some()),
             viewport_index_count: viewport_draw.index_count,
         };
         Ok(report)
