@@ -31,6 +31,56 @@ fn editor_model_can_create_save_and_reopen_a_cube_scene() {
 }
 
 #[test]
+fn scene_content_edits_survive_save_reopen() {
+    let mut editor = EditorModel::default();
+    let cube = editor.create_cube();
+    editor
+        .set_material_override(
+            &cube,
+            Some(ecs::MaterialOverride {
+                base_color: [0.4, 0.5, 0.6, 1.0],
+            }),
+        )
+        .unwrap();
+    editor
+        .set_light(
+            &ecs::EntityId::new("directional_light"),
+            ecs::Light {
+                kind: ecs::LightKind::Directional,
+                color: [0.7, 0.8, 0.9],
+                intensity: 1.5,
+            },
+        )
+        .unwrap();
+
+    let saved = editor.save_scene_to_string().unwrap();
+    let reopened = EditorModel::from_scene_str(&saved).unwrap();
+
+    assert_eq!(
+        reopened
+            .world()
+            .entity(&cube)
+            .unwrap()
+            .material_override
+            .as_ref()
+            .unwrap()
+            .base_color,
+        [0.4, 0.5, 0.6, 1.0]
+    );
+    assert_eq!(
+        reopened
+            .world()
+            .entity("directional_light")
+            .unwrap()
+            .light
+            .as_ref()
+            .unwrap()
+            .intensity,
+        1.5
+    );
+}
+
+#[test]
 fn editor_model_supports_milestone_one_entity_actions() {
     let mut editor = EditorModel::default();
 

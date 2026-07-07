@@ -1,6 +1,6 @@
 // Copyright The SimpleGameEngine Contributors
 
-use ecs::{Camera, EntityId, MeshRef, Projection, World};
+use ecs::{Camera, EntityId, Light, LightKind, MaterialOverride, MeshRef, Projection, World};
 use math::Transform;
 use render::{
     RenderScene, ViewportDrawCall, ViewportView, extract_render_scene,
@@ -10,6 +10,7 @@ use thiserror::Error;
 
 const ROOT_ID: &str = "root";
 const CAMERA_ID: &str = "camera";
+const LIGHT_ID: &str = "directional_light";
 const HISTORY_LIMIT: usize = 100;
 
 #[derive(Debug, Clone)]
@@ -48,6 +49,21 @@ enum EditorCommand {
         before: Transform,
         after: Transform,
     },
+    SetMaterialOverride {
+        id: EntityId,
+        before: Option<MaterialOverride>,
+        after: Option<MaterialOverride>,
+    },
+    SetLight {
+        id: EntityId,
+        before: Light,
+        after: Light,
+    },
+    SetCamera {
+        id: EntityId,
+        before: Camera,
+        after: Camera,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +83,8 @@ pub enum EditorError {
     InvalidEntityName,
     #[error("transform must be finite, have non-zero scale, and have non-zero rotation")]
     InvalidTransformValue,
+    #[error("scene content value is invalid")]
+    InvalidSceneContentValue,
     #[error("entity id generation exhausted")]
     IdGenerationExhausted,
     #[error(transparent)]
@@ -91,6 +109,24 @@ impl EditorModel {
                     Camera::new(Projection::Perspective {
                         fov_y_degrees: 60.0
                     })
+                )
+                .is_ok()
+        );
+        world.spawn(
+            EntityId::new(LIGHT_ID),
+            "Directional Light",
+            Transform::from_translation([0.0, 4.0, 2.0]),
+        );
+        debug_assert!(world.set_parent(LIGHT_ID, ROOT_ID).is_ok());
+        debug_assert!(
+            world
+                .insert_light(
+                    LIGHT_ID,
+                    Light {
+                        kind: LightKind::Directional,
+                        color: [1.0, 1.0, 1.0],
+                        intensity: 1.0,
+                    },
                 )
                 .is_ok()
         );
@@ -256,6 +292,158 @@ impl EditorModel {
         Ok(true)
     }
 
+    pub fn set_material_override(
+        &mut self,
+        id: &EntityId,
+        material: Option<MaterialOverride>,
+    ) -> Result<(), EditorError> {
+        let after = validated_material_override(material)?;
+        let before = self
+            .world
+            .entity(id.as_str())
+            .ok_or_else(|| ecs::EcsError::MissingEntity(id.to_string()))?
+            .material_override;
+        let _ = self.commit_material_override_edit(id, before, after)?;
+        Ok(())
+    }
+
+    pub fn preview_material_override(
+        &mut self,
+        id: &EntityId,
+        material: Option<MaterialOverride>,
+    ) -> Result<(), EditorError> {
+        self.write_material_override(id, validated_material_override(material)?)
+    }
+
+    pub fn restore_material_override_preview(
+        &mut self,
+        id: &EntityId,
+        material: Option<MaterialOverride>,
+        dirty: bool,
+    ) -> Result<(), EditorError> {
+        self.write_material_override(id, validated_material_override(material)?)?;
+        self.dirty = dirty;
+        Ok(())
+    }
+
+    pub fn commit_material_override_edit(
+        &mut self,
+        id: &EntityId,
+        before: Option<MaterialOverride>,
+        after: Option<MaterialOverride>,
+    ) -> Result<bool, EditorError> {
+        let before = validated_material_override(before)?;
+        let after = validated_material_override(after)?;
+        if before == after {
+            self.write_material_override(id, after)?;
+            return Ok(false);
+        }
+        let command = EditorCommand::SetMaterialOverride {
+            id: id.clone(),
+            before,
+            after,
+        };
+        self.apply_command(&command)?;
+        self.push_undo(command);
+        Ok(true)
+    }
+
+    pub fn set_light(&mut self, id: &EntityId, light: Light) -> Result<(), EditorError> {
+        let after = validated_light(light)?;
+        let before = self
+            .world
+            .entity(id.as_str())
+            .and_then(|record| record.light.clone())
+            .ok_or(EditorError::InvalidSceneContentValue)?;
+        let _ = self.commit_light_edit(id, before, after)?;
+        Ok(())
+    }
+
+    pub fn preview_light(&mut self, id: &EntityId, light: Light) -> Result<(), EditorError> {
+        self.write_light(id, validated_light(light)?)
+    }
+
+    pub fn restore_light_preview(
+        &mut self,
+        id: &EntityId,
+        light: Light,
+        dirty: bool,
+    ) -> Result<(), EditorError> {
+        self.write_light(id, validated_light(light)?)?;
+        self.dirty = dirty;
+        Ok(())
+    }
+
+    pub fn commit_light_edit(
+        &mut self,
+        id: &EntityId,
+        before: Light,
+        after: Light,
+    ) -> Result<bool, EditorError> {
+        let before = validated_light(before)?;
+        let after = validated_light(after)?;
+        if before == after {
+            self.write_light(id, after)?;
+            return Ok(false);
+        }
+        let command = EditorCommand::SetLight {
+            id: id.clone(),
+            before,
+            after,
+        };
+        self.apply_command(&command)?;
+        self.push_undo(command);
+        Ok(true)
+    }
+
+    pub fn set_camera(&mut self, id: &EntityId, camera: Camera) -> Result<(), EditorError> {
+        let after = validated_camera(camera)?;
+        let before = self
+            .world
+            .entity(id.as_str())
+            .and_then(|record| record.camera.clone())
+            .ok_or(EditorError::InvalidSceneContentValue)?;
+        let _ = self.commit_camera_edit(id, before, after)?;
+        Ok(())
+    }
+
+    pub fn preview_camera(&mut self, id: &EntityId, camera: Camera) -> Result<(), EditorError> {
+        self.write_camera(id, validated_camera(camera)?)
+    }
+
+    pub fn restore_camera_preview(
+        &mut self,
+        id: &EntityId,
+        camera: Camera,
+        dirty: bool,
+    ) -> Result<(), EditorError> {
+        self.write_camera(id, validated_camera(camera)?)?;
+        self.dirty = dirty;
+        Ok(())
+    }
+
+    pub fn commit_camera_edit(
+        &mut self,
+        id: &EntityId,
+        before: Camera,
+        after: Camera,
+    ) -> Result<bool, EditorError> {
+        let before = validated_camera(before)?;
+        let after = validated_camera(after)?;
+        if before == after {
+            self.write_camera(id, after)?;
+            return Ok(false);
+        }
+        let command = EditorCommand::SetCamera {
+            id: id.clone(),
+            before,
+            after,
+        };
+        self.apply_command(&command)?;
+        self.push_undo(command);
+        Ok(true)
+    }
+
     fn push_undo(&mut self, command: EditorCommand) {
         self.undo_stack.push(command);
         if self.undo_stack.len() > HISTORY_LIMIT {
@@ -310,6 +498,18 @@ impl EditorModel {
                 self.write_transform(id, *after)?;
                 self.selected = Some(id.clone());
             }
+            EditorCommand::SetMaterialOverride { id, after, .. } => {
+                self.write_material_override(id, *after)?;
+                self.selected = Some(id.clone());
+            }
+            EditorCommand::SetLight { id, after, .. } => {
+                self.write_light(id, after.clone())?;
+                self.selected = Some(id.clone());
+            }
+            EditorCommand::SetCamera { id, after, .. } => {
+                self.write_camera(id, after.clone())?;
+                self.selected = Some(id.clone());
+            }
             EditorCommand::RenameEntity { id, after, .. } => {
                 self.world.rename_entity(id.as_str(), after)?;
                 self.selected = Some(id.clone());
@@ -336,6 +536,18 @@ impl EditorModel {
         match command {
             EditorCommand::SetTransform { id, before, .. } => {
                 self.write_transform(id, *before)?;
+                self.selected = Some(id.clone());
+            }
+            EditorCommand::SetMaterialOverride { id, before, .. } => {
+                self.write_material_override(id, *before)?;
+                self.selected = Some(id.clone());
+            }
+            EditorCommand::SetLight { id, before, .. } => {
+                self.write_light(id, before.clone())?;
+                self.selected = Some(id.clone());
+            }
+            EditorCommand::SetCamera { id, before, .. } => {
+                self.write_camera(id, before.clone())?;
                 self.selected = Some(id.clone());
             }
             EditorCommand::RenameEntity { id, before, .. } => {
@@ -385,6 +597,46 @@ impl EditorModel {
         Ok(())
     }
 
+    fn write_material_override(
+        &mut self,
+        id: &EntityId,
+        material: Option<MaterialOverride>,
+    ) -> Result<(), EditorError> {
+        let record = self
+            .world
+            .entity_mut(id.as_str())
+            .ok_or_else(|| ecs::EcsError::MissingEntity(id.to_string()))?;
+        if record.mesh.is_none() {
+            return Err(EditorError::InvalidSceneContentValue);
+        }
+        record.material_override = material;
+        Ok(())
+    }
+
+    fn write_light(&mut self, id: &EntityId, light: Light) -> Result<(), EditorError> {
+        let record = self
+            .world
+            .entity_mut(id.as_str())
+            .ok_or_else(|| ecs::EcsError::MissingEntity(id.to_string()))?;
+        if record.light.is_none() {
+            return Err(EditorError::InvalidSceneContentValue);
+        }
+        record.light = Some(light);
+        Ok(())
+    }
+
+    fn write_camera(&mut self, id: &EntityId, camera: Camera) -> Result<(), EditorError> {
+        let record = self
+            .world
+            .entity_mut(id.as_str())
+            .ok_or_else(|| ecs::EcsError::MissingEntity(id.to_string()))?;
+        if record.camera.is_none() {
+            return Err(EditorError::InvalidSceneContentValue);
+        }
+        record.camera = Some(camera);
+        Ok(())
+    }
+
     pub fn rename_entity(&mut self, id: &EntityId, name: &str) -> Result<(), EditorError> {
         if name.trim().is_empty() {
             return Err(EditorError::InvalidEntityName);
@@ -426,6 +678,7 @@ impl EditorModel {
         let mut created = ecs::EntityRecord::new(new_id.clone(), new_name, source.transform);
         created.parent = source.parent;
         created.mesh = source.mesh;
+        created.material_override = source.material_override;
         created.light = source.light;
         let command = EditorCommand::DuplicateEntity {
             source: id.clone(),
@@ -484,6 +737,18 @@ impl EditorModel {
     #[must_use]
     pub fn viewport_draw_call_for_view(&self, view: &ViewportView) -> Option<ViewportDrawCall> {
         viewport_draw_call_with_view(&self.render_scene(), self.selected.as_ref(), view)
+    }
+
+    #[must_use]
+    pub fn selected_camera_view(&self) -> Option<ViewportView> {
+        let selected = self.selected.as_ref()?;
+        let record = self.world.entity(selected.as_str())?;
+        let camera = record.camera.as_ref()?;
+        Some(ViewportView::new(
+            selected.clone(),
+            record.transform,
+            camera.projection.clone(),
+        ))
     }
 
     pub fn run_smoke_actions(mut self) -> anyhow::Result<EditorSmokeReport> {
@@ -637,9 +902,50 @@ fn validated_transform(transform: Transform) -> Result<Transform, EditorError> {
     canonical_transform(transform)
 }
 
+fn validated_material_override(
+    material: Option<MaterialOverride>,
+) -> Result<Option<MaterialOverride>, EditorError> {
+    material
+        .map(|mut material| {
+            if !material.base_color.into_iter().all(f32::is_finite) {
+                return Err(EditorError::InvalidSceneContentValue);
+            }
+            for channel in &mut material.base_color {
+                *channel = channel.clamp(0.0, 1.0);
+            }
+            Ok(material)
+        })
+        .transpose()
+}
+
+fn validated_light(mut light: Light) -> Result<Light, EditorError> {
+    if !light.color.into_iter().all(f32::is_finite)
+        || !light.intensity.is_finite()
+        || light.intensity < 0.0
+    {
+        return Err(EditorError::InvalidSceneContentValue);
+    }
+    for channel in &mut light.color {
+        *channel = channel.clamp(0.0, 1.0);
+    }
+    Ok(light)
+}
+
+fn validated_camera(camera: Camera) -> Result<Camera, EditorError> {
+    match &camera.projection {
+        Projection::Perspective { fov_y_degrees }
+            if fov_y_degrees.is_finite() && *fov_y_degrees > 0.0 => {}
+        Projection::Orthographic { vertical_size }
+            if vertical_size.is_finite() && *vertical_size > 0.0 => {}
+        _ => return Err(EditorError::InvalidSceneContentValue),
+    }
+    Ok(camera)
+}
+
 #[cfg(test)]
 mod tests {
     use super::EditorModel;
+    use ecs::{Camera, EntityId, Light, LightKind, MaterialOverride, Projection};
     use math::Transform;
 
     #[test]
@@ -652,6 +958,129 @@ mod tests {
                 .entity("camera")
                 .and_then(|entity| entity.camera.as_ref())
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn new_editor_starts_with_deletable_directional_light() {
+        let mut editor = EditorModel::new();
+        let light = editor.world().entity("directional_light").unwrap();
+
+        assert_eq!(light.parent, Some(EntityId::new("root")));
+        assert_eq!(light.light.as_ref().unwrap().kind, LightKind::Directional);
+        assert_eq!(light.light.as_ref().unwrap().color, [1.0, 1.0, 1.0]);
+        assert_eq!(light.light.as_ref().unwrap().intensity, 1.0);
+
+        editor
+            .delete_entity(&EntityId::new("directional_light"))
+            .unwrap();
+        assert!(editor.world().entity("directional_light").is_none());
+    }
+
+    #[test]
+    fn material_override_commit_undo_redo() {
+        let mut editor = EditorModel::default();
+        let cube = editor.create_cube();
+        editor.mark_saved();
+        editor.clear_history();
+        let before = None;
+        let after = Some(MaterialOverride {
+            base_color: [0.7, 0.2, 0.1, 1.0],
+        });
+
+        editor.preview_material_override(&cube, after).unwrap();
+        assert!(!editor.is_dirty());
+        assert!(!editor.can_undo());
+        assert!(
+            editor
+                .commit_material_override_edit(&cube, before, after)
+                .unwrap()
+        );
+
+        assert!(editor.is_dirty());
+        assert_eq!(
+            editor
+                .world()
+                .entity(&cube)
+                .unwrap()
+                .material_override
+                .as_ref()
+                .unwrap()
+                .base_color,
+            [0.7, 0.2, 0.1, 1.0]
+        );
+        assert!(editor.undo().unwrap());
+        assert!(
+            editor
+                .world()
+                .entity(&cube)
+                .unwrap()
+                .material_override
+                .is_none()
+        );
+        assert!(editor.redo().unwrap());
+        assert!(
+            editor
+                .world()
+                .entity(&cube)
+                .unwrap()
+                .material_override
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn invalid_light_value_does_not_enter_history() {
+        let mut editor = EditorModel::default();
+        let light_id = EntityId::new("directional_light");
+        editor.mark_saved();
+        editor.clear_history();
+
+        let result = editor.set_light(
+            &light_id,
+            Light {
+                kind: LightKind::Directional,
+                color: [1.0, f32::NAN, 1.0],
+                intensity: 1.0,
+            },
+        );
+
+        assert_eq!(
+            result.unwrap_err(),
+            super::EditorError::InvalidSceneContentValue
+        );
+        assert!(!editor.is_dirty());
+        assert!(!editor.can_undo());
+    }
+
+    #[test]
+    fn camera_commit_uses_projection_in_selected_camera_view() {
+        let mut editor = EditorModel::default();
+        let camera_id = EntityId::new("camera");
+        editor.select(camera_id.clone());
+        let before = editor
+            .world()
+            .entity("camera")
+            .unwrap()
+            .camera
+            .as_ref()
+            .unwrap()
+            .clone();
+        let after = Camera::new(Projection::Perspective {
+            fov_y_degrees: 35.0,
+        });
+
+        assert!(
+            editor
+                .commit_camera_edit(&camera_id, before, after)
+                .unwrap()
+        );
+
+        assert_eq!(
+            editor.selected_camera_view().unwrap().projection,
+            Projection::Perspective {
+                fov_y_degrees: 35.0
+            }
         );
     }
 
