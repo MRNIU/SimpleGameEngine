@@ -420,6 +420,8 @@ pub(crate) fn draw_viewport(
         gizmo_layout(draw, rect, selected, gizmo.mode)
     });
     let primary_down = ui.input(|input| input.pointer.primary_down());
+    let primary_pressed = ui.input(|input| input.pointer.primary_pressed());
+    let press_origin = ui.input(|input| input.pointer.press_origin());
     let esc_pressed = ui.input(|input| input.key_pressed(egui::Key::Escape));
     let mut pointer_consumed_by_gizmo = false;
 
@@ -432,6 +434,7 @@ pub(crate) fn draw_viewport(
     }
 
     if !primary_down && gizmo.drag().is_some() {
+        pointer_consumed_by_gizmo = true;
         gizmo.clear_drag();
     }
 
@@ -457,21 +460,13 @@ pub(crate) fn draw_viewport(
         }
     }
 
-    if response.drag_started_by(egui::PointerButton::Primary)
-        && let (Some(pointer), Some(selected), Some(transform)) = (
-            response.interact_pointer_pos(),
-            selected,
-            selected_transform,
-        )
-        && let Some(handle) = hit_test_gizmo(&handles, pointer)
+    if primary_pressed
+        && gizmo.drag().is_none()
+        && let Some(drag) =
+            gizmo_drag_from_press_origin(&handles, press_origin, selected, selected_transform)
     {
         pointer_consumed_by_gizmo = true;
-        gizmo.start_drag(GizmoDrag {
-            target: selected.clone(),
-            handle,
-            start_pointer: pointer,
-            start_transform: transform,
-        });
+        gizmo.start_drag(drag);
     }
 
     if response.clicked_by(egui::PointerButton::Primary)
@@ -631,6 +626,24 @@ pub(crate) fn hit_test_gizmo(
                 .total_cmp(&pointer.distance_sq(right.center))
         })
         .map(|handle| handle.handle)
+}
+
+#[must_use]
+pub(crate) fn gizmo_drag_from_press_origin(
+    handles: &[GizmoHandleRect],
+    press_origin: Option<egui::Pos2>,
+    selected: Option<&EntityId>,
+    selected_transform: Option<Transform>,
+) -> Option<GizmoDrag> {
+    let pointer = press_origin?;
+    let target = selected?;
+    let start_transform = selected_transform?;
+    hit_test_gizmo(handles, pointer).map(|handle| GizmoDrag {
+        target: target.clone(),
+        handle,
+        start_pointer: pointer,
+        start_transform,
+    })
 }
 
 #[must_use]
@@ -1048,6 +1061,35 @@ mod tests {
 
         state.clear_drag();
         assert_eq!(state.drag(), None);
+    }
+
+    #[test]
+    fn gizmo_drag_starts_from_press_origin_before_drag_threshold() {
+        let target = EntityId::new("cube");
+        let start_transform = Transform::from_translation([1.0, 2.0, 3.0]);
+        let handles = vec![GizmoHandleRect::new(
+            GizmoHandle::MoveX,
+            egui::pos2(100.0, 100.0),
+            egui::Vec2::X,
+            10.0,
+        )];
+
+        let drag = super::gizmo_drag_from_press_origin(
+            &handles,
+            Some(egui::pos2(100.0, 100.0)),
+            Some(&target),
+            Some(start_transform),
+        );
+
+        assert_eq!(
+            drag,
+            Some(GizmoDrag {
+                target,
+                handle: GizmoHandle::MoveX,
+                start_pointer: egui::pos2(100.0, 100.0),
+                start_transform,
+            })
+        );
     }
 
     #[test]
