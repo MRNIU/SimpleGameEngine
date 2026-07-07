@@ -45,11 +45,13 @@ impl ViewCamera {
     pub(crate) const MIN_PITCH: f32 = -1.45;
     pub(crate) const MAX_PITCH: f32 = 1.45;
 
+    #[cfg(test)]
     #[must_use]
     pub(crate) const fn pitch(self) -> f32 {
         self.pitch
     }
 
+    #[cfg(test)]
     #[must_use]
     pub(crate) const fn speed(self) -> f32 {
         self.speed
@@ -257,27 +259,65 @@ pub(crate) fn install_viewport_renderer(creation_context: &eframe::CreationConte
 pub(crate) fn draw_viewport(
     ui: &mut egui::Ui,
     draw: Option<&ViewportDrawCall>,
+    selected: Option<&EntityId>,
+    camera: &mut ViewCamera,
     wgpu_probe: Option<&ViewportWgpuProbe>,
-) {
+) -> ViewportAction {
     ui.heading("Viewport");
-    let (rect, _response) = ui.allocate_exact_size(
+    let (rect, response) = ui.allocate_exact_size(
         viewport_canvas_size(ui.available_size_before_wrap()),
-        egui::Sense::hover(),
+        egui::Sense::click_and_drag(),
     );
+    let mut action = ViewportAction::None;
+    let right_down = ui.input(|input| input.pointer.secondary_down());
+    let pointer_delta = ui.input(|input| input.pointer.delta());
+    if response.dragged_by(egui::PointerButton::Secondary) && right_down {
+        camera.look(pointer_delta);
+    }
+    let scroll_y = ui.input(|input| input.smooth_scroll_delta.y);
+    if response.hovered() && scroll_y != 0.0 {
+        camera.adjust_speed(scroll_y);
+    }
+    if right_down && response.hovered() {
+        camera.move_local(
+            ViewMoveInput {
+                forward: ui.input(|input| input.key_down(egui::Key::W)),
+                backward: ui.input(|input| input.key_down(egui::Key::S)),
+                left: ui.input(|input| input.key_down(egui::Key::A)),
+                right: ui.input(|input| input.key_down(egui::Key::D)),
+            },
+            ui.input(|input| input.stable_dt),
+        );
+    }
+
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(18, 24, 29));
-    if let Some((draw, probe)) = draw.zip(wgpu_probe) {
-        let draw = fit_viewport_draw_to_size(draw, [rect.width(), rect.height()]);
+    let fitted_draw =
+        draw.map(|draw| fit_viewport_draw_to_size(draw, [rect.width(), rect.height()]));
+    if ui.input(|input| input.key_pressed(egui::Key::F)) {
+        match fitted_draw.as_ref() {
+            Some(draw) if camera.fit_draw(draw, selected) => {}
+            Some(_) | None => action = ViewportAction::Status("No visible cube to fit".to_owned()),
+        }
+    }
+    if response.clicked_by(egui::PointerButton::Primary)
+        && let (Some(draw), Some(pointer)) = (fitted_draw.as_ref(), response.interact_pointer_pos())
+    {
+        action = hit_test_viewport_draw(draw, rect, pointer);
+    }
+
+    if let Some((draw, probe)) = fitted_draw.as_ref().zip(wgpu_probe) {
         painter.add(egui_wgpu::Callback::new_paint_callback(
             rect,
             ViewportWgpuCallback {
-                draw,
+                draw: draw.clone(),
                 probe: probe.clone(),
             },
         ));
-    } else if let Some(draw) = draw {
+    } else if let Some(draw) = fitted_draw.as_ref() {
         paint_fallback_viewport(rect, &painter, draw);
     }
+    action
 }
 
 fn viewport_canvas_size(available: egui::Vec2) -> egui::Vec2 {

@@ -7,7 +7,9 @@ use eframe::egui;
 
 use crate::{
     model::{EditorError, EditorModel, EditorSmokeReport},
-    viewport::{ViewportWgpuProbe, draw_viewport, install_viewport_renderer},
+    viewport::{
+        ViewCamera, ViewportAction, ViewportWgpuProbe, draw_viewport, install_viewport_renderer,
+    },
 };
 
 mod file_workflow;
@@ -51,6 +53,7 @@ pub struct EditorApp {
     smoke_frame_count: u32,
     viewport_probe: ViewportWgpuProbe,
     wgpu_viewport_available: bool,
+    viewport_camera: ViewCamera,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -188,9 +191,30 @@ impl eframe::App for EditorApp {
         ui.columns(3, |columns| {
             draw_hierarchy(&mut columns[0], &mut self.model);
             draw_inspector(&mut columns[1], &mut self.model, &mut self.status);
-            let draw = self.model.viewport_draw_call();
+            let view = self.viewport_camera.to_viewport_view();
+            let draw = self.model.viewport_draw_call_for_view(&view);
+            let selected = self.model.selected().cloned();
             let wgpu_probe = self.wgpu_viewport_available.then_some(&self.viewport_probe);
-            draw_viewport(&mut columns[2], draw.as_ref(), wgpu_probe);
+            match draw_viewport(
+                &mut columns[2],
+                draw.as_ref(),
+                selected.as_ref(),
+                &mut self.viewport_camera,
+                wgpu_probe,
+            ) {
+                ViewportAction::None => {}
+                ViewportAction::Select(entity) => {
+                    self.model.select(entity);
+                    self.status = "Selected".to_owned();
+                }
+                ViewportAction::ClearSelection => {
+                    self.model.clear_selection();
+                    self.status = "Selection cleared".to_owned();
+                }
+                ViewportAction::Status(status) => {
+                    self.status = status;
+                }
+            }
         });
     }
 }
