@@ -468,11 +468,11 @@ impl EditorApp {
             if response.changed() {
                 self.update_name_edit(name);
             }
-            if response.lost_focus() || ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-                self.finish_name_edit(true);
-            }
             if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
                 self.finish_name_edit(false);
+            } else if response.lost_focus() || ui.input(|input| input.key_pressed(egui::Key::Enter))
+            {
+                self.finish_name_edit(true);
             }
         });
 
@@ -768,6 +768,22 @@ mod tests {
         assert!(app.model.can_undo());
         app.model.undo().unwrap();
         assert_eq!(app.model.world().entity(&cube).unwrap().name, "Cube");
+    }
+
+    #[test]
+    fn name_edit_session_cancel_keeps_model_clean() {
+        let mut app = super::EditorApp::default();
+        let cube = app.model.create_cube();
+        app.model.mark_saved();
+        app.model.clear_history();
+
+        app.begin_name_edit(cube.clone(), "Cube".to_owned());
+        app.update_name_edit("Cube B".to_owned());
+        app.finish_name_edit(false);
+
+        assert_eq!(app.model.world().entity(&cube).unwrap().name, "Cube");
+        assert!(!app.model.is_dirty());
+        assert!(!app.model.can_undo());
     }
 
     #[test]
