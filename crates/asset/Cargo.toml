@@ -6,8 +6,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+ron.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+tobj.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true

@@ -163,8 +163,11 @@ dependencies = [
 name = "asset"
 version = "0.1.0"
 dependencies = [
+ "ron",
  "serde",
  "thiserror 2.0.18",
+ "tobj",
+ "uuid",
 ]
 
 [[package]]
@@ -2744,6 +2747,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tobj"
+version = "4.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2da83817ac7401436633efc35c19edae9f326fa741fae775a1caa406de9db07c"
+dependencies = [
+ "ahash",
+]
+
+[[package]]
 name = "toml_datetime"
 version = "1.1.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2903,6 +2915,12 @@ name = "uuid"
 version = "1.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf80a72845275afea99e7f2b434723d3bc7e38470fcd1c7ed39a599c73319a53"
+dependencies = [
+ "getrandom 0.4.3",
+ "js-sys",
+ "serde_core",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "valuable"
