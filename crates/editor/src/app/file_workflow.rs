@@ -84,6 +84,7 @@ impl EditorApp {
 
     pub(super) fn replace_with_new_scene(&mut self) {
         self.model = EditorModel::default();
+        self.model.clear_history();
         self.transform_gizmo.clear_drag();
         self.current_path = None;
         self.pending_action = None;
@@ -100,6 +101,7 @@ impl EditorApp {
     fn load_scene_from_path(&mut self, path: &Path) -> anyhow::Result<()> {
         let input = fs::read_to_string(path)?;
         self.model.reopen_scene_from_str(&input)?;
+        self.model.clear_history();
         self.transform_gizmo.clear_drag();
         self.current_path = Some(path.to_path_buf());
         self.path_input = path.display().to_string();
@@ -276,6 +278,36 @@ mod tests {
         app.save_scene_as();
 
         assert_eq!(app.current_path, Some(new_path));
+    }
+
+    #[test]
+    fn new_scene_clears_history() {
+        let mut app = EditorApp::default();
+        app.model.create_cube();
+        app.model.mark_saved();
+        assert!(app.model.can_undo());
+
+        app.new_scene();
+
+        assert!(!app.model.can_undo());
+        assert!(!app.model.can_redo());
+    }
+
+    #[test]
+    fn open_scene_clears_history() {
+        let path = temp_scene_path("open_scene_clears_history");
+        write_scene_with_cube(&path);
+        let mut app = EditorApp::default();
+        app.model.create_cube();
+        app.model.mark_saved();
+        app.path_input = path.display().to_string();
+        assert!(app.model.can_undo());
+
+        app.open_scene();
+
+        assert!(!app.model.can_undo());
+        assert!(!app.model.can_redo());
+        assert_eq!(app.status, "Opened");
     }
 
     #[test]

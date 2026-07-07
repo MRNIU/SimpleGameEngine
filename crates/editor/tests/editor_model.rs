@@ -234,6 +234,18 @@ fn editor_model_rename_noop_does_not_push_history() {
 }
 
 #[test]
+fn editor_model_mark_saved_keeps_history() {
+    let mut editor = EditorModel::default();
+    editor.create_cube();
+
+    assert!(editor.can_undo());
+    editor.mark_saved();
+
+    assert!(!editor.is_dirty());
+    assert!(editor.can_undo());
+}
+
+#[test]
 fn editor_model_reopen_preserves_selection_only_when_entity_still_exists() {
     let mut editor = EditorModel::default();
     let cube = editor.create_cube();
