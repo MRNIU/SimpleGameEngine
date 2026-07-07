@@ -11,10 +11,10 @@ mod wgpu_bridge;
 
 pub(crate) use camera::{ViewCamera, ViewMoveInput};
 #[cfg(test)]
-pub(crate) use gizmo::{GizmoDrag, GizmoHandle, GizmoHandleRect};
+pub(crate) use gizmo::GizmoHandleRect;
 pub(crate) use gizmo::{
-    GizmoMode, TransformGizmoState, gizmo_drag_from_press_origin, gizmo_layout, hit_test_gizmo,
-    paint_gizmo_handles, transform_for_gizmo_drag,
+    GizmoDrag, GizmoHandle, GizmoMode, TransformGizmoState, gizmo_drag_from_press_origin,
+    gizmo_layout, hit_test_gizmo, paint_gizmo_handles, transform_for_gizmo_drag,
 };
 use wgpu_bridge::paint_wgpu_viewport;
 pub(crate) use wgpu_bridge::{ViewportWgpuProbe, install_viewport_renderer};

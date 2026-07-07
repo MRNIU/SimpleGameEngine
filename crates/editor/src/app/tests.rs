@@ -5,6 +5,8 @@ use ecs::{Camera, EntityId, EntityRecord, Light, MaterialOverride, Projection};
 use math::Transform;
 use std::path::PathBuf;
 
+use crate::viewport::ViewportAction;
+
 #[test]
 fn parses_smoke_argument() {
     let options = EditorLaunchOptions::from_args([
@@ -71,6 +73,52 @@ fn viewport_commit_transform_writes_one_history_entry() {
     assert!(app.model.is_dirty());
     assert!(app.model.can_undo());
     app.model.undo().unwrap();
+    assert_eq!(
+        app.model
+            .world()
+            .entity(&cube)
+            .unwrap()
+            .transform
+            .translation,
+        [0.0, 0.0, 0.0]
+    );
+}
+
+#[test]
+fn viewport_action_handler_supports_gizmo_preview_commit_and_undo() {
+    let mut app = super::EditorApp::default();
+    let cube = app.model.create_cube();
+    app.model.mark_saved();
+    app.model.clear_history();
+    let before = app.model.world().entity(&cube).unwrap().transform;
+    let after = Transform::from_translation([3.0, 0.0, 0.0]);
+
+    app.handle_viewport_action(ViewportAction::PreviewTransform {
+        target: cube.clone(),
+        transform: after,
+    });
+
+    assert_eq!(
+        app.model
+            .world()
+            .entity(&cube)
+            .unwrap()
+            .transform
+            .translation,
+        [3.0, 0.0, 0.0]
+    );
+    assert!(!app.model.is_dirty());
+    assert!(!app.model.can_undo());
+
+    app.handle_viewport_action(ViewportAction::CommitTransform {
+        target: cube.clone(),
+        before,
+        after,
+    });
+
+    assert!(app.model.is_dirty());
+    assert!(app.model.can_undo());
+    assert!(app.model.undo().unwrap());
     assert_eq!(
         app.model
             .world()

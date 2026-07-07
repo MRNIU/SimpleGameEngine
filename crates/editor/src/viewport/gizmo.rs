@@ -62,6 +62,11 @@ impl TransformGizmoState {
     }
 
     #[must_use]
+    pub(crate) fn has_drag(&self) -> bool {
+        self.drag.is_some()
+    }
+
+    #[must_use]
     pub(crate) fn hovered(&self) -> Option<GizmoHandle> {
         self.hovered
     }

@@ -8,7 +8,10 @@ use math::Transform;
 
 use crate::{
     model::{EditorError, EditorModel, EditorSmokeReport},
-    viewport::{TransformGizmoState, ViewCamera, ViewportWgpuProbe, install_viewport_renderer},
+    viewport::{
+        TransformGizmoState, ViewCamera, ViewportAction, ViewportWgpuProbe,
+        install_viewport_renderer,
+    },
 };
 
 mod file_workflow;
@@ -174,6 +177,36 @@ impl EditorApp {
         {
             Ok(()) => self.status = "Gizmo restored".to_owned(),
             Err(error) => self.status = format_editor_error("Gizmo restore failed", error),
+        }
+    }
+
+    pub(crate) fn handle_viewport_action(&mut self, action: ViewportAction) {
+        match action {
+            ViewportAction::None => {}
+            ViewportAction::Select(entity) => {
+                self.model.select(entity);
+                self.status = "Selected".to_owned();
+            }
+            ViewportAction::ClearSelection => {
+                self.model.clear_selection();
+                self.status = "Selection cleared".to_owned();
+            }
+            ViewportAction::PreviewTransform { target, transform } => {
+                self.preview_viewport_transform(target, transform);
+            }
+            ViewportAction::CommitTransform {
+                target,
+                before,
+                after,
+            } => {
+                self.commit_viewport_transform(target, before, after);
+            }
+            ViewportAction::RestoreTransform { target, transform } => {
+                self.restore_viewport_transform(target, transform);
+            }
+            ViewportAction::Status(status) => {
+                self.status = status;
+            }
         }
     }
 

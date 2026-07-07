@@ -5,7 +5,7 @@ use eframe::egui;
 
 use crate::{
     model::EditorModel,
-    viewport::{self, ViewportAction, draw_viewport},
+    viewport::{self, draw_viewport},
 };
 
 use super::{EditorApp, format_editor_error};
@@ -163,7 +163,7 @@ impl EditorApp {
             .and_then(|id| self.model.world().entity(id.as_str()))
             .map(|entity| entity.transform);
         let wgpu_probe = self.wgpu_viewport_available.then_some(&self.viewport_probe);
-        match draw_viewport(
+        let action = draw_viewport(
             ui,
             draw.as_ref(),
             selected.as_ref(),
@@ -171,33 +171,8 @@ impl EditorApp {
             &mut self.viewport_camera,
             &mut self.transform_gizmo,
             wgpu_probe,
-        ) {
-            ViewportAction::None => {}
-            ViewportAction::Select(entity) => {
-                self.model.select(entity);
-                self.status = "Selected".to_owned();
-            }
-            ViewportAction::ClearSelection => {
-                self.model.clear_selection();
-                self.status = "Selection cleared".to_owned();
-            }
-            ViewportAction::PreviewTransform { target, transform } => {
-                self.preview_viewport_transform(target, transform);
-            }
-            ViewportAction::CommitTransform {
-                target,
-                before,
-                after,
-            } => {
-                self.commit_viewport_transform(target, before, after);
-            }
-            ViewportAction::RestoreTransform { target, transform } => {
-                self.restore_viewport_transform(target, transform);
-            }
-            ViewportAction::Status(status) => {
-                self.status = status;
-            }
-        }
+        );
+        self.handle_viewport_action(action);
     }
 
     fn draw_inspector_panel(&mut self, ui: &mut egui::Ui) {
