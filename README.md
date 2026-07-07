@@ -91,14 +91,14 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo build --workspace'
 # 运行 editor；host-native 是 opt-in，GUI smoke 不属于默认 Dev Container gate
 cargo run -p editor
 
-# 虚拟 X editor smoke；通过退出码和 summary log 验证窗口路径、文件工作流 save/open、material/light/camera 内容编辑和 ViewportRenderer prepare/paint
+# 虚拟 X editor smoke；通过退出码和 summary log 验证窗口路径、文件工作流 save/open、gizmo semantic preview/commit/Undo/Redo、material/light/camera 内容编辑、editor-only state 清理和 ViewportRenderer prepare/paint
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron'
 
 # host-native 自动 smoke；opt-in，只使用已存在的宿主 Rust 环境
 cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron
 ```
 
-虚拟 X 和 host-native `--smoke` 证明 editor 文件工作流 save/open 闭环、material/light/camera 参数 smoke、`light=...` viewport draw-call summary，以及真实 `ViewportRenderer` prepare/paint 触达；它们仍不等于人工确认真实窗口像素或跨平台 GPU 兼容性证明。
+虚拟 X 和 host-native `--smoke` 证明 editor 文件工作流 save/open 闭环、gizmo semantic preview/commit/Undo/Redo、material/light/camera 参数 smoke、editor-only history/gizmo/Pilot 清理，以及真实 `ViewportRenderer` prepare/paint 触达；它们仍不等于人工确认真实窗口像素、真实 OS 鼠标坐标自动化或跨平台 GPU 兼容性证明。
 
 ## 代码结构
 

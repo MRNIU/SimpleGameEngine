@@ -22,6 +22,6 @@ host-native 自动 smoke 是 opt-in，只使用已存在的宿主 Rust 环境：
 cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron
 ```
 
-这些命令通过退出码和 `editor smoke ok: meshes=..., camera=..., viewport_indices=..., viewport_prepare=..., viewport_paint=...` summary log 验证窗口启动、自动 create/edit/save/reopen、draw-call 生成，以及真实 `ViewportRenderer` prepare/paint path 触达；它们不做截图、像素检查或真实 GPU 兼容性证明。
+这些命令通过退出码和 `editor smoke ok: meshes=..., camera=..., light=..., viewport_indices=..., transform_undo_redo=..., content_reopen=..., history_cleared=..., gizmo_drag_cleared=..., pilot_camera_cleared=..., viewport_prepare=..., viewport_paint=...` summary log 验证窗口启动、semantic create/edit/save/reopen、gizmo preview/commit/Undo/Redo、editor-only state 清理、draw-call 生成，以及真实 `ViewportRenderer` prepare/paint path 触达；它们不做 OS 级鼠标键盘自动点击、截图、像素检查或真实 GPU 兼容性证明。
 
 当前 editor 使用 `eframe::Renderer::Wgpu` 和 `egui_wgpu::CallbackTrait` 接入 `render::ViewportRenderer`。workspace 使用 `eframe/egui-wgpu 0.35.0` 兼容的 `wgpu 29.0.4`；等 eframe 发布同主版本支持后再升级到 `wgpu 30`。

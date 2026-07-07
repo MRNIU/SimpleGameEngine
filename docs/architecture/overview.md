@@ -48,4 +48,4 @@ CI gate 只包含：
 
 ## 未验证
 
-当前 editor smoke 通过退出码和 `editor smoke ok: ... light=..., viewport_prepare=..., viewport_paint=...` summary log 确认文件工作流 save/open 闭环、material/light/camera 参数 smoke 和真实 `ViewportRenderer` path 触达；它不做截图、像素检查或真实 GPU 兼容性证明。人工 host-native GUI smoke 已作为手动证据层通过，但仍不等于跨平台 GPU 兼容性证明，也不进入默认 CI gate。
+当前 editor smoke 通过退出码和 `editor smoke ok: ... transform_undo_redo=..., content_reopen=..., history_cleared=..., gizmo_drag_cleared=..., pilot_camera_cleared=..., viewport_prepare=..., viewport_paint=...` summary log 确认文件工作流 save/open 闭环、gizmo semantic preview/commit/Undo/Redo、material/light/camera 参数 smoke、editor-only state 清理和真实 `ViewportRenderer` path 触达；它不做 OS 级鼠标键盘自动点击、截图、像素检查或真实 GPU 兼容性证明。人工 host-native GUI smoke 已作为手动证据层通过，但仍不等于跨平台 GPU 兼容性证明，也不进入默认 CI gate。
