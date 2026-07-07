@@ -9,7 +9,7 @@
 本 milestone 做：
 
 - 保留现有 `editor --smoke` 入口，不新增测试二进制。
-- 扩展 smoke 动作链，覆盖 create/select、gizmo transform preview/commit、Undo/Redo、material/light/camera 编辑、Save/Reopen。
+- 扩展 smoke 动作链，覆盖 create/select、gizmo transform preview/commit、Undo/Redo、material/light/camera 编辑、Save/Reopen；gizmo 断言必须走 viewport action/app commit 语义，不能只用 `EditorModel::set_transform` 代替。
 - 复用现有 `EditorApp`、`EditorModel`、`editor::viewport` 和 `render::ViewportRenderer` 路径。
 - 更新 smoke 文档，记录人工 GUI smoke、自动 semantic smoke 和未验证边界。
 
@@ -47,9 +47,9 @@ editor smoke ok: ...
 
 - editor 能启动并运行 wgpu viewport callback。
 - smoke 场景能创建、选择和编辑实体。
-- gizmo 语义动作能 preview、commit，并形成可 Undo/Redo 的 transform 修改。
+- gizmo 语义动作能经由 `ViewportAction::PreviewTransform` / `ViewportAction::CommitTransform` 对应 app 处理路径 preview、commit，并形成可 Undo/Redo 的 transform 修改。
 - material、light、camera 编辑能进入模型、影响 viewport draw-call，并随 Save/Reopen 保留。
-- Reopen 后 editor-only 状态不会写入 `.scene.ron`。
+- Reopen 后 history、gizmo drag、Pilot Camera 等 editor-only 状态由 app-level smoke check 证明已清空或未持久化。
 
 该 smoke 不证明：
 
@@ -81,6 +81,7 @@ start editor
 - 失败时返回非零退出码，并输出简短失败原因。
 - 成功时只输出 summary，不打印长日志。
 - smoke 不依赖特定窗口坐标、焦点状态或本机辅助权限。
+- transform 编辑的 smoke 证据必须经过 viewport action 到 app/model 的同一语义路径；`EditorModel::set_transform` 只能用于 setup 或非 gizmo 断言。
 
 ### 2. Viewport Event Unit Tests
 
@@ -105,22 +106,27 @@ viewport 输入仍通过普通测试覆盖：
 
 1. 新建默认 scene，确认 root、camera、directional light 存在。
 2. 创建两个 cube，选择第二个 cube。
-3. 通过 gizmo 语义路径 preview transform，再 commit transform。
-4. Undo/Redo 一次 transform，确认最终 transform 正确。
-5. 修改 cube material color。
-6. 修改 default light color/intensity。
-7. 修改 camera projection。
-8. 生成 editor view 的 viewport draw-call，确认 mesh、light、camera、indices 和颜色/projection 变化存在。
-9. Save 到 smoke path。
-10. Reopen smoke path。
-11. 确认 scene 内容保留，undo/redo history、gizmo drag、Pilot Camera 等 editor-only 状态不持久化。
-12. 等待 `ViewportRenderer::prepare` 和 `ViewportRenderer::paint` 至少各触达一次。
+3. 构造一次 gizmo drag 输入，产出 `ViewportAction::PreviewTransform` 并交给 app 预览路径处理。
+4. 构造对应 `ViewportAction::CommitTransform` 并交给 app commit 路径处理。
+5. 确认 preview 本身不写 history、不置 dirty，commit 后只形成一条 transform history。
+6. Undo/Redo 一次 transform，确认最终 transform 正确。
+7. 修改 cube material color。
+8. 修改 default light color/intensity。
+9. 修改 camera projection。
+10. 生成 editor view 的 viewport draw-call，确认 mesh、light、camera、indices 和颜色/projection 变化存在。
+11. 设置可观察的 editor-only 状态：至少包含非空 history、active gizmo drag 和 Pilot Camera on。
+12. Save 到 smoke path。
+13. Reopen smoke path。
+14. 确认 scene 内容保留，并通过 app-level checks 确认 history 已清空、gizmo drag 已清空、Pilot Camera 已关闭。
+15. 等待 `ViewportRenderer::prepare` 和 `ViewportRenderer::paint` 至少各触达一次。
 
 如果某一步失败，smoke 立即失败。smoke 不需要覆盖每个 command 的所有边界，因为这些已经由 unit/integration tests 承担。
 
 ## Report Contract
 
-`EditorSmokeReport` 可以继续保持小结构，只新增少量布尔或计数字段，够 summary 和断言使用即可：
+report 分成三层，避免把 model semantic 结果、app-only 状态和 wgpu callback 证据混在一个结构里。
+
+`EditorSmokeReport` 继续表达 model/scene 语义结果：
 
 ```text
 mesh_count
@@ -129,13 +135,28 @@ has_light
 viewport_index_count
 transform_undo_redo_ok
 content_reopen_ok
+```
+
+app-level checks 表达 editor-only runtime 状态：
+
+```text
+history_cleared_after_reopen
+gizmo_drag_cleared_after_reopen
+pilot_camera_cleared_after_reopen
+```
+
+`ViewportWgpuProbeReport` 或等价 app-level summary 继续表达 viewport callback 结果：
+
+```text
 viewport_prepare_count
 viewport_paint_count
 ```
 
 规则：
 
-- 字段只表达 smoke 结果，不暴露内部测试细节。
+- `EditorSmokeReport` 不持有 app-only 状态或 `ViewportRenderer` prepare/paint 计数。
+- app 层最终 summary 可以合并打印 `EditorSmokeReport`、app-level checks 和 wgpu probe report。
+- 字段只表达 smoke 可观察结果，不暴露内部测试细节。
 - summary log 保持一行。
 - 不保存 smoke report 文件。
 - 不把本地机器路径、容器名或人工操作细节写进 report。
@@ -164,13 +185,14 @@ viewport_paint_count
 实现完成后最小验证：
 
 ```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
-xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron
+# 先按 README 导出 DEVCONTAINER_NAME 并启动 Dev Container
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo fmt --all --check'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo clippy --workspace --all-targets -- -D warnings'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo test --workspace --all-targets'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron'
 ```
 
-可选 host-native smoke：
+可选 host-native smoke 只使用已存在的宿主 Rust 环境：
 
 ```bash
 cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron
