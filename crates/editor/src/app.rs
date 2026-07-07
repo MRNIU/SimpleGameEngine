@@ -27,6 +27,19 @@ pub struct EditorLaunchOptions {
     pub smoke_path: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct EditorAppSmokeChecks {
+    pub(crate) history_cleared_after_reopen: bool,
+    pub(crate) gizmo_drag_cleared_after_reopen: bool,
+    pub(crate) pilot_camera_cleared_after_reopen: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EditorAppSmokeReport {
+    pub(crate) semantic: EditorSmokeReport,
+    pub(crate) app: EditorAppSmokeChecks,
+}
+
 impl EditorLaunchOptions {
     pub fn from_args(args: impl IntoIterator<Item = String>) -> anyhow::Result<Self> {
         let mut smoke_path = None;
@@ -55,7 +68,7 @@ pub struct EditorApp {
     pending_action: Option<PendingFileAction>,
     status: String,
     options: EditorLaunchOptions,
-    smoke_report: Option<EditorSmokeReport>,
+    smoke_report: Option<EditorAppSmokeReport>,
     smoke_frame_count: u32,
     viewport_probe: ViewportWgpuProbe,
     wgpu_viewport_available: bool,
@@ -492,11 +505,16 @@ impl eframe::App for EditorApp {
                     .as_ref()
                     .expect("smoke report is set before viewport completion");
                 println!(
-                    "editor smoke ok: meshes={}, camera={}, light={}, viewport_indices={}, viewport_prepare={}, viewport_paint={}",
-                    report.mesh_count,
-                    report.has_camera,
-                    report.has_light,
-                    report.viewport_index_count,
+                    "editor smoke ok: meshes={}, camera={}, light={}, viewport_indices={}, transform_undo_redo={}, content_reopen={}, history_cleared={}, gizmo_drag_cleared={}, pilot_camera_cleared={}, viewport_prepare={}, viewport_paint={}",
+                    report.semantic.mesh_count,
+                    report.semantic.has_camera,
+                    report.semantic.has_light,
+                    report.semantic.viewport_index_count,
+                    report.semantic.transform_undo_redo_ok,
+                    report.semantic.content_reopen_ok,
+                    report.app.history_cleared_after_reopen,
+                    report.app.gizmo_drag_cleared_after_reopen,
+                    report.app.pilot_camera_cleared_after_reopen,
                     viewport_report.prepare_count,
                     viewport_report.paint_count
                 );
@@ -505,12 +523,17 @@ impl eframe::App for EditorApp {
             } else if self.smoke_frame_count > SMOKE_MAX_VIEWPORT_FRAMES {
                 match self.smoke_report.as_ref() {
                     Some(report) => eprintln!(
-                        "editor smoke failed: wgpu viewport path not reached after {} frames: meshes={}, camera={}, light={}, viewport_indices={}, viewport_prepare={}, viewport_paint={}",
+                        "editor smoke failed: wgpu viewport path not reached after {} frames: meshes={}, camera={}, light={}, viewport_indices={}, transform_undo_redo={}, content_reopen={}, history_cleared={}, gizmo_drag_cleared={}, pilot_camera_cleared={}, viewport_prepare={}, viewport_paint={}",
                         self.smoke_frame_count,
-                        report.mesh_count,
-                        report.has_camera,
-                        report.has_light,
-                        report.viewport_index_count,
+                        report.semantic.mesh_count,
+                        report.semantic.has_camera,
+                        report.semantic.has_light,
+                        report.semantic.viewport_index_count,
+                        report.semantic.transform_undo_redo_ok,
+                        report.semantic.content_reopen_ok,
+                        report.app.history_cleared_after_reopen,
+                        report.app.gizmo_drag_cleared_after_reopen,
+                        report.app.pilot_camera_cleared_after_reopen,
                         viewport_report.prepare_count,
                         viewport_report.paint_count
                     ),

@@ -5,12 +5,26 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::model::{EditorModel, EditorSmokeReport};
+use ecs::{Camera, EntityId, Light, LightKind, MaterialOverride, Projection};
+use eframe::egui;
+use math::Transform;
+
+use crate::{
+    model::EditorModel,
+    viewport::{GizmoDrag, GizmoHandle, ViewportAction, transform_for_gizmo_drag},
+};
 
 use super::{EditorApp, PendingFileAction};
 
 const PATH_EMPTY_STATUS: &str = "Path is empty";
 const UNSAVED_CHANGES_STATUS: &str = "Unsaved changes: save or discard first";
+
+#[derive(Debug, Clone, PartialEq)]
+struct SemanticSmokeState {
+    target: EntityId,
+    expected_transform: Transform,
+    transform_undo_redo_ok: bool,
+}
 
 impl EditorApp {
     pub(super) fn new_scene(&mut self) {
@@ -64,13 +78,181 @@ impl EditorApp {
     pub(super) fn run_smoke_file_workflow(
         &mut self,
         path: &Path,
-    ) -> anyhow::Result<EditorSmokeReport> {
-        self.model.run_smoke_actions_in_place()?;
+    ) -> anyhow::Result<super::EditorAppSmokeReport> {
+        let semantic_state = self.run_semantic_smoke_actions()?;
         self.path_input = path.display().to_string();
         self.save_scene_path(path, true)?;
         self.load_scene_from_path(path)?;
+
+        let content_reopen_ok = self.semantic_smoke_content_reopened(&semantic_state);
         let view = self.viewport_camera.to_viewport_view();
-        self.model.smoke_report_for_view(&view)
+        let semantic = self.model.smoke_report_for_view_with_checks(
+            &view,
+            semantic_state.transform_undo_redo_ok,
+            content_reopen_ok,
+        )?;
+        let app = self.app_smoke_checks();
+
+        anyhow::ensure!(
+            semantic.transform_undo_redo_ok,
+            "semantic smoke transform undo/redo failed"
+        );
+        anyhow::ensure!(
+            semantic.content_reopen_ok,
+            "semantic smoke content did not survive reopen"
+        );
+        anyhow::ensure!(
+            app.history_cleared_after_reopen,
+            "smoke history survived reopen"
+        );
+        anyhow::ensure!(
+            app.gizmo_drag_cleared_after_reopen,
+            "smoke gizmo drag survived reopen"
+        );
+        anyhow::ensure!(
+            app.pilot_camera_cleared_after_reopen,
+            "smoke pilot camera survived reopen"
+        );
+
+        Ok(super::EditorAppSmokeReport { semantic, app })
+    }
+
+    fn run_semantic_smoke_actions(&mut self) -> anyhow::Result<SemanticSmokeState> {
+        let _first = self.model.create_cube();
+        let target = self.model.create_cube();
+        self.model.select(target.clone());
+        self.model.mark_saved();
+        self.model.clear_history();
+
+        let before = self
+            .model
+            .world()
+            .entity(target.as_str())
+            .ok_or_else(|| anyhow::anyhow!("smoke target cube missing"))?
+            .transform;
+        let start_pointer = egui::pos2(10.0, 10.0);
+        let end_pointer = egui::pos2(60.0, 10.0);
+        let after =
+            transform_for_gizmo_drag(GizmoHandle::MoveX, before, start_pointer, end_pointer);
+
+        self.handle_viewport_action(ViewportAction::PreviewTransform {
+            target: target.clone(),
+            transform: after,
+        });
+        anyhow::ensure!(!self.model.is_dirty(), "gizmo preview dirtied the scene");
+        anyhow::ensure!(!self.model.can_undo(), "gizmo preview wrote history");
+
+        self.handle_viewport_action(ViewportAction::CommitTransform {
+            target: target.clone(),
+            before,
+            after,
+        });
+        anyhow::ensure!(
+            self.model.is_dirty(),
+            "gizmo commit did not dirty the scene"
+        );
+        anyhow::ensure!(self.model.can_undo(), "gizmo commit did not write history");
+
+        self.model.undo()?;
+        anyhow::ensure!(
+            self.model
+                .world()
+                .entity(target.as_str())
+                .is_some_and(|entity| entity.transform == before),
+            "gizmo undo did not restore the start transform"
+        );
+        self.model.redo()?;
+        anyhow::ensure!(
+            self.model
+                .world()
+                .entity(target.as_str())
+                .is_some_and(|entity| entity.transform == after),
+            "gizmo redo did not restore the committed transform"
+        );
+
+        self.model.set_material_override(
+            &target,
+            Some(MaterialOverride {
+                base_color: [0.4, 0.9, 0.5, 1.0],
+            }),
+        )?;
+        self.model.set_light(
+            &EntityId::new("directional_light"),
+            Light {
+                kind: LightKind::Directional,
+                color: [0.8, 0.9, 1.0],
+                intensity: 1.25,
+            },
+        )?;
+        self.model.set_camera(
+            &EntityId::new("camera"),
+            Camera::new(Projection::Perspective {
+                fov_y_degrees: 55.0,
+            }),
+        )?;
+
+        self.transform_gizmo.start_drag(GizmoDrag {
+            target: target.clone(),
+            handle: GizmoHandle::MoveX,
+            start_pointer,
+            start_transform: after,
+        });
+        anyhow::ensure!(
+            self.transform_gizmo.has_drag(),
+            "smoke gizmo drag was not set"
+        );
+
+        self.model.select(EntityId::new("camera"));
+        self.toggle_pilot_camera();
+        anyhow::ensure!(self.pilot_camera, "smoke pilot camera was not enabled");
+
+        Ok(SemanticSmokeState {
+            target,
+            expected_transform: after,
+            transform_undo_redo_ok: true,
+        })
+    }
+
+    fn semantic_smoke_content_reopened(&self, state: &SemanticSmokeState) -> bool {
+        let Some(target) = self.model.world().entity(state.target.as_str()) else {
+            return false;
+        };
+        let material_ok = target
+            .material_override
+            .as_ref()
+            .is_some_and(|material| material.base_color == [0.4, 0.9, 0.5, 1.0]);
+        let transform_ok = target.transform == state.expected_transform;
+        let light_ok = self
+            .model
+            .world()
+            .entity("directional_light")
+            .and_then(|entity| entity.light.as_ref())
+            .is_some_and(|light| {
+                light.kind == LightKind::Directional
+                    && light.color == [0.8, 0.9, 1.0]
+                    && light.intensity == 1.25
+            });
+        let camera_ok = self
+            .model
+            .world()
+            .entity("camera")
+            .and_then(|entity| entity.camera.as_ref())
+            .is_some_and(|camera| {
+                camera.projection
+                    == (Projection::Perspective {
+                        fov_y_degrees: 55.0,
+                    })
+            });
+
+        material_ok && transform_ok && light_ok && camera_ok
+    }
+
+    fn app_smoke_checks(&self) -> super::EditorAppSmokeChecks {
+        super::EditorAppSmokeChecks {
+            history_cleared_after_reopen: !self.model.can_undo() && !self.model.can_redo(),
+            gizmo_drag_cleared_after_reopen: !self.transform_gizmo.has_drag(),
+            pilot_camera_cleared_after_reopen: !self.pilot_camera,
+        }
     }
 
     fn path_from_input(&mut self) -> Option<PathBuf> {
@@ -321,10 +503,15 @@ mod tests {
 
         let report = app.run_smoke_file_workflow(&path).unwrap();
 
-        assert_eq!(report.mesh_count, 3);
-        assert!(report.has_camera);
-        assert!(report.has_light);
-        assert_eq!(report.viewport_index_count, 108);
+        assert_eq!(report.semantic.mesh_count, 2);
+        assert!(report.semantic.has_camera);
+        assert!(report.semantic.has_light);
+        assert_eq!(report.semantic.viewport_index_count, 72);
+        assert!(report.semantic.transform_undo_redo_ok);
+        assert!(report.semantic.content_reopen_ok);
+        assert!(report.app.history_cleared_after_reopen);
+        assert!(report.app.gizmo_drag_cleared_after_reopen);
+        assert!(report.app.pilot_camera_cleared_after_reopen);
         assert_eq!(app.current_path, Some(path.clone()));
         assert!(!app.model.is_dirty());
         assert!(path.exists());

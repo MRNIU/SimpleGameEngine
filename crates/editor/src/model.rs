@@ -79,6 +79,8 @@ pub struct EditorSmokeReport {
     pub has_camera: bool,
     pub has_light: bool,
     pub viewport_index_count: usize,
+    pub transform_undo_redo_ok: bool,
+    pub content_reopen_ok: bool,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -810,11 +812,22 @@ impl EditorModel {
             has_camera: render_scene.active_camera.is_some(),
             has_light: self.world.entities().any(|entity| entity.light.is_some()),
             viewport_index_count: viewport_draw.index_count,
+            transform_undo_redo_ok: false,
+            content_reopen_ok: false,
         };
         Ok(report)
     }
 
     pub fn smoke_report_for_view(&self, view: &ViewportView) -> anyhow::Result<EditorSmokeReport> {
+        self.smoke_report_for_view_with_checks(view, false, false)
+    }
+
+    pub fn smoke_report_for_view_with_checks(
+        &self,
+        view: &ViewportView,
+        transform_undo_redo_ok: bool,
+        content_reopen_ok: bool,
+    ) -> anyhow::Result<EditorSmokeReport> {
         let render_scene = self.render_scene();
         let viewport_draw = self
             .viewport_draw_call_for_view(view)
@@ -825,6 +838,8 @@ impl EditorModel {
             has_camera: render_scene.active_camera.is_some(),
             has_light: self.world.entities().any(|entity| entity.light.is_some()),
             viewport_index_count: viewport_draw.index_count,
+            transform_undo_redo_ok,
+            content_reopen_ok,
         };
         Ok(report)
     }

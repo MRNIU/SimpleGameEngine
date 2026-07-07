@@ -326,6 +326,8 @@ fn editor_smoke_actions_create_save_reopen_and_verify_viewport() {
     assert_eq!(report.mesh_count, 3);
     assert!(report.has_camera);
     assert_eq!(report.viewport_index_count, 108);
+    assert!(!report.transform_undo_redo_ok);
+    assert!(!report.content_reopen_ok);
 }
 
 #[test]
@@ -336,4 +338,6 @@ fn smoke_actions_include_scene_content_edits() {
     assert!(report.has_camera);
     assert!(report.has_light);
     assert!(report.viewport_index_count >= 108);
+    assert!(!report.transform_undo_redo_ok);
+    assert!(!report.content_reopen_ok);
 }
