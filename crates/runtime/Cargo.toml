@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 anyhow.workspace = true
 app = { path = "../app" }
+asset = { path = "../asset" }
 render = { path = "../render" }
 scene = { path = "../scene" }
 tracing.workspace = true
