@@ -443,11 +443,14 @@ fn shade_color(color: [f32; 4], factor: f32) -> [f32; 4] {
 }
 
 fn light_multiplier(scene: &RenderScene) -> [f32; 3] {
+    const AMBIENT: f32 = 0.15;
+    const PREVIEW_GAIN: f32 = 1.5;
+
     scene.lights.first().map_or([1.0, 1.0, 1.0], |light| {
         [
-            (0.25 + light.light.color[0] * light.light.intensity).clamp(0.0, 2.0),
-            (0.25 + light.light.color[1] * light.light.intensity).clamp(0.0, 2.0),
-            (0.25 + light.light.color[2] * light.light.intensity).clamp(0.0, 2.0),
+            (AMBIENT + light.light.color[0] * light.light.intensity * PREVIEW_GAIN).clamp(0.0, 2.0),
+            (AMBIENT + light.light.color[1] * light.light.intensity * PREVIEW_GAIN).clamp(0.0, 2.0),
+            (AMBIENT + light.light.color[2] * light.light.intensity * PREVIEW_GAIN).clamp(0.0, 2.0),
         ]
     })
 }
@@ -761,6 +764,36 @@ mod tests {
             viewport_draw_call(&extract_render_scene(&changed_second)).unwrap();
 
         assert_eq!(first_draw.vertices, changed_second_draw.vertices);
+    }
+
+    #[test]
+    fn viewport_draw_call_makes_first_light_color_visibly_affect_cube_color() {
+        let mut red_light = world_with_camera();
+        add_cube(&mut red_light, "cube", [0.0, 0.0, 0.0]);
+        red_light.entity_mut("cube").unwrap().material_override = Some(MaterialOverride {
+            base_color: [0.6, 0.6, 0.6, 1.0],
+        });
+        add_light(&mut red_light, "directional_light", [1.0, 0.0, 0.0], 1.0);
+
+        let mut blue_light = red_light.clone();
+        blue_light
+            .entity_mut("directional_light")
+            .unwrap()
+            .light
+            .as_mut()
+            .unwrap()
+            .color = [0.0, 0.0, 1.0];
+
+        let red_draw = viewport_draw_call(&extract_render_scene(&red_light)).unwrap();
+        let blue_draw = viewport_draw_call(&extract_render_scene(&blue_light)).unwrap();
+        let max_channel_delta = red_draw.vertices[0]
+            .color
+            .into_iter()
+            .zip(blue_draw.vertices[0].color)
+            .map(|(red, blue)| (red - blue).abs())
+            .fold(0.0, f32::max);
+
+        assert!(max_channel_delta > 0.3);
     }
 
     #[test]

@@ -276,14 +276,23 @@ impl EditorApp {
                 ui.selectable_value(&mut edited.kind, ecs::LightKind::Directional, "Directional");
                 ui.selectable_value(&mut edited.kind, ecs::LightKind::Point, "Point");
             });
-            let color_changed = ui.color_edit_button_rgb(&mut edited.color).changed();
+            let color_changed = ui
+                .horizontal(|ui| {
+                    ui.label("Color");
+                    ui.color_edit_button_rgb(&mut edited.color).changed()
+                })
+                .inner;
             let intensity_changed = ui
-                .add(
-                    egui::DragValue::new(&mut edited.intensity)
-                        .speed(0.1)
-                        .range(0.0..=100.0),
-                )
-                .changed();
+                .horizontal(|ui| {
+                    ui.label("Intensity");
+                    ui.add(
+                        egui::DragValue::new(&mut edited.intensity)
+                            .speed(0.1)
+                            .range(0.0..=100.0),
+                    )
+                    .changed()
+                })
+                .inner;
             if color_changed || intensity_changed || edited.kind != light.kind {
                 self.preview_light_edit(selected.clone(), edited);
             }

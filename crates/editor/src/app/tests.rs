@@ -385,6 +385,14 @@ fn editor_body_uses_side_panels_and_central_viewport_contract() {
 }
 
 #[test]
+fn light_inspector_labels_color_and_intensity_controls() {
+    let source = include_str!("panels.rs");
+
+    assert!(source.contains("\"Color\""));
+    assert!(source.contains("\"Intensity\""));
+}
+
+#[test]
 fn scene_replace_clears_active_gizmo_drag() {
     let mut app = super::EditorApp::default();
     let cube = app.model.create_cube();
