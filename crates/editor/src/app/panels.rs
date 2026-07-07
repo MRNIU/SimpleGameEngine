@@ -63,16 +63,16 @@ impl EditorApp {
                     self.run_ui_action(EditorUiAction::NewScene);
                     ui.close();
                 }
-                if ui.button("Open Scene").clicked() {
-                    self.run_ui_action(EditorUiAction::OpenScene);
+                if ui.button("Open Scene...").clicked() {
+                    self.run_ui_action(EditorUiAction::OpenSceneDialog);
                     ui.close();
                 }
                 if ui.button("Save").clicked() {
                     self.run_ui_action(EditorUiAction::SaveScene);
                     ui.close();
                 }
-                if ui.button("Save As").clicked() {
-                    self.run_ui_action(EditorUiAction::SaveSceneAs);
+                if ui.button("Save As...").clicked() {
+                    self.run_ui_action(EditorUiAction::SaveSceneAsDialog);
                     ui.close();
                 }
             });
@@ -139,13 +139,13 @@ impl EditorApp {
                 self.run_ui_action(EditorUiAction::NewScene);
             }
             if ui.button("Open").clicked() {
-                self.run_ui_action(EditorUiAction::OpenScene);
+                self.run_ui_action(EditorUiAction::OpenSceneDialog);
             }
             if ui.button("Save").clicked() {
                 self.run_ui_action(EditorUiAction::SaveScene);
             }
             if ui.button("Save As").clicked() {
-                self.run_ui_action(EditorUiAction::SaveSceneAs);
+                self.run_ui_action(EditorUiAction::SaveSceneAsDialog);
             }
             ui.separator();
 
@@ -275,7 +275,6 @@ impl EditorApp {
     pub(super) fn draw_status_bar(&mut self, ui: &mut egui::Ui) {
         let selection = status_bar_selection_text(&self.model);
         ui.horizontal_wrapped(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.path_input).desired_width(360.0));
             if let Some(path) = &self.current_path {
                 ui.label(path.display().to_string());
             } else {

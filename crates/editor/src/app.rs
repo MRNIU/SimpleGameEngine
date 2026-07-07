@@ -63,7 +63,6 @@ impl EditorLaunchOptions {
 #[derive(Debug, Default)]
 pub struct EditorApp {
     model: EditorModel,
-    path_input: String,
     current_path: Option<PathBuf>,
     pending_action: Option<PendingFileAction>,
     status: String,
@@ -81,6 +80,8 @@ pub struct EditorApp {
     material_edit: Option<MaterialEditSession>,
     light_edit: Option<LightEditSession>,
     camera_edit: Option<CameraEditSession>,
+    #[cfg(test)]
+    test_dialog_paths: TestDialogPaths,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,12 +90,19 @@ enum PendingFileAction {
     Open(PathBuf),
 }
 
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct TestDialogPaths {
+    open_scene: Option<Option<PathBuf>>,
+    save_scene: Option<Option<PathBuf>>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum EditorUiAction {
     NewScene,
-    OpenScene,
+    OpenSceneDialog,
     SaveScene,
-    SaveSceneAs,
+    SaveSceneAsDialog,
     DiscardPendingAction,
     Undo,
     Redo,
@@ -245,9 +253,9 @@ impl EditorApp {
     pub(super) fn run_ui_action(&mut self, action: EditorUiAction) {
         match action {
             EditorUiAction::NewScene => self.new_scene(),
-            EditorUiAction::OpenScene => self.open_scene(),
+            EditorUiAction::OpenSceneDialog => self.open_scene_dialog(),
             EditorUiAction::SaveScene => self.save_scene(),
-            EditorUiAction::SaveSceneAs => self.save_scene_as(),
+            EditorUiAction::SaveSceneAsDialog => self.save_scene_as_dialog(),
             EditorUiAction::DiscardPendingAction => self.discard_pending_action(),
             EditorUiAction::Undo => {
                 if self.model.undo().unwrap_or(false) {
@@ -291,7 +299,7 @@ impl EditorApp {
 
     fn handle_keyboard_shortcuts(&mut self, context: &egui::Context) {
         if context.input_mut(|input| input.consume_key(Self::command_shift(), egui::Key::S)) {
-            self.run_ui_action(EditorUiAction::SaveSceneAs);
+            self.run_ui_action(EditorUiAction::SaveSceneAsDialog);
         }
         if context.input_mut(|input| input.consume_key(Self::command_shift(), egui::Key::Z))
             || context.input_mut(|input| input.consume_key(egui::Modifiers::CTRL, egui::Key::Y))
@@ -302,7 +310,7 @@ impl EditorApp {
             self.run_ui_action(EditorUiAction::NewScene);
         }
         if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::O)) {
-            self.run_ui_action(EditorUiAction::OpenScene);
+            self.run_ui_action(EditorUiAction::OpenSceneDialog);
         }
         if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) {
             self.run_ui_action(EditorUiAction::SaveScene);

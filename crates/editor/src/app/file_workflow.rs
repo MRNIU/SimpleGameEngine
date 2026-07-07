@@ -16,7 +16,6 @@ use crate::{
 
 use super::{EditorApp, PendingFileAction};
 
-const PATH_EMPTY_STATUS: &str = "Path is empty";
 const UNSAVED_CHANGES_STATUS: &str = "Unsaved changes: save or discard first";
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,10 +35,14 @@ impl EditorApp {
         self.replace_with_new_scene();
     }
 
-    pub(super) fn open_scene(&mut self) {
-        let Some(path) = self.path_from_input() else {
+    pub(super) fn open_scene_dialog(&mut self) {
+        let Some(path) = self.pick_open_scene_path() else {
             return;
         };
+        self.open_scene_path_or_defer(path);
+    }
+
+    fn open_scene_path_or_defer(&mut self, path: PathBuf) {
         if self.model.is_dirty() {
             self.pending_action = Some(PendingFileAction::Open(path));
             self.status = UNSAVED_CHANGES_STATUS.to_owned();
@@ -49,22 +52,18 @@ impl EditorApp {
     }
 
     pub(super) fn save_scene(&mut self) {
-        let (path, sync_input) = if let Some(path) = self.current_path.clone() {
-            (path, false)
+        if let Some(path) = self.current_path.clone() {
+            let _ = self.save_scene_path(&path);
         } else {
-            let Some(path) = self.path_from_input() else {
-                return;
-            };
-            (path, true)
-        };
-        let _ = self.save_scene_path(&path, sync_input);
+            self.save_scene_as_dialog();
+        }
     }
 
-    pub(super) fn save_scene_as(&mut self) {
-        let Some(path) = self.path_from_input() else {
+    pub(super) fn save_scene_as_dialog(&mut self) {
+        let Some(path) = self.pick_save_scene_path() else {
             return;
         };
-        let _ = self.save_scene_path(&path, true);
+        let _ = self.save_scene_path(&path);
     }
 
     pub(super) fn discard_pending_action(&mut self) {
@@ -80,8 +79,7 @@ impl EditorApp {
         path: &Path,
     ) -> anyhow::Result<super::EditorAppSmokeReport> {
         let semantic_state = self.run_semantic_smoke_actions()?;
-        self.path_input = path.display().to_string();
-        self.save_scene_path(path, true)?;
+        self.save_scene_path(path)?;
         self.load_scene_from_path(path)?;
 
         let content_reopen_ok = self.semantic_smoke_content_reopened(&semantic_state);
@@ -255,15 +253,6 @@ impl EditorApp {
         }
     }
 
-    fn path_from_input(&mut self) -> Option<PathBuf> {
-        let input = self.path_input.trim();
-        if input.is_empty() {
-            self.status = PATH_EMPTY_STATUS.to_owned();
-            return None;
-        }
-        Some(PathBuf::from(input))
-    }
-
     pub(super) fn replace_with_new_scene(&mut self) {
         self.model = EditorModel::default();
         self.model.clear_history();
@@ -290,17 +279,13 @@ impl EditorApp {
         self.pilot_camera = false;
         self.clear_content_edit_sessions();
         self.current_path = Some(path.to_path_buf());
-        self.path_input = path.display().to_string();
         Ok(())
     }
 
-    fn save_scene_path(&mut self, path: &Path, sync_input: bool) -> anyhow::Result<()> {
+    fn save_scene_path(&mut self, path: &Path) -> anyhow::Result<()> {
         match self.write_scene_to_path(path) {
             Ok(()) => {
                 self.current_path = Some(path.to_path_buf());
-                if sync_input {
-                    self.path_input = path.display().to_string();
-                }
                 self.pending_action = None;
                 self.status = "Saved".to_owned();
                 Ok(())
@@ -321,6 +306,39 @@ impl EditorApp {
         fs::write(path, self.model.save_scene_to_string()?)?;
         self.model.mark_saved();
         Ok(())
+    }
+
+    fn pick_open_scene_path(&mut self) -> Option<PathBuf> {
+        #[cfg(test)]
+        if let Some(path) = self.test_dialog_paths.open_scene.take() {
+            return path;
+        }
+
+        rfd::FileDialog::new()
+            .add_filter("Scene", &["scene.ron", "ron"])
+            .pick_file()
+    }
+
+    fn pick_save_scene_path(&mut self) -> Option<PathBuf> {
+        #[cfg(test)]
+        if let Some(path) = self.test_dialog_paths.save_scene.take() {
+            return path;
+        }
+
+        rfd::FileDialog::new()
+            .add_filter("Scene", &["scene.ron", "ron"])
+            .set_file_name("scene.scene.ron")
+            .save_file()
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_next_open_scene_dialog_path_for_test(&mut self, path: Option<PathBuf>) {
+        self.test_dialog_paths.open_scene = Some(path);
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_next_save_scene_dialog_path_for_test(&mut self, path: Option<PathBuf>) {
+        self.test_dialog_paths.save_scene = Some(path);
     }
 }
 
@@ -347,26 +365,13 @@ mod tests {
     }
 
     #[test]
-    fn empty_open_path_reports_error_without_pending_action() {
-        let mut app = EditorApp {
-            path_input: "   ".to_owned(),
-            ..Default::default()
-        };
-
-        app.open_scene();
-
-        assert_eq!(app.pending_action, None);
-        assert_eq!(app.status, "Path is empty");
-    }
-
-    #[test]
     fn dirty_open_is_blocked_and_sets_pending_action() {
         let mut app = EditorApp::default();
         app.model.create_cube();
         let path = temp_scene_path("dirty_open_is_blocked");
-        app.path_input = path.display().to_string();
+        app.set_next_open_scene_dialog_path_for_test(Some(path.clone()));
 
-        app.open_scene();
+        app.open_scene_dialog();
 
         assert_eq!(
             app.pending_action,
@@ -381,7 +386,7 @@ mod tests {
         let mut app = EditorApp::default();
         let path = temp_scene_path("save_after_dirty_guard_clears_pending_without_running_new");
         let cube = app.model.create_cube();
-        app.path_input = path.display().to_string();
+        app.set_next_save_scene_dialog_path_for_test(Some(path.clone()));
         app.pending_action = Some(PendingFileAction::New);
 
         app.save_scene();
@@ -399,10 +404,10 @@ mod tests {
         let mut app = EditorApp::default();
         let path = temp_scene_path("save_as_after_dirty_guard_clears_pending_without_running_new");
         let cube = app.model.create_cube();
-        app.path_input = path.display().to_string();
+        app.set_next_save_scene_dialog_path_for_test(Some(path.clone()));
         app.pending_action = Some(PendingFileAction::New);
 
-        app.save_scene_as();
+        app.save_scene_as_dialog();
 
         assert_eq!(app.pending_action, None);
         assert!(app.model.world().entity(cube.as_str()).is_some());
@@ -444,11 +449,11 @@ mod tests {
     }
 
     #[test]
-    fn save_without_current_path_uses_path_input() {
+    fn save_without_current_path_uses_save_as_dialog() {
         let mut app = EditorApp::default();
-        let path = temp_scene_path("save_without_current_path_uses_path_input");
+        let path = temp_scene_path("save_without_current_path_uses_save_as_dialog");
         app.model.create_cube();
-        app.path_input = path.display().to_string();
+        app.set_next_save_scene_dialog_path_for_test(Some(path.clone()));
 
         app.save_scene();
 
@@ -462,9 +467,9 @@ mod tests {
         let old_path = temp_scene_path("save_as_updates_current_path_old");
         let new_path = temp_scene_path("save_as_updates_current_path_new");
         app.current_path = Some(old_path);
-        app.path_input = new_path.display().to_string();
+        app.set_next_save_scene_dialog_path_for_test(Some(new_path.clone()));
 
-        app.save_scene_as();
+        app.save_scene_as_dialog();
 
         assert_eq!(app.current_path, Some(new_path));
     }
@@ -489,10 +494,10 @@ mod tests {
         let mut app = EditorApp::default();
         app.model.create_cube();
         app.model.mark_saved();
-        app.path_input = path.display().to_string();
+        app.set_next_open_scene_dialog_path_for_test(Some(path));
         assert!(app.model.can_undo());
 
-        app.open_scene();
+        app.open_scene_dialog();
 
         assert!(!app.model.can_undo());
         assert!(!app.model.can_redo());

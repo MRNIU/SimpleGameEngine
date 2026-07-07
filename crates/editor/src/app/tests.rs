@@ -203,7 +203,7 @@ fn ui_action_save_clears_pending_without_running_new() {
         std::fs::create_dir_all(parent).unwrap();
     }
     let _ = std::fs::remove_file(&path);
-    app.path_input = path.display().to_string();
+    app.set_next_save_scene_dialog_path_for_test(Some(path.clone()));
     app.pending_action = Some(super::PendingFileAction::New);
 
     app.run_ui_action(super::EditorUiAction::SaveScene);
@@ -214,6 +214,55 @@ fn ui_action_save_clears_pending_without_running_new() {
     assert!(!app.model.is_dirty());
     assert_eq!(app.status, "Saved");
     assert!(path.exists());
+}
+
+#[test]
+fn open_scene_dialog_cancel_does_not_set_pending_action() {
+    let mut app = super::EditorApp::default();
+    app.model.create_cube();
+    app.set_next_open_scene_dialog_path_for_test(None);
+
+    app.run_ui_action(super::EditorUiAction::OpenSceneDialog);
+
+    assert_eq!(app.pending_action, None);
+    assert!(app.model.is_dirty());
+}
+
+#[test]
+fn dirty_open_scene_dialog_sets_pending_open_after_path_selection() {
+    let path = temp_scene_path("dirty_open_scene_dialog_sets_pending_open");
+    let mut app = super::EditorApp::default();
+    app.model.create_cube();
+    app.set_next_open_scene_dialog_path_for_test(Some(path.clone()));
+
+    app.run_ui_action(super::EditorUiAction::OpenSceneDialog);
+
+    assert_eq!(
+        app.pending_action,
+        Some(super::PendingFileAction::Open(path))
+    );
+    assert_eq!(app.status, "Unsaved changes: save or discard first");
+}
+
+#[test]
+fn save_without_current_path_uses_save_as_dialog() {
+    let path = temp_scene_path("save_without_current_path_uses_save_as_dialog");
+    let mut app = super::EditorApp::default();
+    app.model.create_cube();
+    app.set_next_save_scene_dialog_path_for_test(Some(path.clone()));
+
+    app.run_ui_action(super::EditorUiAction::SaveScene);
+
+    assert_eq!(app.current_path, Some(path.clone()));
+    assert!(path.exists());
+    assert!(!app.model.is_dirty());
+}
+
+#[test]
+fn status_bar_source_has_no_path_input_text_edit() {
+    let source = include_str!("panels.rs");
+
+    assert!(!source.contains("TextEdit::singleline(&mut self.path_input)"));
 }
 
 #[test]
@@ -544,7 +593,7 @@ fn keyboard_shortcuts_allowed_is_false_when_widget_has_keyboard_focus() {
 
     assert!(super::EditorApp::keyboard_shortcuts_allowed(&context));
 
-    context.memory_mut(|memory| memory.request_focus(egui::Id::new("path_input")));
+    context.memory_mut(|memory| memory.request_focus(egui::Id::new("name_edit")));
 
     assert!(!super::EditorApp::keyboard_shortcuts_allowed(&context));
 }
@@ -567,7 +616,7 @@ fn modified_shortcuts_are_checked_before_plain_shortcuts() {
         .find("fn handle_keyboard_shortcuts")
         .expect("shortcut helper present")..];
     let save_as = shortcut_source
-        .find("EditorUiAction::SaveSceneAs")
+        .find("EditorUiAction::SaveSceneAsDialog")
         .expect("Save As shortcut present");
     let save = shortcut_source
         .find("EditorUiAction::SaveScene)")
@@ -621,11 +670,11 @@ fn toolbar_source_uses_polish_groups_and_no_toolbar_path_label() {
 }
 
 #[test]
-fn status_bar_contains_bounded_path_field() {
+fn status_bar_contains_read_only_file_status() {
     let source = include_str!("panels.rs");
 
-    assert!(source.contains("desired_width(360.0)"));
-    assert!(source.contains("self.path_input"));
+    assert!(source.contains("\"No file\""));
+    assert!(!source.contains("TextEdit::singleline(&mut self.path_input)"));
     assert!(source.contains("status_bar_selection_text"));
 }
 
@@ -688,4 +737,15 @@ fn app_installs_compact_dark_tool_style() {
     assert!(source.contains("install_editor_style"));
     assert!(source.contains("egui::Visuals::dark()"));
     assert!(source.contains("panel_fill"));
+}
+
+fn temp_scene_path(name: &str) -> std::path::PathBuf {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/tmp")
+        .join(format!("{name}_{}.scene.ron", std::process::id()));
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    let _ = std::fs::remove_file(&path);
+    path
 }
