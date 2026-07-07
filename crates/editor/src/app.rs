@@ -386,10 +386,7 @@ impl EditorApp {
             .current_path
             .as_ref()
             .map_or_else(|| "No file".to_owned(), |path| path.display().to_string());
-        let selection = self
-            .model
-            .selected()
-            .map_or_else(|| "No selection".to_owned(), ToString::to_string);
+        let selection = status_bar_selection_text(&self.model);
         ui.horizontal_wrapped(|ui| {
             ui.label(path);
             ui.separator();
@@ -506,6 +503,16 @@ impl EditorApp {
             ui.label(format!("Camera: {:?}", camera.projection));
         }
     }
+}
+
+fn status_bar_selection_text(model: &EditorModel) -> String {
+    let Some(selected) = model.selected() else {
+        return "No selection".to_owned();
+    };
+    model
+        .world()
+        .entity(selected.as_str())
+        .map_or_else(|| selected.to_string(), |entity| entity.name.clone())
 }
 
 fn draw_hierarchy(ui: &mut egui::Ui, model: &mut EditorModel) {
@@ -772,6 +779,15 @@ mod tests {
         assert!(app.model.can_undo());
         app.model.undo().unwrap();
         assert_eq!(app.model.world().entity(&cube).unwrap().name, "Cube");
+    }
+
+    #[test]
+    fn status_bar_selection_uses_entity_name() {
+        let mut app = super::EditorApp::default();
+        let cube = app.model.create_cube();
+        app.model.rename_entity(&cube, "Renamed Cube").unwrap();
+
+        assert_eq!(super::status_bar_selection_text(&app.model), "Renamed Cube");
     }
 
     #[test]
