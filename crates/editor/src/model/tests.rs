@@ -260,3 +260,53 @@ fn commit_transform_edit_pushes_one_history_entry() {
         [0.0, 0.0, 0.0]
     );
 }
+
+#[test]
+fn imported_mesh_entity_uses_asset_ref_and_default_material() {
+    let uuid = asset::AssetUuid::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    let mut editor = super::EditorModel::default();
+
+    let entity = editor.create_imported_mesh(&uuid, "Crate").unwrap();
+
+    let record = editor.world().entity(entity.as_str()).unwrap();
+    assert_eq!(record.name, "Crate");
+    assert_eq!(record.mesh.as_ref().unwrap().asset, uuid.to_asset_ref());
+    assert_eq!(
+        record.mesh.as_ref().unwrap().material,
+        "primitive:default_material"
+    );
+    assert!(editor.is_dirty());
+    assert!(editor.can_undo());
+}
+
+#[test]
+fn imported_mesh_entity_conflicts_get_suffixes() {
+    let first_uuid = asset::AssetUuid::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    let second_uuid =
+        asset::AssetUuid::from_string("550e8400-e29b-41d4-a716-446655440001").unwrap();
+    let mut editor = super::EditorModel::default();
+
+    let first = editor.create_imported_mesh(&first_uuid, "Crate").unwrap();
+    let second = editor.create_imported_mesh(&second_uuid, "Crate").unwrap();
+
+    assert_eq!(first.as_str(), "asset_crate");
+    assert_eq!(second.as_str(), "asset_crate_1");
+    assert_eq!(editor.world().entity(first.as_str()).unwrap().name, "Crate");
+    assert_eq!(
+        editor.world().entity(second.as_str()).unwrap().name,
+        "Crate 2"
+    );
+}
+
+#[test]
+fn imported_mesh_create_undo_redo() {
+    let uuid = asset::AssetUuid::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    let mut editor = super::EditorModel::default();
+    let entity = editor.create_imported_mesh(&uuid, "Crate").unwrap();
+
+    assert!(editor.world().entity(entity.as_str()).is_some());
+    assert!(editor.undo().unwrap());
+    assert!(editor.world().entity(entity.as_str()).is_none());
+    assert!(editor.redo().unwrap());
+    assert!(editor.world().entity(entity.as_str()).is_some());
+}

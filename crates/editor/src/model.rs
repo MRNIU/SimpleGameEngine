@@ -197,6 +197,29 @@ impl EditorModel {
         id
     }
 
+    pub fn create_imported_mesh(
+        &mut self,
+        asset_uuid: &asset::AssetUuid,
+        asset_name: &str,
+    ) -> Result<EntityId, EditorError> {
+        let id = self.next_imported_entity_id(asset_name)?;
+        let name = self.next_imported_entity_name(asset_name)?;
+        let previous_selection = self.selected.clone();
+        let mut record = ecs::EntityRecord::new(id.clone(), name, Transform::identity());
+        record.parent = Some(EntityId::new(ROOT_ID));
+        record.mesh = Some(MeshRef::new(
+            asset_uuid.to_asset_ref(),
+            "primitive:default_material",
+        ));
+        let command = EditorCommand::CreateEntity {
+            record,
+            previous_selection,
+        };
+        self.apply_command(&command)?;
+        self.push_undo(command);
+        Ok(id)
+    }
+
     pub fn set_translation(
         &mut self,
         id: &EntityId,
@@ -863,6 +886,35 @@ impl EditorModel {
         }
     }
 
+    fn next_imported_entity_id(&self, asset_name: &str) -> Result<EntityId, EditorError> {
+        let base = format!("asset_{}", safe_entity_slug(asset_name));
+        for index in 0..=u32::MAX {
+            let id = if index == 0 {
+                EntityId::new(&base)
+            } else {
+                EntityId::new(format!("{base}_{index}"))
+            };
+            if self.world.entity(id.as_str()).is_none() {
+                return Ok(id);
+            }
+        }
+        Err(EditorError::IdGenerationExhausted)
+    }
+
+    fn next_imported_entity_name(&self, asset_name: &str) -> Result<String, EditorError> {
+        let base = clean_entity_name(asset_name);
+        if !self.entity_name_exists(&base) {
+            return Ok(base);
+        }
+        for index in 2..=u32::MAX {
+            let name = format!("{base} {index}");
+            if !self.entity_name_exists(&name) {
+                return Ok(name);
+            }
+        }
+        Err(EditorError::IdGenerationExhausted)
+    }
+
     fn next_duplicate_id(&self, source: &EntityId) -> Result<EntityId, EditorError> {
         let base = duplicate_id_base(source.as_str());
         for index in 1..=u32::MAX {
@@ -914,6 +966,37 @@ fn duplicate_id_base(source: &str) -> &str {
         return base;
     }
     source
+}
+
+fn clean_entity_name(name: &str) -> String {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        "Imported Asset".to_owned()
+    } else {
+        trimmed.to_owned()
+    }
+}
+
+fn safe_entity_slug(name: &str) -> String {
+    let slug: String = name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("_");
+    if slug.is_empty() {
+        "imported".to_owned()
+    } else {
+        slug
+    }
 }
 
 #[cfg(test)]
