@@ -606,3 +606,25 @@ fn editor_app_draws_menu_before_toolbar() {
 
     assert!(menu_index < toolbar_index);
 }
+
+#[test]
+fn toolbar_source_uses_polish_groups_and_no_toolbar_path_label() {
+    let source = include_str!("panels.rs");
+
+    assert!(source.contains("\"File\""));
+    assert!(source.contains("\"Edit\""));
+    assert!(source.contains("\"Create\""));
+    assert!(source.contains("\"Transform\""));
+    assert!(source.contains("\"View\""));
+    assert!(source.contains("\"State\""));
+    assert!(!source.contains("ui.label(\"Path\")"));
+}
+
+#[test]
+fn status_bar_contains_bounded_path_field() {
+    let source = include_str!("panels.rs");
+
+    assert!(source.contains("desired_width(360.0)"));
+    assert!(source.contains("self.path_input"));
+    assert!(source.contains("status_bar_selection_text"));
+}

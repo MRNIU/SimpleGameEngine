@@ -377,16 +377,17 @@ mod tests {
     }
 
     #[test]
-    fn save_success_clears_pending_action() {
+    fn save_after_dirty_guard_clears_pending_without_running_new() {
         let mut app = EditorApp::default();
-        let path = temp_scene_path("save_success_clears_pending_action");
-        app.model.create_cube();
+        let path = temp_scene_path("save_after_dirty_guard_clears_pending_without_running_new");
+        let cube = app.model.create_cube();
         app.path_input = path.display().to_string();
         app.pending_action = Some(PendingFileAction::New);
 
         app.save_scene();
 
         assert_eq!(app.pending_action, None);
+        assert!(app.model.world().entity(cube.as_str()).is_some());
         assert_eq!(app.current_path, Some(path.clone()));
         assert!(!app.model.is_dirty());
         assert_eq!(app.status, "Saved");
@@ -394,18 +395,20 @@ mod tests {
     }
 
     #[test]
-    fn save_as_success_clears_pending_action() {
+    fn save_as_after_dirty_guard_clears_pending_without_running_new() {
         let mut app = EditorApp::default();
-        let path = temp_scene_path("save_as_success_clears_pending_action");
-        app.model.create_cube();
+        let path = temp_scene_path("save_as_after_dirty_guard_clears_pending_without_running_new");
+        let cube = app.model.create_cube();
         app.path_input = path.display().to_string();
         app.pending_action = Some(PendingFileAction::New);
 
         app.save_scene_as();
 
         assert_eq!(app.pending_action, None);
+        assert!(app.model.world().entity(cube.as_str()).is_some());
         assert_eq!(app.current_path, Some(path.clone()));
         assert!(!app.model.is_dirty());
+        assert_eq!(app.status, "Saved");
         assert!(path.exists());
     }
 

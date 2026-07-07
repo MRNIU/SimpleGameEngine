@@ -91,6 +91,7 @@ impl EditorApp {
 
     pub(super) fn draw_top_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
+            ui.label("File");
             if ui.button("New").clicked() {
                 self.run_ui_action(EditorUiAction::NewScene);
             }
@@ -103,16 +104,9 @@ impl EditorApp {
             if ui.button("Save As").clicked() {
                 self.run_ui_action(EditorUiAction::SaveSceneAs);
             }
-            if ui
-                .add_enabled(self.pending_action.is_some(), egui::Button::new("Discard"))
-                .clicked()
-            {
-                self.run_ui_action(EditorUiAction::DiscardPendingAction);
-            }
             ui.separator();
-            ui.label("Path");
-            ui.add(egui::TextEdit::singleline(&mut self.path_input).desired_width(260.0));
-            ui.separator();
+
+            ui.label("Edit");
             if ui
                 .add_enabled(self.model.can_undo(), egui::Button::new("Undo"))
                 .clicked()
@@ -126,7 +120,9 @@ impl EditorApp {
                 self.run_ui_action(EditorUiAction::Redo);
             }
             ui.separator();
-            if ui.button("New Cube").clicked() {
+
+            ui.label("Create");
+            if ui.button("Cube").clicked() {
                 self.run_ui_action(EditorUiAction::CreateCube);
             }
             let has_selection = self.model.selected().is_some();
@@ -143,6 +139,8 @@ impl EditorApp {
                 self.run_ui_action(EditorUiAction::DeleteSelection);
             }
             ui.separator();
+
+            ui.label("Transform");
             if ui
                 .selectable_label(
                     self.transform_gizmo.mode == viewport::GizmoMode::Move,
@@ -162,6 +160,11 @@ impl EditorApp {
                 self.run_ui_action(EditorUiAction::SetGizmoMode(viewport::GizmoMode::Scale));
             }
             ui.separator();
+
+            ui.label("View");
+            if ui.button("Fit").clicked() {
+                self.run_ui_action(EditorUiAction::FitView);
+            }
             if ui
                 .add_enabled(
                     self.pilot_camera || self.can_pilot_selected_camera(),
@@ -175,8 +178,19 @@ impl EditorApp {
             {
                 self.run_ui_action(EditorUiAction::TogglePilotCamera);
             }
+            ui.separator();
+
+            ui.label("State");
             if self.model.is_dirty() {
                 ui.label("Unsaved");
+                if ui
+                    .add_enabled(self.pending_action.is_some(), egui::Button::new("Discard"))
+                    .clicked()
+                {
+                    self.run_ui_action(EditorUiAction::DiscardPendingAction);
+                }
+            } else {
+                ui.label("Saved");
             }
         });
     }
@@ -200,13 +214,20 @@ impl EditorApp {
     }
 
     pub(super) fn draw_status_bar(&mut self, ui: &mut egui::Ui) {
-        let path = self
-            .current_path
-            .as_ref()
-            .map_or_else(|| "No file".to_owned(), |path| path.display().to_string());
         let selection = status_bar_selection_text(&self.model);
         ui.horizontal_wrapped(|ui| {
-            ui.label(path);
+            ui.add(egui::TextEdit::singleline(&mut self.path_input).desired_width(360.0));
+            if let Some(path) = &self.current_path {
+                ui.label(path.display().to_string());
+            } else {
+                ui.label("No file");
+            }
+            ui.separator();
+            ui.label(if self.model.is_dirty() {
+                "Unsaved"
+            } else {
+                "Saved"
+            });
             ui.separator();
             ui.label(selection);
             ui.separator();
