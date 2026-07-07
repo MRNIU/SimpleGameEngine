@@ -69,7 +69,8 @@ impl EditorApp {
         self.path_input = path.display().to_string();
         self.save_scene_path(path, true)?;
         self.load_scene_from_path(path)?;
-        self.model.smoke_report()
+        let view = self.viewport_camera.to_viewport_view();
+        self.model.smoke_report_for_view(&view)
     }
 
     fn path_from_input(&mut self) -> Option<PathBuf> {

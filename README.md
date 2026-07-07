@@ -18,7 +18,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 
 - Cargo workspace 包含 `app`、`ecs`、`math`、`asset`、`scene`、`render`、`window`、`input`、`editor`、`runtime`。
 - `ecs` 保存 entity/component 真源，`scene` 负责 `.scene.ron` roundtrip，`render` 从 ECS 抽取 viewport 数据并保留 `wgpu` viewport pipeline 边界。
-- `editor` 使用 `eframe::Renderer::Wgpu`，提供 egui native shell、hierarchy、inspector、`render::ViewportRenderer` viewport、create cube、`.scene.ron` New/Open/Save/Save As/Discard 文件工作流。
+- `editor` 使用 `eframe::Renderer::Wgpu`，提供 egui native shell、hierarchy、inspector、`render::ViewportRenderer` viewport、editor-only viewport camera controls、create cube、`.scene.ron` New/Open/Save/Save As/Discard 文件工作流。
 - `runtime` 可以加载示例 `.scene.ron` 并抽取 render scene 和 viewport draw call。
 - 当前发布版 `eframe/egui-wgpu 0.35.0` 仍依赖 `wgpu 29`；workspace 统一到 `wgpu 29.0.4`，避免 editor/render 跨版本共享 GPU 类型。
 

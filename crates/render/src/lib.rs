@@ -512,8 +512,8 @@ fn empty_buffer(
 mod tests {
     use super::{
         ViewportView, extract_render_scene, fit_viewport_draw_to_size, viewport_draw_call,
-        viewport_draw_call_with_selection, viewport_draw_call_with_view,
-        viewport_pipeline_info, viewport_vertex_buffer_layout, viewport_vertex_bytes,
+        viewport_draw_call_with_selection, viewport_draw_call_with_view, viewport_pipeline_info,
+        viewport_vertex_buffer_layout, viewport_vertex_bytes,
     };
     use ecs::{Camera, EntityId, MeshRef, Projection, World};
     use math::Transform;
