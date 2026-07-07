@@ -13,7 +13,9 @@ use render::{ViewportDrawCall, ViewportRenderer, ViewportView, fit_viewport_draw
 const VIEWPORT_MIN_SIZE: egui::Vec2 = egui::vec2(240.0, 180.0);
 const EDITOR_VIEW_ENTITY: &str = "editor_view";
 const LOOK_SENSITIVITY: f32 = 0.01;
-const MOVE_SCALE: f32 = 0.2;
+const MOVE_SCALE: f32 = 4.0;
+const SPEED_SCROLL_SCALE: f32 = 0.05;
+const FIT_SCREEN_TO_WORLD_SCALE: f32 = 1.0 / 0.12;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ViewCamera {
@@ -70,7 +72,8 @@ impl ViewCamera {
         if !scroll_y.is_finite() {
             return;
         }
-        self.speed = (self.speed + scroll_y * 0.01).clamp(Self::MIN_SPEED, Self::MAX_SPEED);
+        self.speed =
+            (self.speed + scroll_y * SPEED_SCROLL_SCALE).clamp(Self::MIN_SPEED, Self::MAX_SPEED);
     }
 
     pub(crate) fn move_local(&mut self, input: ViewMoveInput, dt: f32) {
@@ -118,24 +121,43 @@ impl ViewCamera {
         draw: &ViewportDrawCall,
         selected: Option<&EntityId>,
     ) -> bool {
-        let chosen_span = selected
+        let selected_span = selected
             .and_then(|id| draw.cube_spans.iter().find(|span| &span.entity == id))
-            .or_else(|| draw.cube_spans.first());
-        let Some(span) = chosen_span else {
-            return false;
+            .or_else(|| draw.cube_spans.first().filter(|_| selected.is_some()));
+        let mut center = Vec3::ZERO;
+        let mut count = 0usize;
+        let mut accumulate_span = |span: &render::ViewportCubeSpan| {
+            for index in span.vertex_range.clone() {
+                let Some(vertex) = draw.vertices.get(index) else {
+                    continue;
+                };
+                center += Vec3::from_array(vertex.position);
+                count += 1;
+            }
         };
-        let center = span
-            .vertex_range
-            .clone()
-            .filter_map(|index| draw.vertices.get(index))
-            .fold(Vec3::ZERO, |acc, vertex| {
-                acc + Vec3::from_array(vertex.position)
-            })
-            / span.vertex_range.len().max(1) as f32;
+
+        if let Some(span) = selected_span {
+            accumulate_span(span);
+        } else {
+            for span in &draw.cube_spans {
+                accumulate_span(span);
+            }
+        }
+        if count == 0 {
+            return false;
+        }
+        let center = center / count as f32;
         if !center.is_finite() {
             return false;
         }
-        self.position = [center.x, center.y, 5.0];
+        let moved = Vec3::from_array(self.position)
+            + self.rotation()
+                * Vec3::new(
+                    center.x * FIT_SCREEN_TO_WORLD_SCALE,
+                    center.y * FIT_SCREEN_TO_WORLD_SCALE,
+                    0.0,
+                );
+        self.position = moved.to_array();
         true
     }
 
@@ -279,6 +301,8 @@ pub(crate) fn draw_viewport(
         camera.adjust_speed(scroll_y);
     }
     if right_down && response.hovered() {
+        response.request_focus();
+        ui.ctx().request_repaint();
         camera.move_local(
             ViewMoveInput {
                 forward: ui.input(|input| input.key_down(egui::Key::W)),
@@ -295,8 +319,10 @@ pub(crate) fn draw_viewport(
     let fitted_draw =
         draw.map(|draw| fit_viewport_draw_to_size(draw, [rect.width(), rect.height()]));
     if ui.input(|input| input.key_pressed(egui::Key::F)) {
-        match fitted_draw.as_ref() {
-            Some(draw) if camera.fit_draw(draw, selected) => {}
+        match draw {
+            Some(draw) if camera.fit_draw(draw, selected) => {
+                ui.ctx().request_repaint();
+            }
             Some(_) | None => action = ViewportAction::Status("No visible cube to fit".to_owned()),
         }
     }
@@ -413,6 +439,7 @@ mod tests {
         screen_position_for_vertex,
     };
     use ecs::EntityId;
+    use math::Vec3;
     use render::{ViewportCubeSpan, ViewportDrawCall, ViewportVertex};
 
     fn draw_with_two_cube_spans() -> ViewportDrawCall {
@@ -504,6 +531,9 @@ mod tests {
     fn view_camera_clamps_pitch_and_speed() {
         let mut camera = ViewCamera::default();
 
+        camera.adjust_speed(10.0);
+        assert!(camera.speed() >= 1.5);
+
         camera.look(egui::vec2(0.0, 20_000.0));
         camera.adjust_speed(-10_000.0);
         assert!(camera.pitch().is_finite());
@@ -530,8 +560,11 @@ mod tests {
             1.0,
         );
         let after = camera.to_viewport_view();
+        let movement = Vec3::from_array(after.transform.translation)
+            - Vec3::from_array(before.transform.translation);
 
         assert_ne!(before.transform.translation, after.transform.translation);
+        assert!(movement.length() >= 1.0);
         assert_eq!(after.entity, EntityId::new("editor_view"));
     }
 
@@ -566,5 +599,27 @@ mod tests {
 
         assert!(view.transform.translation.into_iter().all(f32::is_finite));
         assert!(view.transform.rotation.into_iter().all(f32::is_finite));
+    }
+
+    #[test]
+    fn fit_visible_draw_pans_edge_selection_toward_center() {
+        let draw = draw_with_two_cube_spans();
+        let mut camera = ViewCamera::default();
+
+        assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
+        let view = camera.to_viewport_view();
+
+        assert!((view.transform.translation[0] - 5.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn fit_visible_draw_without_selection_centers_all_visible_cubes() {
+        let draw = draw_with_two_cube_spans();
+        let mut camera = ViewCamera::default();
+
+        assert!(camera.fit_draw(&draw, None));
+        let view = camera.to_viewport_view();
+
+        assert!(view.transform.translation[0].abs() < 0.1);
     }
 }
