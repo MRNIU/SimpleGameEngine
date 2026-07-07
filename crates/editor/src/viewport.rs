@@ -16,6 +16,13 @@ const LOOK_SENSITIVITY: f32 = 0.01;
 const MOVE_SCALE: f32 = 4.0;
 const SPEED_SCROLL_SCALE: f32 = 0.05;
 const FIT_SCREEN_TO_WORLD_SCALE: f32 = 1.0 / 0.12;
+const GIZMO_HANDLE_LENGTH: f32 = 48.0;
+const GIZMO_MOVE_HIT_SIZE: f32 = 10.0;
+const GIZMO_SCALE_HIT_SIZE: f32 = 12.0;
+const GIZMO_SCALE_OFFSET: egui::Vec2 = egui::vec2(14.0, -14.0);
+const GIZMO_WORLD_UNITS_PER_PIXEL: f32 = 0.01;
+const GIZMO_SCALE_PER_PIXEL: f32 = 0.01;
+const MIN_GIZMO_SCALE: f32 = 0.01;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ViewCamera {
@@ -31,6 +38,75 @@ pub(crate) struct ViewMoveInput {
     pub(crate) backward: bool,
     pub(crate) left: bool,
     pub(crate) right: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum GizmoMode {
+    #[default]
+    Move,
+    Scale,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GizmoHandle {
+    MoveX,
+    MoveY,
+    MoveZ,
+    UniformScale,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct GizmoDrag {
+    pub(crate) target: EntityId,
+    pub(crate) handle: GizmoHandle,
+    pub(crate) start_pointer: egui::Pos2,
+    pub(crate) start_transform: Transform,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct TransformGizmoState {
+    pub(crate) mode: GizmoMode,
+    drag: Option<GizmoDrag>,
+}
+
+impl TransformGizmoState {
+    pub(crate) fn start_drag(&mut self, drag: GizmoDrag) {
+        self.drag = Some(drag);
+    }
+
+    pub(crate) fn clear_drag(&mut self) {
+        self.drag = None;
+    }
+
+    #[must_use]
+    pub(crate) fn drag(&self) -> Option<&GizmoDrag> {
+        self.drag.as_ref()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct GizmoHandleRect {
+    pub(crate) handle: GizmoHandle,
+    pub(crate) center: egui::Pos2,
+    pub(crate) axis: egui::Vec2,
+    pub(crate) rect: egui::Rect,
+}
+
+impl GizmoHandleRect {
+    #[must_use]
+    pub(crate) fn new(
+        handle: GizmoHandle,
+        center: egui::Pos2,
+        axis: egui::Vec2,
+        size: f32,
+    ) -> Self {
+        Self {
+            handle,
+            center,
+            axis: normalized_screen_axis(axis),
+            rect: egui::Rect::from_center_size(center, egui::vec2(size, size)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -394,6 +470,140 @@ pub(crate) fn screen_position_for_vertex(rect: egui::Rect, position: [f32; 3]) -
 }
 
 #[must_use]
+pub(crate) fn gizmo_layout(
+    draw: &ViewportDrawCall,
+    rect: egui::Rect,
+    selected: Option<&EntityId>,
+    mode: GizmoMode,
+) -> Vec<GizmoHandleRect> {
+    let Some(selected) = selected else {
+        return Vec::new();
+    };
+    let Some(span) = draw.cube_spans.iter().find(|span| &span.entity == selected) else {
+        return Vec::new();
+    };
+    let Some(bounds) = span_screen_bounds(draw, span, rect) else {
+        return Vec::new();
+    };
+
+    match mode {
+        GizmoMode::Move => move_gizmo_handles(bounds.center()),
+        GizmoMode::Scale => vec![GizmoHandleRect::new(
+            GizmoHandle::UniformScale,
+            egui::pos2(bounds.max.x, bounds.min.y) + GIZMO_SCALE_OFFSET,
+            egui::Vec2::X - egui::Vec2::Y,
+            GIZMO_SCALE_HIT_SIZE,
+        )],
+    }
+}
+
+#[must_use]
+pub(crate) fn hit_test_gizmo(
+    handles: &[GizmoHandleRect],
+    pointer: egui::Pos2,
+) -> Option<GizmoHandle> {
+    handles
+        .iter()
+        .filter(|handle| handle.rect.contains(pointer))
+        .min_by(|left, right| {
+            pointer
+                .distance_sq(left.center)
+                .total_cmp(&pointer.distance_sq(right.center))
+        })
+        .map(|handle| handle.handle)
+}
+
+#[must_use]
+pub(crate) fn transform_for_gizmo_drag(
+    handle: GizmoHandle,
+    mut start: Transform,
+    start_pointer: egui::Pos2,
+    current_pointer: egui::Pos2,
+) -> Transform {
+    let delta = current_pointer - start_pointer;
+    if !delta.x.is_finite() || !delta.y.is_finite() {
+        return start;
+    }
+
+    match handle {
+        GizmoHandle::MoveX => {
+            start.translation[0] += delta.dot(egui::Vec2::X) * GIZMO_WORLD_UNITS_PER_PIXEL;
+        }
+        GizmoHandle::MoveY => {
+            start.translation[1] += delta.dot(-egui::Vec2::Y) * GIZMO_WORLD_UNITS_PER_PIXEL;
+        }
+        GizmoHandle::MoveZ => {
+            start.translation[2] += delta.dot(z_screen_axis()) * GIZMO_WORLD_UNITS_PER_PIXEL;
+        }
+        GizmoHandle::UniformScale => {
+            let amount = delta.dot(z_screen_axis()) * GIZMO_SCALE_PER_PIXEL;
+            for value in &mut start.scale {
+                *value = (*value + amount).max(MIN_GIZMO_SCALE);
+            }
+        }
+    }
+    start
+}
+
+fn move_gizmo_handles(center: egui::Pos2) -> Vec<GizmoHandleRect> {
+    vec![
+        GizmoHandleRect::new(
+            GizmoHandle::MoveX,
+            center + egui::Vec2::X * GIZMO_HANDLE_LENGTH,
+            egui::Vec2::X,
+            GIZMO_MOVE_HIT_SIZE,
+        ),
+        GizmoHandleRect::new(
+            GizmoHandle::MoveY,
+            center - egui::Vec2::Y * GIZMO_HANDLE_LENGTH,
+            -egui::Vec2::Y,
+            GIZMO_MOVE_HIT_SIZE,
+        ),
+        GizmoHandleRect::new(
+            GizmoHandle::MoveZ,
+            center + z_screen_axis() * GIZMO_HANDLE_LENGTH,
+            z_screen_axis(),
+            GIZMO_MOVE_HIT_SIZE,
+        ),
+    ]
+}
+
+fn span_screen_bounds(
+    draw: &ViewportDrawCall,
+    span: &render::ViewportCubeSpan,
+    rect: egui::Rect,
+) -> Option<egui::Rect> {
+    let mut min = egui::pos2(f32::INFINITY, f32::INFINITY);
+    let mut max = egui::pos2(f32::NEG_INFINITY, f32::NEG_INFINITY);
+    let mut found = false;
+    for index in span.vertex_range.clone() {
+        let Some(vertex) = draw.vertices.get(index) else {
+            continue;
+        };
+        let screen = screen_position_for_vertex(rect, vertex.position);
+        min.x = min.x.min(screen.x);
+        min.y = min.y.min(screen.y);
+        max.x = max.x.max(screen.x);
+        max.y = max.y.max(screen.y);
+        found = true;
+    }
+    found.then(|| egui::Rect::from_min_max(min, max))
+}
+
+fn z_screen_axis() -> egui::Vec2 {
+    normalized_screen_axis(egui::Vec2::X - egui::Vec2::Y)
+}
+
+fn normalized_screen_axis(axis: egui::Vec2) -> egui::Vec2 {
+    let length = axis.length();
+    if length <= f32::EPSILON || !length.is_finite() {
+        egui::Vec2::ZERO
+    } else {
+        axis / length
+    }
+}
+
+#[must_use]
 pub(crate) fn hit_test_viewport_draw(
     draw: &ViewportDrawCall,
     rect: egui::Rect,
@@ -435,11 +645,12 @@ pub(crate) fn hit_test_viewport_draw(
 #[cfg(test)]
 mod tests {
     use super::{
-        ViewCamera, ViewMoveInput, ViewportAction, ViewportWgpuProbe, hit_test_viewport_draw,
+        GizmoDrag, GizmoHandle, GizmoHandleRect, GizmoMode, TransformGizmoState, ViewCamera,
+        ViewMoveInput, ViewportAction, ViewportWgpuProbe, hit_test_viewport_draw,
         screen_position_for_vertex,
     };
     use ecs::EntityId;
-    use math::Vec3;
+    use math::{Transform, Vec3};
     use render::{ViewportCubeSpan, ViewportDrawCall, ViewportVertex};
 
     fn draw_with_two_cube_spans() -> ViewportDrawCall {
@@ -587,6 +798,137 @@ mod tests {
         let action = hit_test_viewport_draw(&draw, rect, egui::pos2(100.0, 100.0));
 
         assert_eq!(action, ViewportAction::ClearSelection);
+    }
+
+    #[test]
+    fn gizmo_layout_uses_fitted_draw_and_selected_span() {
+        let draw = draw_with_two_cube_spans();
+        let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
+
+        let handles = super::gizmo_layout(
+            &draw,
+            rect,
+            Some(&EntityId::new("cube_1")),
+            GizmoMode::Move,
+        );
+
+        assert_eq!(handles.len(), 3);
+        assert!(
+            handles
+                .iter()
+                .any(|handle| handle.handle == GizmoHandle::MoveX)
+        );
+        assert!(
+            handles
+                .iter()
+                .any(|handle| handle.handle == GizmoHandle::MoveY)
+        );
+        assert!(
+            handles
+                .iter()
+                .any(|handle| handle.handle == GizmoHandle::MoveZ)
+        );
+        assert!(
+            handles
+                .iter()
+                .all(|handle| rect.expand(64.0).contains(handle.center))
+        );
+    }
+
+    #[test]
+    fn gizmo_hit_test_prefers_nearest_handle() {
+        let handles = vec![
+            GizmoHandleRect::new(
+                GizmoHandle::MoveX,
+                egui::pos2(100.0, 100.0),
+                egui::Vec2::X,
+                20.0,
+            ),
+            GizmoHandleRect::new(
+                GizmoHandle::MoveY,
+                egui::pos2(104.0, 100.0),
+                -egui::Vec2::Y,
+                20.0,
+            ),
+        ];
+
+        let hit = super::hit_test_gizmo(&handles, egui::pos2(103.0, 100.0));
+
+        assert_eq!(hit, Some(GizmoHandle::MoveY));
+    }
+
+    #[test]
+    fn move_gizmo_drag_changes_only_selected_axis() {
+        let start = Transform {
+            translation: [1.0, 2.0, 3.0],
+            ..Transform::identity()
+        };
+        let start_pointer = egui::pos2(10.0, 10.0);
+
+        let moved_x = super::transform_for_gizmo_drag(
+            GizmoHandle::MoveX,
+            start,
+            start_pointer,
+            egui::pos2(60.0, 10.0),
+        );
+        let moved_y = super::transform_for_gizmo_drag(
+            GizmoHandle::MoveY,
+            start,
+            start_pointer,
+            egui::pos2(10.0, -40.0),
+        );
+        let moved_z = super::transform_for_gizmo_drag(
+            GizmoHandle::MoveZ,
+            start,
+            start_pointer,
+            egui::pos2(60.0, -40.0),
+        );
+
+        assert_eq!(moved_x.translation, [1.5, 2.0, 3.0]);
+        assert_eq!(moved_y.translation, [1.0, 2.5, 3.0]);
+        assert_eq!(moved_z.translation, [1.0, 2.0, 3.707_1068]);
+    }
+
+    #[test]
+    fn uniform_scale_drag_changes_all_scale_axes_and_clamps_minimum() {
+        let start = Transform {
+            scale: [1.0, 2.0, 3.0],
+            ..Transform::identity()
+        };
+        let start_pointer = egui::pos2(10.0, 10.0);
+
+        let grown = super::transform_for_gizmo_drag(
+            GizmoHandle::UniformScale,
+            start,
+            start_pointer,
+            egui::pos2(60.0, -40.0),
+        );
+        let clamped = super::transform_for_gizmo_drag(
+            GizmoHandle::UniformScale,
+            start,
+            start_pointer,
+            egui::pos2(-200.0, 220.0),
+        );
+
+        assert_eq!(grown.scale, [1.707_1068, 2.707_1068, 3.707_1068]);
+        assert_eq!(clamped.scale, [0.01, 0.01, 0.01]);
+    }
+
+    #[test]
+    fn gizmo_state_stores_and_clears_drag_target() {
+        let mut state = TransformGizmoState::default();
+        let drag = GizmoDrag {
+            target: EntityId::new("cube"),
+            handle: GizmoHandle::MoveX,
+            start_pointer: egui::pos2(10.0, 10.0),
+            start_transform: Transform::identity(),
+        };
+
+        state.start_drag(drag.clone());
+        assert_eq!(state.drag(), Some(&drag));
+
+        state.clear_drag();
+        assert_eq!(state.drag(), None);
     }
 
     #[test]
