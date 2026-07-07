@@ -114,6 +114,14 @@ pub struct ViewportVertex {
     pub color: [f32; 4],
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ViewportProjectionContext {
+    view_rotation: Quat,
+    camera_translation: Vec3,
+    projection_scale: f32,
+    light_multiplier: [f32; 3],
+}
+
 pub struct ViewportRenderer {
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
@@ -327,6 +335,12 @@ pub fn viewport_draw_call_with_view_and_meshes(
     let camera_translation = Vec3::from_array(view.transform.translation);
     let projection_scale = projection_scale(&view.projection);
     let light_multiplier = light_multiplier(scene);
+    let projection_context = ViewportProjectionContext {
+        view_rotation,
+        camera_translation,
+        projection_scale,
+        light_multiplier,
+    };
     let mut has_imported_mesh = false;
 
     for mesh in &scene.meshes {
@@ -420,10 +434,7 @@ pub fn viewport_draw_call_with_view_and_meshes(
             mesh,
             imported_mesh,
             selected_entity,
-            view_rotation,
-            camera_translation,
-            projection_scale,
-            light_multiplier,
+            projection_context,
         )?;
     }
 
@@ -453,17 +464,14 @@ fn push_imported_mesh(
     mesh: &MeshDraw,
     imported_mesh: &asset::ImportedMesh,
     selected_entity: Option<&EntityId>,
-    view_rotation: Quat,
-    camera_translation: Vec3,
-    projection_scale: f32,
-    light_multiplier: [f32; 3],
+    projection_context: ViewportProjectionContext,
 ) -> Option<()> {
     let vertex_start = vertices.len();
     let index_start = indices.len();
     let transform_rotation = Quat::from_array(normalized_quaternion(mesh.transform.rotation));
     let transform_translation = Vec3::from_array(mesh.transform.translation);
     let transform_scale = Vec3::from_array(mesh.transform.scale);
-    let color = lit_material_color(mesh.base_color, light_multiplier);
+    let color = lit_material_color(mesh.base_color, projection_context.light_multiplier);
     let color = if selected_entity.is_some_and(|selected| selected == &mesh.entity) {
         selected_tint(color)
     } else {
@@ -473,8 +481,10 @@ fn push_imported_mesh(
     for vertex in &imported_mesh.vertices {
         let local = Vec3::from_array(vertex.position) * transform_scale;
         let world = transform_rotation * local + transform_translation;
-        let view_position =
-            view_rotation * (world - camera_translation) * VIEWPORT_WORLD_SCALE * projection_scale;
+        let view_position = projection_context.view_rotation
+            * (world - projection_context.camera_translation)
+            * VIEWPORT_WORLD_SCALE
+            * projection_context.projection_scale;
         let projected = project_point(view_position);
         vertices.push(ViewportVertex {
             position: [projected[0], projected[1], 0.0],

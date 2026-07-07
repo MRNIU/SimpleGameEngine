@@ -22,6 +22,7 @@ const UNSAVED_CHANGES_STATUS: &str = "Unsaved changes: save or discard first";
 struct SemanticSmokeState {
     target: EntityId,
     expected_transform: Transform,
+    imported_asset: asset::AssetUuid,
     transform_undo_redo_ok: bool,
 }
 
@@ -141,6 +142,8 @@ impl EditorApp {
         &mut self,
         path: &Path,
     ) -> anyhow::Result<super::EditorAppSmokeReport> {
+        self.project_root = smoke_project_root(path);
+        self.reload_asset_cache();
         let semantic_state = self.run_semantic_smoke_actions()?;
         self.save_scene_path(path)?;
         self.load_scene_from_path(path)?;
@@ -152,7 +155,7 @@ impl EditorApp {
             semantic_state.transform_undo_redo_ok,
             content_reopen_ok,
         )?;
-        let app = self.app_smoke_checks();
+        let app = self.app_smoke_checks(&semantic_state);
 
         anyhow::ensure!(
             semantic.transform_undo_redo_ok,
@@ -173,6 +176,19 @@ impl EditorApp {
         anyhow::ensure!(
             app.pilot_camera_cleared_after_reopen,
             "smoke pilot camera survived reopen"
+        );
+        anyhow::ensure!(app.asset_count >= 1, "smoke imported asset missing");
+        anyhow::ensure!(
+            app.imported_mesh_count >= 1,
+            "smoke imported mesh cache missing"
+        );
+        anyhow::ensure!(
+            app.imported_asset_reopened,
+            "smoke imported asset ref did not survive reopen"
+        );
+        anyhow::ensure!(
+            app.imported_viewport_span,
+            "smoke imported viewport span missing"
         );
 
         Ok(super::EditorAppSmokeReport { semantic, app })
@@ -267,9 +283,14 @@ impl EditorApp {
         self.toggle_pilot_camera();
         anyhow::ensure!(self.pilot_camera, "smoke pilot camera was not enabled");
 
+        let source = self.project_root.join("source/smoke_triangle.obj");
+        write_smoke_obj(&source)?;
+        let imported_asset = self.import_obj_path(&source)?;
+
         Ok(SemanticSmokeState {
             target,
             expected_transform: after,
+            imported_asset,
             transform_undo_redo_ok: true,
         })
     }
@@ -305,14 +326,47 @@ impl EditorApp {
                     })
             });
 
-        material_ok && transform_ok && light_ok && camera_ok
+        let imported_asset_ref = state.imported_asset.to_asset_ref();
+        let imported_asset_ok = self.model.world().entities().any(|entity| {
+            entity
+                .mesh
+                .as_ref()
+                .is_some_and(|mesh| mesh.asset == imported_asset_ref)
+        });
+
+        material_ok && transform_ok && light_ok && camera_ok && imported_asset_ok
     }
 
-    fn app_smoke_checks(&self) -> super::EditorAppSmokeChecks {
+    fn app_smoke_checks(&self, state: &SemanticSmokeState) -> super::EditorAppSmokeChecks {
+        let imported_asset_ref = state.imported_asset.to_asset_ref();
+        let imported_viewport_span = render::viewport_draw_call_with_view_and_meshes(
+            &self.model.render_scene(),
+            self.model.selected(),
+            &self.viewport_camera.to_viewport_view(),
+            &self.imported_meshes,
+        )
+        .is_some_and(|draw| {
+            draw.mesh_spans.iter().any(|span| {
+                self.model
+                    .world()
+                    .entity(span.entity.as_str())
+                    .and_then(|entity| entity.mesh.as_ref())
+                    .is_some_and(|mesh| mesh.asset == imported_asset_ref)
+            })
+        });
         super::EditorAppSmokeChecks {
             history_cleared_after_reopen: !self.model.can_undo() && !self.model.can_redo(),
             gizmo_drag_cleared_after_reopen: !self.transform_gizmo.has_drag(),
             pilot_camera_cleared_after_reopen: !self.pilot_camera,
+            asset_count: self.asset_manifest.assets.len(),
+            imported_mesh_count: self.imported_meshes.len(),
+            imported_asset_reopened: self.model.world().entities().any(|entity| {
+                entity
+                    .mesh
+                    .as_ref()
+                    .is_some_and(|mesh| mesh.asset == imported_asset_ref)
+            }),
+            imported_viewport_span,
         }
     }
 
@@ -479,6 +533,21 @@ fn source_asset_name(path: &Path) -> String {
         .filter(|stem| !stem.trim().is_empty())
         .unwrap_or("Imported Asset")
         .to_owned()
+}
+
+fn smoke_project_root(scene_path: &Path) -> PathBuf {
+    scene_path
+        .parent()
+        .unwrap_or_else(|| Path::new("target/tmp"))
+        .join(format!("editor_smoke_project_{}", std::process::id()))
+}
+
+fn write_smoke_obj(path: &Path) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -650,7 +719,7 @@ mod tests {
 
         let report = app.run_smoke_file_workflow(&path).unwrap();
 
-        assert_eq!(report.semantic.mesh_count, 2);
+        assert_eq!(report.semantic.mesh_count, 3);
         assert!(report.semantic.has_camera);
         assert!(report.semantic.has_light);
         assert_eq!(report.semantic.viewport_index_count, 72);
@@ -659,6 +728,10 @@ mod tests {
         assert!(report.app.history_cleared_after_reopen);
         assert!(report.app.gizmo_drag_cleared_after_reopen);
         assert!(report.app.pilot_camera_cleared_after_reopen);
+        assert!(report.app.asset_count >= 1);
+        assert!(report.app.imported_mesh_count >= 1);
+        assert!(report.app.imported_asset_reopened);
+        assert!(report.app.imported_viewport_span);
         assert_eq!(app.current_path, Some(path.clone()));
         assert!(!app.model.is_dirty());
         assert!(path.exists());

@@ -17,10 +17,10 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 ## 当前实现
 
 - Cargo workspace 包含 `app`、`ecs`、`math`、`asset`、`scene`、`render`、`window`、`input`、`editor`、`runtime`。
-- `ecs` 保存 entity/component 真源，`scene` 负责 `.scene.ron` roundtrip，`render` 从 ECS 抽取 viewport 数据并保留 `wgpu` viewport pipeline 边界。
+- `asset` 负责 `assets/asset_manifest.ron`、稳定 UUID、OBJ loader、导入目标路径和 imported CPU mesh 数据；`ecs` 保存 entity/component 真源，`scene` 负责 `.scene.ron` roundtrip，`render` 从 ECS 抽取 viewport 数据并保留 `wgpu` viewport pipeline 边界。
 - `editor` 使用 `eframe::Renderer::Wgpu`，提供 Unreal-like 左 Hierarchy / 中央 Viewport / 右 Inspector 布局，顶部菜单栏、分组 toolbar、底部状态栏、固定快捷键、material color、light 参数、camera projection 的即时 Inspector 编辑，以及 editor-only `Pilot Camera` 预览开关。
-- `editor` 还保留 toolbar、`render::ViewportRenderer` viewport、editor-only viewport camera controls、viewport click selection、Move/Scale transform gizmo、Undo/Redo、create cube、`.scene.ron` New/Open/Save/Save As/Discard 文件工作流。
-- `runtime` 可以加载示例 `.scene.ron` 并抽取 render scene 和 viewport draw call。
+- `editor` 还保留 toolbar、`render::ViewportRenderer` viewport、editor-only viewport camera controls、viewport click selection、Move/Scale transform gizmo、Undo/Redo、create cube、系统文件对话框 New/Open/Save/Save As/Import OBJ 文件工作流、Assets 区和 imported OBJ viewport 显示；用户工作流不再保留可编辑 path input。
+- `runtime` 可以按显式 project root 加载 scene + manifest + imported OBJ，并生成 viewport draw call。
 - 当前发布版 `eframe/egui-wgpu 0.35.0` 仍依赖 `wgpu 29`；workspace 统一到 `wgpu 29.0.4`，避免 editor/render 跨版本共享 GPU 类型。
 
 已批准的架构设计见：
@@ -91,14 +91,14 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo build --workspace'
 # 运行 editor；host-native 是 opt-in，GUI smoke 不属于默认 Dev Container gate
 cargo run -p editor
 
-# 虚拟 X editor smoke；通过退出码和 summary log 验证窗口路径、文件工作流 save/open、gizmo semantic preview/commit/Undo/Redo、material/light/camera 内容编辑、editor-only state 清理和 ViewportRenderer prepare/paint
+# 虚拟 X editor smoke；通过退出码和 summary log 验证窗口路径、文件工作流 save/open、OBJ import、manifest/cache、gizmo semantic preview/commit/Undo/Redo、material/light/camera 内容编辑、editor-only state 清理和 ViewportRenderer prepare/paint
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron'
 
 # host-native 自动 smoke；opt-in，只使用已存在的宿主 Rust 环境
 cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron
 ```
 
-虚拟 X 和 host-native `--smoke` 证明 editor 文件工作流 save/open 闭环、gizmo semantic preview/commit/Undo/Redo、material/light/camera 参数 smoke、editor-only history/gizmo/Pilot 清理，以及真实 `ViewportRenderer` prepare/paint 触达；它们仍不等于人工确认真实窗口像素、真实 OS 鼠标坐标自动化或跨平台 GPU 兼容性证明。
+虚拟 X 和 host-native `--smoke` 证明 editor 文件工作流 save/open 闭环、内部 OBJ import、manifest/cache、`asset:<uuid>` reopen、imported mesh viewport span、gizmo semantic preview/commit/Undo/Redo、material/light/camera 参数 smoke、editor-only history/gizmo/Pilot 清理，以及真实 `ViewportRenderer` prepare/paint 触达；它们仍不等于人工确认真实窗口像素、真实 OS 鼠标坐标自动化、真实系统文件对话框或跨平台 GPU 兼容性证明。
 
 ## 代码结构
 
