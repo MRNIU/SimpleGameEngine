@@ -647,6 +647,13 @@ fn side_panel_resize_ranges_leave_room_for_manual_dragging() {
 }
 
 #[test]
+fn resizable_side_panel_contents_take_available_width() {
+    let source = include_str!("panels.rs");
+
+    assert_eq!(source.matches("ui.take_available_width();").count(), 2);
+}
+
+#[test]
 fn app_installs_compact_dark_tool_style() {
     let source = include_str!("../app.rs");
 

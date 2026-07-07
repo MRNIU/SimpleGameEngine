@@ -200,13 +200,19 @@ impl EditorApp {
             .resizable(true)
             .default_size(240.0)
             .size_range(160.0..=520.0)
-            .show(ui, |ui| draw_hierarchy(ui, &mut self.model));
+            .show(ui, |ui| {
+                ui.take_available_width();
+                draw_hierarchy(ui, &mut self.model);
+            });
 
         SidePanel::right("inspector_panel")
             .resizable(true)
             .default_size(340.0)
             .size_range(240.0..=720.0)
-            .show(ui, |ui| self.draw_inspector_panel(ui));
+            .show(ui, |ui| {
+                ui.take_available_width();
+                self.draw_inspector_panel(ui);
+            });
 
         egui::CentralPanel::default().show(ui, |ui| {
             self.draw_viewport_column(ui);
