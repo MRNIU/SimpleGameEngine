@@ -126,37 +126,46 @@ EditorCommand
 只记录名称变化：
 
 - 空白名称继续拒绝。
-- before == after 时不产生 history entry。
+- before 和 after 字符串完全相同时不产生 history entry；空名判断仍使用 `trim().is_empty()`，提交值保留用户输入的非空原文，不自动修剪或去重命名。
 - 重名继续允许。
+- UI 不按每次 `TextEdit::changed()` 直接提交 command。Rename 使用编辑会话：字段获得焦点后只更新本地 buffer；Enter 或 focus lost 时提交一条 `RenameEntity`；`Esc` 恢复 buffer，不提交 history。
 
 ### Transform
 
 Inspector 和 gizmo 都使用 `SetTransform`：
 
 - transform 仍经过现有 finite、non-zero scale、non-zero rotation 校验。
-- before == after 时不产生 history entry。
-- rotation 继续按现有规则归一化。
+- no-op 判断发生在校验和 rotation 归一化之后。`before` 和 `after` 都先转成 canonical transform；canonical 值相同则不产生 history entry，也不清 redo stack。
+- rotation 继续按现有规则归一化；history 中保存 canonical before/after。
+- Inspector transform 不按每次 `DragValue::changed()` 直接提交 command。它使用编辑会话：控件 active 期间只 preview；pointer release、Enter 或 focus lost 时提交一条 `SetTransform`；`Esc` 恢复 edit start transform，不提交 history。
 
 ## Gizmo Drag Contract
 
-Gizmo drag 分成 preview 和 commit：
+Gizmo drag 分成 preview 和 commit。当前代码在拖动中持续返回 `ApplyTransform`，松开时只 `clear_drag()`；本 milestone 必须改 action contract，不能把当前 release 行为当成 commit。
 
 ```text
 pointer down on handle
 -> record drag target and start Transform
--> pointer move previews transform in model
--> pointer release commits one SetTransform { before, after }
+-> pointer move returns PreviewTransform / ApplyTransform for model preview only
+-> pointer release returns CommitTransform { target, before, after }
 ```
 
 规则：
 
-- drag preview 可以实时更新 model 和 viewport，让 Inspector 同步显示。
-- history 只在 pointer release 时产生一条 `SetTransform`。
-- `Esc` 取消时恢复 start transform，不产生 history entry。
+- drag preview 可以实时更新 model 和 viewport，让 Inspector 同步显示，但 preview 不写 undo stack、不清 redo stack、不改变 dirty。
+- history 只在 pointer release 的 `CommitTransform` 中产生一条 `SetTransform`。
+- `Esc` 取消时恢复 start transform，不产生 history entry，并恢复 drag 开始前的 dirty 状态。
 - selection 改变、target 删除、viewport invalid 或 transform invalid 时结束 drag；已产生的 preview 恢复到安全状态或被丢弃，不 panic。
 - drag 期间 redo stack 不应被清空，直到 commit 成功。
 
-为避免引入复杂 transaction 系统，首版可在 `EditorApp` 保存当前 drag 的 start transform，并在 release 时调用 model 的 `commit_transform_edit`。若实现中发现 app/model 边界变乱，再把该状态收进 `EditorModel` 的小型 pending edit helper。
+为避免引入复杂 transaction 系统，首版使用最小 pending edit helper：
+
+- `EditorApp` 或 `EditorModel` 记录 `target`、canonical start transform 和 drag start dirty。
+- viewport move 返回 preview action；app 调用 model preview API，不能走现有会置 dirty 的 `set_transform`。
+- viewport release 返回 commit action；app 调用 command-aware `commit_transform_edit`。
+- viewport cancel 返回 restore action；app 恢复 start transform 和 drag start dirty。
+
+如果实现时选择保留现有 `ApplyTransform` 名称，它的语义必须改成 preview-only；history-producing action 必须是单独的 commit action。
 
 ## UI Layout Polish
 
@@ -232,17 +241,23 @@ Library crate 不初始化 logging；editor 顶层继续负责用户可见状态
   - delete subtree undo/redo。
   - duplicate undo/redo。
   - rename undo/redo，before == after 不进 history。
+  - rename edit session 只提交一条 history，不按每次 text changed 记录。
   - transform undo/redo，invalid transform 不进 history。
+  - transform no-op 使用 canonical compare；rotation 归一化前不同但归一化后相同不进 history。
+  - Inspector transform edit session 只提交一条 history，不按每次 DragValue changed 记录。
   - 新 command 清 redo stack。
   - save 不清 history。
   - reopen/new 清 history。
 - `editor::viewport` tests：
   - hover/active handle 选择逻辑。
+  - drag move 只产生 preview action，不产生 commit action。
   - drag release 只产生一次 transform commit action。
   - `Esc` cancel 产生 restore action，不产生 commit action。
 - `editor::app` tests：
   - toolbar Undo/Redo 状态来自 model。
   - Move/Scale mode 由顶层 toolbar state 驱动。
+  - gizmo preview 不写 history、不清 redo stack、不改变 dirty。
+  - gizmo release commit 写一条 transform history。
   - scene replace 清 active gizmo drag 和 history。
 - 现有 `scene`、`render`、`runtime` 和 editor smoke 测试继续保留。
 
