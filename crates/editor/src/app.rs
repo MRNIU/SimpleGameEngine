@@ -1,6 +1,6 @@
 // Copyright The SimpleGameEngine Contributors
 
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use ecs::{Camera, EntityId, Light, MaterialOverride};
 use eframe::egui;
@@ -60,9 +60,47 @@ impl EditorLaunchOptions {
     }
 }
 
-#[derive(Debug, Default)]
+impl Default for EditorApp {
+    fn default() -> Self {
+        let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let mut app = Self {
+            model: EditorModel::default(),
+            project_root,
+            asset_manifest: asset::AssetManifest::default(),
+            imported_meshes: BTreeMap::new(),
+            asset_load_status: BTreeMap::new(),
+            current_path: None,
+            pending_action: None,
+            status: String::new(),
+            options: EditorLaunchOptions::default(),
+            smoke_report: None,
+            smoke_frame_count: 0,
+            viewport_probe: ViewportWgpuProbe::default(),
+            wgpu_viewport_available: false,
+            viewport_camera: ViewCamera::default(),
+            transform_gizmo: TransformGizmoState::default(),
+            fit_view_requested: false,
+            name_edit: None,
+            transform_edit: None,
+            pilot_camera: false,
+            material_edit: None,
+            light_edit: None,
+            camera_edit: None,
+            #[cfg(test)]
+            test_dialog_paths: TestDialogPaths::default(),
+        };
+        app.reload_asset_cache();
+        app
+    }
+}
+
+#[derive(Debug)]
 pub struct EditorApp {
     model: EditorModel,
+    project_root: PathBuf,
+    asset_manifest: asset::AssetManifest,
+    imported_meshes: BTreeMap<asset::AssetUuid, asset::ImportedMesh>,
+    asset_load_status: BTreeMap<asset::AssetUuid, AssetLoadStatus>,
     current_path: Option<PathBuf>,
     pending_action: Option<PendingFileAction>,
     status: String,
@@ -95,6 +133,14 @@ enum PendingFileAction {
 struct TestDialogPaths {
     open_scene: Option<Option<PathBuf>>,
     save_scene: Option<Option<PathBuf>>,
+    import_obj: Option<Option<PathBuf>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AssetLoadStatus {
+    Loaded,
+    MissingFile,
+    LoadFailed(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +149,7 @@ pub(super) enum EditorUiAction {
     OpenSceneDialog,
     SaveScene,
     SaveSceneAsDialog,
+    ImportObjDialog,
     DiscardPendingAction,
     Undo,
     Redo,
@@ -256,6 +303,7 @@ impl EditorApp {
             EditorUiAction::OpenSceneDialog => self.open_scene_dialog(),
             EditorUiAction::SaveScene => self.save_scene(),
             EditorUiAction::SaveSceneAsDialog => self.save_scene_as_dialog(),
+            EditorUiAction::ImportObjDialog => self.import_obj_dialog(),
             EditorUiAction::DiscardPendingAction => self.discard_pending_action(),
             EditorUiAction::Undo => {
                 if self.model.undo().unwrap_or(false) {

@@ -66,6 +66,69 @@ impl EditorApp {
         let _ = self.save_scene_path(&path);
     }
 
+    pub(super) fn import_obj_dialog(&mut self) {
+        let Some(path) = self.pick_import_obj_path() else {
+            return;
+        };
+        match self.import_obj_path(&path) {
+            Ok(_) => {}
+            Err(error) => self.status = format!("Import OBJ failed: {error}"),
+        }
+    }
+
+    pub(crate) fn import_obj_path(
+        &mut self,
+        source_path: &Path,
+    ) -> anyhow::Result<asset::AssetUuid> {
+        let is_obj = source_path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("obj"));
+        if !is_obj {
+            anyhow::bail!("expected .obj");
+        }
+
+        let parsed = asset::load_obj_mesh(source_path)?;
+        let uuid = asset::AssetUuid::new_v4();
+        let existing_paths = self
+            .asset_manifest
+            .assets
+            .iter()
+            .map(|record| record.path.clone())
+            .collect::<Vec<_>>();
+        let relative_destination =
+            asset::unique_import_path(&self.project_root, source_path, existing_paths)?;
+        let absolute_destination = self.project_root.join(&relative_destination);
+        if let Some(parent) = absolute_destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(source_path, &absolute_destination)?;
+
+        let asset_name = self.next_asset_display_name(&source_asset_name(source_path));
+        let mut next_manifest = self.asset_manifest.clone();
+        next_manifest.upsert(asset::AssetRecord {
+            uuid: uuid.clone(),
+            name: asset_name.clone(),
+            kind: asset::AssetKind::Mesh,
+            path: relative_destination,
+            importer: asset::AssetImporter::Obj,
+            source_name: source_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("imported.obj")
+                .to_owned(),
+        });
+        next_manifest.save_to_project_root(&self.project_root)?;
+        self.asset_manifest = next_manifest;
+        self.imported_meshes.insert(uuid.clone(), parsed);
+        self.asset_load_status
+            .insert(uuid.clone(), super::AssetLoadStatus::Loaded);
+        let entity = self.model.create_imported_mesh(&uuid, &asset_name)?;
+        self.model.select(entity);
+        self.status = format!("Imported {asset_name}");
+        Ok(uuid)
+    }
+
     pub(super) fn discard_pending_action(&mut self) {
         match self.pending_action.take() {
             Some(PendingFileAction::New) => self.replace_with_new_scene(),
@@ -279,6 +342,7 @@ impl EditorApp {
         self.pilot_camera = false;
         self.clear_content_edit_sessions();
         self.current_path = Some(path.to_path_buf());
+        self.reload_asset_cache();
         Ok(())
     }
 
@@ -331,6 +395,68 @@ impl EditorApp {
             .save_file()
     }
 
+    fn pick_import_obj_path(&mut self) -> Option<PathBuf> {
+        #[cfg(test)]
+        if let Some(path) = self.test_dialog_paths.import_obj.take() {
+            return path;
+        }
+
+        rfd::FileDialog::new()
+            .add_filter("OBJ", &["obj"])
+            .pick_file()
+    }
+
+    pub(super) fn reload_asset_cache(&mut self) {
+        self.asset_manifest =
+            asset::AssetManifest::load_from_project_root(&self.project_root).unwrap_or_default();
+        self.imported_meshes.clear();
+        self.asset_load_status.clear();
+        for record in &self.asset_manifest.assets {
+            let path = self.project_root.join(&record.path);
+            if !path.exists() {
+                self.asset_load_status
+                    .insert(record.uuid.clone(), super::AssetLoadStatus::MissingFile);
+                continue;
+            }
+            match asset::load_obj_mesh(&path) {
+                Ok(mesh) => {
+                    self.imported_meshes.insert(record.uuid.clone(), mesh);
+                    self.asset_load_status
+                        .insert(record.uuid.clone(), super::AssetLoadStatus::Loaded);
+                }
+                Err(error) => {
+                    self.asset_load_status.insert(
+                        record.uuid.clone(),
+                        super::AssetLoadStatus::LoadFailed(error.to_string()),
+                    );
+                }
+            }
+        }
+    }
+
+    fn next_asset_display_name(&self, base: &str) -> String {
+        if self
+            .asset_manifest
+            .assets
+            .iter()
+            .all(|record| record.name != base)
+        {
+            return base.to_owned();
+        }
+        for index in 2..=u32::MAX {
+            let name = format!("{base} {index}");
+            if self
+                .asset_manifest
+                .assets
+                .iter()
+                .all(|record| record.name != name)
+            {
+                return name;
+            }
+        }
+        base.to_owned()
+    }
+
     #[cfg(test)]
     pub(super) fn set_next_open_scene_dialog_path_for_test(&mut self, path: Option<PathBuf>) {
         self.test_dialog_paths.open_scene = Some(path);
@@ -340,6 +466,19 @@ impl EditorApp {
     pub(super) fn set_next_save_scene_dialog_path_for_test(&mut self, path: Option<PathBuf>) {
         self.test_dialog_paths.save_scene = Some(path);
     }
+
+    #[cfg(test)]
+    pub(super) fn set_next_import_obj_dialog_path_for_test(&mut self, path: Option<PathBuf>) {
+        self.test_dialog_paths.import_obj = Some(path);
+    }
+}
+
+fn source_asset_name(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.trim().is_empty())
+        .unwrap_or("Imported Asset")
+        .to_owned()
 }
 
 #[cfg(test)]

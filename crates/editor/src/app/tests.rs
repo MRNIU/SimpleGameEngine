@@ -266,6 +266,46 @@ fn status_bar_source_has_no_path_input_text_edit() {
 }
 
 #[test]
+fn import_obj_path_creates_manifest_asset_entity_and_draw_call() {
+    let root = temp_project_root("import_obj_path_creates_manifest_asset_entity_and_draw_call");
+    let source = root.join("source.obj");
+    write_triangle_obj(&source);
+    let mut app = super::EditorApp {
+        project_root: root.clone(),
+        ..Default::default()
+    };
+
+    let uuid = app.import_obj_path(&source).unwrap();
+
+    assert!(asset::manifest_path(&root).exists());
+    assert!(app.asset_manifest.find(&uuid).is_some());
+    assert!(app.imported_meshes.contains_key(&uuid));
+    let selected = app.model.selected().cloned().unwrap();
+    let record = app.model.world().entity(selected.as_str()).unwrap();
+    assert_eq!(record.mesh.as_ref().unwrap().asset, uuid.to_asset_ref());
+    let view = app.viewport_camera.to_viewport_view();
+    let draw = render::viewport_draw_call_with_view_and_meshes(
+        &app.model.render_scene(),
+        app.model.selected(),
+        &view,
+        &app.imported_meshes,
+    )
+    .unwrap();
+    assert_eq!(draw.mesh_spans[0].entity, selected);
+}
+
+#[test]
+fn import_obj_dialog_cancel_does_not_change_manifest_or_scene() {
+    let mut app = super::EditorApp::default();
+    app.set_next_import_obj_dialog_path_for_test(None);
+
+    app.run_ui_action(super::EditorUiAction::ImportObjDialog);
+
+    assert!(app.asset_manifest.assets.is_empty());
+    assert!(app.model.selected().is_none());
+}
+
+#[test]
 fn ui_action_create_duplicate_delete_undo_redo_use_model_state() {
     let mut app = super::EditorApp::default();
 
@@ -748,4 +788,17 @@ fn temp_scene_path(name: &str) -> std::path::PathBuf {
     }
     let _ = std::fs::remove_file(&path);
     path
+}
+
+fn temp_project_root(name: &str) -> std::path::PathBuf {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/tmp/editor_asset_tests")
+        .join(format!("{name}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("assets/imported")).unwrap();
+    root
+}
+
+fn write_triangle_obj(path: &std::path::Path) {
+    std::fs::write(path, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n").unwrap();
 }

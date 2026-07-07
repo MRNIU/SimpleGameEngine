@@ -75,6 +75,10 @@ impl EditorApp {
                     self.run_ui_action(EditorUiAction::SaveSceneAsDialog);
                     ui.close();
                 }
+                if ui.button("Import OBJ...").clicked() {
+                    self.run_ui_action(EditorUiAction::ImportObjDialog);
+                    ui.close();
+                }
             });
             ui.menu_button("Edit", |ui| {
                 if ui
@@ -146,6 +150,9 @@ impl EditorApp {
             }
             if ui.button("Save As").clicked() {
                 self.run_ui_action(EditorUiAction::SaveSceneAsDialog);
+            }
+            if ui.button("Import OBJ").clicked() {
+                self.run_ui_action(EditorUiAction::ImportObjDialog);
             }
             ui.separator();
 
@@ -248,6 +255,8 @@ impl EditorApp {
             .show(ui, |ui| {
                 ui.take_available_width();
                 draw_hierarchy(ui, &mut self.model);
+                ui.separator();
+                self.draw_assets_panel(ui);
             });
 
         let inspector_max = panel_layout
@@ -311,7 +320,13 @@ impl EditorApp {
             .flatten();
         let editor_view = self.viewport_camera.to_viewport_view();
         let view = piloted_view.as_ref().unwrap_or(&editor_view);
-        let draw = self.model.viewport_draw_call_for_view(view);
+        let render_scene = self.model.render_scene();
+        let draw = render::viewport_draw_call_with_view_and_meshes(
+            &render_scene,
+            self.model.selected(),
+            view,
+            &self.imported_meshes,
+        );
         let selected = self.model.selected().cloned();
         let selected_transform = selected
             .as_ref()
@@ -393,7 +408,7 @@ impl EditorApp {
         }
 
         if let Some(mesh) = &entity.mesh {
-            ui.label(format!("Mesh: {}", mesh.asset));
+            self.draw_mesh_asset_info(ui, &mesh.asset);
             ui.label(format!("Material: {}", mesh.material));
             let mut material = entity.material_override.unwrap_or(ecs::MaterialOverride {
                 base_color: [0.3, 0.64, 1.0, 1.0],
@@ -475,6 +490,50 @@ impl EditorApp {
             } else if self.camera_edit.is_some() && !ui.input(|input| input.pointer.primary_down())
             {
                 self.finish_camera_edit(true);
+            }
+        }
+    }
+
+    fn draw_assets_panel(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Assets");
+        for record in &self.asset_manifest.assets {
+            let marker = match self.asset_load_status.get(&record.uuid) {
+                Some(super::AssetLoadStatus::Loaded) => "",
+                Some(super::AssetLoadStatus::MissingFile) => " missing file",
+                Some(super::AssetLoadStatus::LoadFailed(_)) => " load failed",
+                None => " missing",
+            };
+            ui.label(format!(
+                "{}  {:?}  {}{}",
+                record.name,
+                record.kind,
+                record.path.display(),
+                marker
+            ));
+        }
+    }
+
+    fn draw_mesh_asset_info(&self, ui: &mut egui::Ui, asset_ref: &str) {
+        let Ok(uuid) = asset::AssetUuid::parse_asset_ref(asset_ref) else {
+            ui.label(format!("Mesh: {asset_ref}"));
+            return;
+        };
+        let Some(record) = self.asset_manifest.find(&uuid) else {
+            ui.label("Asset: missing");
+            return;
+        };
+        ui.label(format!("Asset: {}", record.name));
+        ui.label(format!("Path: {}", record.path.display()));
+        match self.asset_load_status.get(&uuid) {
+            Some(super::AssetLoadStatus::Loaded) => {}
+            Some(super::AssetLoadStatus::MissingFile) => {
+                ui.label("Status: missing file");
+            }
+            Some(super::AssetLoadStatus::LoadFailed(error)) => {
+                ui.label(format!("Status: load failed: {error}"));
+            }
+            None => {
+                ui.label("Status: missing");
             }
         }
     }
