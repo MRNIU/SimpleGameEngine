@@ -137,18 +137,17 @@ impl EditorModel {
 
     pub fn create_cube(&mut self) -> EntityId {
         let id = self.next_cube_id();
-        self.world.spawn(id.clone(), "Cube", Transform::identity());
-        debug_assert!(self.world.set_parent(id.as_str(), ROOT_ID).is_ok());
-        debug_assert!(
-            self.world
-                .insert_mesh(
-                    id.as_str(),
-                    MeshRef::new("primitive:cube", "primitive:default_material"),
-                )
-                .is_ok()
-        );
-        self.selected = Some(id.clone());
-        self.dirty = true;
+        let previous_selection = self.selected.clone();
+        let mut record = ecs::EntityRecord::new(id.clone(), "Cube", Transform::identity());
+        record.parent = Some(EntityId::new(ROOT_ID));
+        record.mesh = Some(MeshRef::new("primitive:cube", "primitive:default_material"));
+        let command = EditorCommand::CreateEntity {
+            record,
+            previous_selection,
+        };
+        self.apply_command(&command)
+            .expect("create cube command is internally valid");
+        self.push_undo(command);
         id
     }
 
@@ -384,8 +383,22 @@ impl EditorModel {
         if name.trim().is_empty() {
             return Err(EditorError::InvalidEntityName);
         }
-        self.world.rename_entity(id.as_str(), name)?;
-        self.dirty = true;
+        let before = self
+            .world
+            .entity(id.as_str())
+            .ok_or_else(|| ecs::EcsError::MissingEntity(id.to_string()))?
+            .name
+            .clone();
+        if before == name {
+            return Ok(());
+        }
+        let command = EditorCommand::RenameEntity {
+            id: id.clone(),
+            before,
+            after: name.to_owned(),
+        };
+        self.apply_command(&command)?;
+        self.push_undo(command);
         Ok(())
     }
 
@@ -404,18 +417,17 @@ impl EditorModel {
         let new_id = self.next_duplicate_id(id)?;
         let new_name = self.next_copy_name(&source.name)?;
 
-        self.world.spawn(new_id.clone(), new_name, source.transform);
-        if let Some(parent) = source.parent {
-            self.world.set_parent(new_id.as_str(), parent.as_str())?;
-        }
-        if let Some(mesh) = source.mesh {
-            self.world.insert_mesh(new_id.as_str(), mesh)?;
-        }
-        if let Some(light) = source.light {
-            self.world.insert_light(new_id.as_str(), light)?;
-        }
-        self.selected = Some(new_id.clone());
-        self.dirty = true;
+        let mut created = ecs::EntityRecord::new(new_id.clone(), new_name, source.transform);
+        created.parent = source.parent;
+        created.mesh = source.mesh;
+        created.light = source.light;
+        let command = EditorCommand::DuplicateEntity {
+            source: id.clone(),
+            created,
+            previous_selection: self.selected.clone(),
+        };
+        self.apply_command(&command)?;
+        self.push_undo(command);
         Ok(new_id)
     }
 
@@ -426,9 +438,13 @@ impl EditorModel {
 
     pub fn delete_entity(&mut self, id: &EntityId) -> Result<(), EditorError> {
         ensure_unprotected(id)?;
-        let fallback = self.world.delete_subtree(id.as_str())?;
-        self.selected = fallback.filter(|parent| self.world.entity(parent.as_str()).is_some());
-        self.dirty = true;
+        let command = EditorCommand::DeleteEntity {
+            deleted_root: id.clone(),
+            records: self.subtree_records(id)?,
+            previous_selection: self.selected.clone(),
+        };
+        self.apply_command(&command)?;
+        self.push_undo(command);
         Ok(())
     }
 
@@ -638,6 +654,7 @@ mod tests {
         let mut editor = EditorModel::default();
         let cube = editor.create_cube();
         editor.mark_saved();
+        editor.clear_history();
 
         editor
             .set_transform(
@@ -674,6 +691,7 @@ mod tests {
     fn canonical_transform_noop_does_not_push_extra_history() {
         let mut editor = EditorModel::default();
         let cube = editor.create_cube();
+        editor.clear_history();
         editor
             .set_transform(
                 &cube,
@@ -709,6 +727,7 @@ mod tests {
         let mut editor = EditorModel::default();
         let cube = editor.create_cube();
         editor.mark_saved();
+        editor.clear_history();
         let before = editor.world().entity(&cube).unwrap().transform;
 
         editor
@@ -735,6 +754,7 @@ mod tests {
         let mut editor = EditorModel::default();
         let cube = editor.create_cube();
         editor.mark_saved();
+        editor.clear_history();
         let before = editor.world().entity(&cube).unwrap().transform;
         let after = Transform::from_translation([2.0, 0.0, 0.0]);
 

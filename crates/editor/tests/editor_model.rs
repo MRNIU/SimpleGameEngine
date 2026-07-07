@@ -164,6 +164,76 @@ fn editor_model_can_build_viewport_draw_for_editor_view() {
 }
 
 #[test]
+fn editor_model_undo_redo_create_cube() {
+    let mut editor = EditorModel::default();
+    let cube = editor.create_cube();
+
+    assert!(editor.world().entity(&cube).is_some());
+    assert_eq!(editor.selected(), Some(&cube));
+
+    assert_eq!(editor.undo().unwrap(), true);
+    assert!(editor.world().entity(&cube).is_none());
+    assert_eq!(editor.selected(), None);
+
+    assert_eq!(editor.redo().unwrap(), true);
+    assert!(editor.world().entity(&cube).is_some());
+    assert_eq!(editor.selected(), Some(&cube));
+}
+
+#[test]
+fn editor_model_undo_redo_rename_duplicate_and_delete() {
+    let mut editor = EditorModel::default();
+    let cube = editor.create_cube();
+    editor.mark_saved();
+
+    editor.rename_entity(&cube, "Renamed Cube").unwrap();
+    assert_eq!(editor.world().entity(&cube).unwrap().name, "Renamed Cube");
+    editor.undo().unwrap();
+    assert_eq!(editor.world().entity(&cube).unwrap().name, "Cube");
+    editor.redo().unwrap();
+    assert_eq!(editor.world().entity(&cube).unwrap().name, "Renamed Cube");
+
+    let duplicate = editor.duplicate_selected().unwrap();
+    assert!(editor.world().entity(&duplicate).is_some());
+    editor.undo().unwrap();
+    assert!(editor.world().entity(&duplicate).is_none());
+    editor.redo().unwrap();
+    assert!(editor.world().entity(&duplicate).is_some());
+
+    editor.delete_entity(&duplicate).unwrap();
+    assert!(editor.world().entity(&duplicate).is_none());
+    editor.undo().unwrap();
+    assert!(editor.world().entity(&duplicate).is_some());
+    assert_eq!(editor.selected(), Some(&duplicate));
+}
+
+#[test]
+fn editor_model_new_command_clears_redo_stack() {
+    let mut editor = EditorModel::default();
+    let cube = editor.create_cube();
+
+    editor.undo().unwrap();
+    assert!(editor.can_redo());
+    editor.rename_entity(&EntityId::new("camera"), "Scene Camera").unwrap();
+
+    assert!(!editor.can_redo());
+    assert!(editor.world().entity(&cube).is_none());
+}
+
+#[test]
+fn editor_model_rename_noop_does_not_push_history() {
+    let mut editor = EditorModel::default();
+    let cube = editor.create_cube();
+    editor.mark_saved();
+    editor.clear_history();
+
+    editor.rename_entity(&cube, "Cube").unwrap();
+
+    assert!(!editor.can_undo());
+    assert!(!editor.is_dirty());
+}
+
+#[test]
 fn editor_model_reopen_preserves_selection_only_when_entity_still_exists() {
     let mut editor = EditorModel::default();
     let cube = editor.create_cube();
