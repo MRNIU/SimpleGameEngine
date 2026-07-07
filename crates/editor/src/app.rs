@@ -4,11 +4,13 @@ use std::{fs, path::PathBuf, sync::Arc};
 
 use ecs::EntityId;
 use eframe::egui;
+use math::Transform;
 
 use crate::{
     model::{EditorError, EditorModel, EditorSmokeReport},
     viewport::{
-        ViewCamera, ViewportAction, ViewportWgpuProbe, draw_viewport, install_viewport_renderer,
+        TransformGizmoState, ViewCamera, ViewportAction, ViewportWgpuProbe, draw_viewport,
+        install_viewport_renderer,
     },
 };
 
@@ -54,6 +56,7 @@ pub struct EditorApp {
     viewport_probe: ViewportWgpuProbe,
     wgpu_viewport_available: bool,
     viewport_camera: ViewCamera,
+    transform_gizmo: TransformGizmoState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +82,27 @@ impl EditorApp {
             options,
             wgpu_viewport_available,
             ..Self::default()
+        }
+    }
+
+    fn apply_viewport_transform(&mut self, target: EntityId, transform: Transform, status: &str) {
+        let selected_matches = self
+            .model
+            .selected()
+            .is_some_and(|selected| selected == &target);
+        let target_exists = self.model.world().entity(target.as_str()).is_some();
+        if !selected_matches || !target_exists {
+            self.transform_gizmo.clear_drag();
+            self.status = "Gizmo target changed".to_owned();
+            return;
+        }
+
+        match self.model.set_transform(&target, transform) {
+            Ok(()) => self.status = status.to_owned(),
+            Err(error) => {
+                self.transform_gizmo.clear_drag();
+                self.status = format_editor_error("Gizmo failed", error);
+            }
         }
     }
 }
@@ -194,12 +218,18 @@ impl eframe::App for EditorApp {
             let view = self.viewport_camera.to_viewport_view();
             let draw = self.model.viewport_draw_call_for_view(&view);
             let selected = self.model.selected().cloned();
+            let selected_transform = selected
+                .as_ref()
+                .and_then(|id| self.model.world().entity(id.as_str()))
+                .map(|entity| entity.transform);
             let wgpu_probe = self.wgpu_viewport_available.then_some(&self.viewport_probe);
             match draw_viewport(
                 &mut columns[2],
                 draw.as_ref(),
                 selected.as_ref(),
+                selected_transform,
                 &mut self.viewport_camera,
+                &mut self.transform_gizmo,
                 wgpu_probe,
             ) {
                 ViewportAction::None => {}
@@ -210,6 +240,12 @@ impl eframe::App for EditorApp {
                 ViewportAction::ClearSelection => {
                     self.model.clear_selection();
                     self.status = "Selection cleared".to_owned();
+                }
+                ViewportAction::ApplyTransform { target, transform } => {
+                    self.apply_viewport_transform(target, transform, "Gizmo updated");
+                }
+                ViewportAction::RestoreTransform { target, transform } => {
+                    self.apply_viewport_transform(target, transform, "Gizmo restored");
                 }
                 ViewportAction::Status(status) => {
                     self.status = status;
@@ -427,6 +463,78 @@ mod tests {
         assert!(inspector_transform_fields(&camera).show_rotation);
         assert!(!inspector_transform_fields(&camera).show_scale);
         assert!(inspector_transform_fields(&cube).show_scale);
+    }
+
+    #[test]
+    fn viewport_transform_action_writes_current_selected_target() {
+        let mut app = super::EditorApp::default();
+        let cube = app.model.create_cube();
+        app.model.mark_saved();
+
+        app.apply_viewport_transform(
+            cube.clone(),
+            Transform::from_translation([3.0, 0.0, 0.0]),
+            "Gizmo updated",
+        );
+
+        assert_eq!(
+            app.model
+                .world()
+                .entity(&cube)
+                .unwrap()
+                .transform
+                .translation,
+            [3.0, 0.0, 0.0]
+        );
+        assert!(app.model.is_dirty());
+        assert_eq!(app.status, "Gizmo updated");
+    }
+
+    #[test]
+    fn viewport_transform_action_drops_stale_target() {
+        let mut app = super::EditorApp::default();
+        let cube = app.model.create_cube();
+        app.model.select(EntityId::new("root"));
+        app.transform_gizmo.start_drag(crate::viewport::GizmoDrag {
+            target: cube.clone(),
+            handle: crate::viewport::GizmoHandle::MoveX,
+            start_pointer: egui::pos2(0.0, 0.0),
+            start_transform: Transform::identity(),
+        });
+
+        app.apply_viewport_transform(
+            cube.clone(),
+            Transform::from_translation([3.0, 0.0, 0.0]),
+            "Gizmo updated",
+        );
+
+        assert_eq!(
+            app.model
+                .world()
+                .entity(&cube)
+                .unwrap()
+                .transform
+                .translation,
+            [0.0, 0.0, 0.0]
+        );
+        assert_eq!(app.transform_gizmo.drag(), None);
+        assert_eq!(app.status, "Gizmo target changed");
+    }
+
+    #[test]
+    fn scene_replace_clears_active_gizmo_drag() {
+        let mut app = super::EditorApp::default();
+        let cube = app.model.create_cube();
+        app.transform_gizmo.start_drag(crate::viewport::GizmoDrag {
+            target: cube,
+            handle: crate::viewport::GizmoHandle::MoveX,
+            start_pointer: egui::pos2(0.0, 0.0),
+            start_transform: Transform::identity(),
+        });
+
+        app.replace_with_new_scene();
+
+        assert_eq!(app.transform_gizmo.drag(), None);
     }
 
     #[test]

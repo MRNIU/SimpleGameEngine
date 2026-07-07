@@ -82,8 +82,9 @@ impl EditorApp {
         Some(PathBuf::from(input))
     }
 
-    fn replace_with_new_scene(&mut self) {
+    pub(super) fn replace_with_new_scene(&mut self) {
         self.model = EditorModel::default();
+        self.transform_gizmo.clear_drag();
         self.current_path = None;
         self.pending_action = None;
         self.status = "New scene".to_owned();
@@ -99,6 +100,7 @@ impl EditorApp {
     fn load_scene_from_path(&mut self, path: &Path) -> anyhow::Result<()> {
         let input = fs::read_to_string(path)?;
         self.model.reopen_scene_from_str(&input)?;
+        self.transform_gizmo.clear_drag();
         self.current_path = Some(path.to_path_buf());
         self.path_input = path.display().to_string();
         Ok(())

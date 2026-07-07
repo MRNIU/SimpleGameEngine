@@ -109,11 +109,19 @@ impl GizmoHandleRect {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ViewportAction {
     None,
     Select(EntityId),
     ClearSelection,
+    ApplyTransform {
+        target: EntityId,
+        transform: Transform,
+    },
+    RestoreTransform {
+        target: EntityId,
+        transform: Transform,
+    },
     Status(String),
 }
 
@@ -358,10 +366,16 @@ pub(crate) fn draw_viewport(
     ui: &mut egui::Ui,
     draw: Option<&ViewportDrawCall>,
     selected: Option<&EntityId>,
+    selected_transform: Option<Transform>,
     camera: &mut ViewCamera,
+    gizmo: &mut TransformGizmoState,
     wgpu_probe: Option<&ViewportWgpuProbe>,
 ) -> ViewportAction {
     ui.heading("Viewport");
+    ui.horizontal(|ui| {
+        ui.selectable_value(&mut gizmo.mode, GizmoMode::Move, "Move");
+        ui.selectable_value(&mut gizmo.mode, GizmoMode::Scale, "Scale");
+    });
     let (rect, response) = ui.allocate_exact_size(
         viewport_canvas_size(ui.available_size_before_wrap()),
         egui::Sense::click_and_drag(),
@@ -402,7 +416,66 @@ pub(crate) fn draw_viewport(
             Some(_) | None => action = ViewportAction::Status("No visible cube to fit".to_owned()),
         }
     }
+    let handles = fitted_draw.as_ref().map_or_else(Vec::new, |draw| {
+        gizmo_layout(draw, rect, selected, gizmo.mode)
+    });
+    let primary_down = ui.input(|input| input.pointer.primary_down());
+    let esc_pressed = ui.input(|input| input.key_pressed(egui::Key::Escape));
+    let mut pointer_consumed_by_gizmo = false;
+
+    if esc_pressed && let Some(drag) = gizmo.drag().cloned() {
+        gizmo.clear_drag();
+        return ViewportAction::RestoreTransform {
+            target: drag.target,
+            transform: drag.start_transform,
+        };
+    }
+
+    if !primary_down && gizmo.drag().is_some() {
+        gizmo.clear_drag();
+    }
+
+    if let Some(drag) = gizmo.drag().cloned() {
+        pointer_consumed_by_gizmo = true;
+        match selected {
+            Some(selected) if selected == &drag.target => {
+                if let Some(pointer) = response.interact_pointer_pos() {
+                    action = ViewportAction::ApplyTransform {
+                        target: drag.target,
+                        transform: transform_for_gizmo_drag(
+                            drag.handle,
+                            drag.start_transform,
+                            drag.start_pointer,
+                            pointer,
+                        ),
+                    };
+                }
+            }
+            _ => {
+                gizmo.clear_drag();
+            }
+        }
+    }
+
+    if response.drag_started_by(egui::PointerButton::Primary)
+        && let (Some(pointer), Some(selected), Some(transform)) = (
+            response.interact_pointer_pos(),
+            selected,
+            selected_transform,
+        )
+        && let Some(handle) = hit_test_gizmo(&handles, pointer)
+    {
+        pointer_consumed_by_gizmo = true;
+        gizmo.start_drag(GizmoDrag {
+            target: selected.clone(),
+            handle,
+            start_pointer: pointer,
+            start_transform: transform,
+        });
+    }
+
     if response.clicked_by(egui::PointerButton::Primary)
+        && !pointer_consumed_by_gizmo
         && let (Some(draw), Some(pointer)) = (fitted_draw.as_ref(), response.interact_pointer_pos())
     {
         action = hit_test_viewport_draw(draw, rect, pointer);
@@ -419,6 +492,7 @@ pub(crate) fn draw_viewport(
     } else if let Some(draw) = fitted_draw.as_ref() {
         paint_fallback_viewport(rect, &painter, draw);
     }
+    paint_gizmo_handles(&painter, &handles);
     action
 }
 
@@ -459,6 +533,52 @@ fn paint_fallback_viewport(rect: egui::Rect, painter: &egui::Painter, draw: &Vie
         egui::Stroke::new(1.0, egui::Color32::WHITE),
         egui::StrokeKind::Inside,
     );
+}
+
+fn paint_gizmo_handles(painter: &egui::Painter, handles: &[GizmoHandleRect]) {
+    for handle in handles {
+        match handle.handle {
+            GizmoHandle::MoveX => {
+                painter.line_segment(
+                    [
+                        handle.center - handle.axis * GIZMO_HANDLE_LENGTH,
+                        handle.center,
+                    ],
+                    egui::Stroke::new(2.0, egui::Color32::from_rgb(230, 80, 80)),
+                );
+                painter.rect_filled(handle.rect, 1.0, egui::Color32::from_rgb(230, 80, 80));
+            }
+            GizmoHandle::MoveY => {
+                painter.line_segment(
+                    [
+                        handle.center - handle.axis * GIZMO_HANDLE_LENGTH,
+                        handle.center,
+                    ],
+                    egui::Stroke::new(2.0, egui::Color32::from_rgb(80, 210, 110)),
+                );
+                painter.rect_filled(handle.rect, 1.0, egui::Color32::from_rgb(80, 210, 110));
+            }
+            GizmoHandle::MoveZ => {
+                painter.line_segment(
+                    [
+                        handle.center - handle.axis * GIZMO_HANDLE_LENGTH,
+                        handle.center,
+                    ],
+                    egui::Stroke::new(2.0, egui::Color32::from_rgb(90, 150, 240)),
+                );
+                painter.rect_filled(handle.rect, 1.0, egui::Color32::from_rgb(90, 150, 240));
+            }
+            GizmoHandle::UniformScale => {
+                painter.rect_filled(handle.rect, 1.0, egui::Color32::WHITE);
+                painter.rect_stroke(
+                    handle.rect,
+                    1.0,
+                    egui::Stroke::new(1.0, egui::Color32::BLACK),
+                    egui::StrokeKind::Inside,
+                );
+            }
+        }
+    }
 }
 
 #[must_use]
@@ -537,8 +657,11 @@ pub(crate) fn transform_for_gizmo_drag(
         }
         GizmoHandle::UniformScale => {
             let amount = delta.dot(z_screen_axis()) * GIZMO_SCALE_PER_PIXEL;
-            for value in &mut start.scale {
-                *value = (*value + amount).max(MIN_GIZMO_SCALE);
+            let next_scale = start.scale.map(|value| value + amount);
+            if next_scale.iter().any(|value| *value <= MIN_GIZMO_SCALE) {
+                start.scale = [MIN_GIZMO_SCALE; 3];
+            } else {
+                start.scale = next_scale;
             }
         }
     }
@@ -805,12 +928,8 @@ mod tests {
         let draw = draw_with_two_cube_spans();
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
 
-        let handles = super::gizmo_layout(
-            &draw,
-            rect,
-            Some(&EntityId::new("cube_1")),
-            GizmoMode::Move,
-        );
+        let handles =
+            super::gizmo_layout(&draw, rect, Some(&EntityId::new("cube_1")), GizmoMode::Move);
 
         assert_eq!(handles.len(), 3);
         assert!(
@@ -886,7 +1005,7 @@ mod tests {
 
         assert_eq!(moved_x.translation, [1.5, 2.0, 3.0]);
         assert_eq!(moved_y.translation, [1.0, 2.5, 3.0]);
-        assert_eq!(moved_z.translation, [1.0, 2.0, 3.707_1068]);
+        assert_eq!(moved_z.translation, [1.0, 2.0, 3.707_106_8]);
     }
 
     #[test]
@@ -910,7 +1029,7 @@ mod tests {
             egui::pos2(-200.0, 220.0),
         );
 
-        assert_eq!(grown.scale, [1.707_1068, 2.707_1068, 3.707_1068]);
+        assert_eq!(grown.scale, [1.707_106_8, 2.707_106_8, 3.707_106_8]);
         assert_eq!(clamped.scale, [0.01, 0.01, 0.01]);
     }
 
@@ -929,6 +1048,33 @@ mod tests {
 
         state.clear_drag();
         assert_eq!(state.drag(), None);
+    }
+
+    #[test]
+    fn viewport_action_transform_variants_carry_explicit_target() {
+        let target = EntityId::new("cube");
+        let transform = Transform::from_translation([1.0, 2.0, 3.0]);
+
+        assert_eq!(
+            ViewportAction::ApplyTransform {
+                target: target.clone(),
+                transform,
+            },
+            ViewportAction::ApplyTransform {
+                target: EntityId::new("cube"),
+                transform: Transform::from_translation([1.0, 2.0, 3.0]),
+            }
+        );
+        assert_eq!(
+            ViewportAction::RestoreTransform {
+                target,
+                transform: Transform::identity(),
+            },
+            ViewportAction::RestoreTransform {
+                target: EntityId::new("cube"),
+                transform: Transform::identity(),
+            }
+        );
     }
 
     #[test]
