@@ -412,3 +412,12 @@ fn draw_viewport_signature_accepts_keyboard_and_fit_guards() {
     assert!(source.contains("fit_view_requested: bool"));
     assert!(source.contains("fit_view_requested || (keyboard_shortcuts_allowed"));
 }
+
+#[test]
+fn viewport_source_draws_camera_mode_overlay() {
+    let source = include_str!("../viewport.rs");
+
+    assert!(source.contains("view_mode_label"));
+    assert!(source.contains("Editor Camera"));
+    assert!(source.contains("Pilot Camera"));
+}

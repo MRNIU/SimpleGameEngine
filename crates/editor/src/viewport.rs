@@ -20,6 +20,15 @@ use wgpu_bridge::paint_wgpu_viewport;
 pub(crate) use wgpu_bridge::{ViewportWgpuProbe, install_viewport_renderer};
 
 const VIEWPORT_MIN_SIZE: egui::Vec2 = egui::vec2(240.0, 180.0);
+pub(crate) const EDITOR_CAMERA_LABEL: &str = "Editor Camera";
+pub(crate) const PILOT_CAMERA_LABEL: &str = "Pilot Camera";
+
+pub(crate) struct ViewportUiOptions<'a> {
+    pub(crate) keyboard_shortcuts_allowed: bool,
+    pub(crate) fit_view_requested: bool,
+    pub(crate) view_mode_label: &'a str,
+    pub(crate) wgpu_probe: Option<&'a ViewportWgpuProbe>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ViewportAction {
@@ -49,10 +58,14 @@ pub(crate) fn draw_viewport(
     selected_transform: Option<Transform>,
     camera: &mut ViewCamera,
     gizmo: &mut TransformGizmoState,
-    keyboard_shortcuts_allowed: bool,
-    fit_view_requested: bool,
-    wgpu_probe: Option<&ViewportWgpuProbe>,
+    options: ViewportUiOptions<'_>,
 ) -> ViewportAction {
+    let ViewportUiOptions {
+        keyboard_shortcuts_allowed,
+        fit_view_requested,
+        view_mode_label,
+        wgpu_probe,
+    } = options;
     ui.heading("Viewport");
     let (rect, response) = ui.allocate_exact_size(
         viewport_canvas_size(ui.available_size_before_wrap()),
@@ -179,6 +192,13 @@ pub(crate) fn draw_viewport(
     } else if let Some(draw) = fitted_draw.as_ref() {
         paint_fallback_viewport(rect, &painter, draw);
     }
+    painter.text(
+        rect.left_top() + egui::vec2(10.0, 8.0),
+        egui::Align2::LEFT_TOP,
+        view_mode_label,
+        egui::FontId::proportional(13.0),
+        egui::Color32::from_rgb(205, 214, 224),
+    );
     paint_gizmo_handles(&painter, &handles, gizmo.hovered(), gizmo.active());
     action
 }

@@ -153,6 +153,7 @@ impl EditorApp {
         options: EditorLaunchOptions,
     ) -> Self {
         install_cjk_font(&creation_context.egui_ctx);
+        install_editor_style(&creation_context.egui_ctx);
         let wgpu_viewport_available = install_viewport_renderer(creation_context);
         Self {
             options,
@@ -668,6 +669,20 @@ impl eframe::App for EditorApp {
 
 fn format_editor_error(action: &str, error: EditorError) -> String {
     format!("{action}: {error}")
+}
+
+fn install_editor_style(context: &egui::Context) {
+    context.set_theme(egui::Theme::Dark);
+    let mut style = (*context.style_of(egui::Theme::Dark)).clone();
+    style.visuals = egui::Visuals::dark();
+    style.visuals.panel_fill = egui::Color32::from_rgb(26, 29, 33);
+    style.visuals.window_fill = egui::Color32::from_rgb(30, 34, 39);
+    style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(42, 47, 54);
+    style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(55, 63, 72);
+    style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(66, 104, 145);
+    style.spacing.item_spacing = egui::vec2(6.0, 4.0);
+    style.spacing.button_padding = egui::vec2(8.0, 4.0);
+    context.set_style_of(egui::Theme::Dark, style);
 }
 
 #[cfg(test)]

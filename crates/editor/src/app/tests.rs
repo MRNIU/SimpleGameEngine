@@ -628,3 +628,21 @@ fn status_bar_contains_bounded_path_field() {
     assert!(source.contains("self.path_input"));
     assert!(source.contains("status_bar_selection_text"));
 }
+
+#[test]
+fn editor_body_uses_resizable_side_panels_with_polish_widths() {
+    let source = include_str!("panels.rs");
+
+    assert!(source.contains("default_size(240.0)"));
+    assert!(source.contains("default_size(340.0)"));
+    assert!(source.contains(".resizable(true)"));
+}
+
+#[test]
+fn app_installs_compact_dark_tool_style() {
+    let source = include_str!("../app.rs");
+
+    assert!(source.contains("install_editor_style"));
+    assert!(source.contains("egui::Visuals::dark()"));
+    assert!(source.contains("panel_fill"));
+}

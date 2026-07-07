@@ -197,15 +197,15 @@ impl EditorApp {
 
     pub(super) fn draw_editor_body(&mut self, ui: &mut egui::Ui) {
         SidePanel::left("hierarchy_panel")
-            .resizable(false)
+            .resizable(true)
             .default_size(240.0)
-            .size_range(220.0..=260.0)
+            .size_range(220.0..=320.0)
             .show(ui, |ui| draw_hierarchy(ui, &mut self.model));
 
         SidePanel::right("inspector_panel")
-            .resizable(false)
-            .default_size(330.0)
-            .size_range(300.0..=360.0)
+            .resizable(true)
+            .default_size(340.0)
+            .size_range(300.0..=460.0)
             .show(ui, |ui| self.draw_inspector_panel(ui));
 
         egui::CentralPanel::default().show(ui, |ui| {
@@ -263,6 +263,11 @@ impl EditorApp {
         let keyboard_shortcuts_allowed = Self::keyboard_shortcuts_allowed(ui.ctx());
         let fit_view_requested = self.fit_view_requested;
         self.fit_view_requested = false;
+        let view_mode_label = if self.pilot_camera {
+            viewport::PILOT_CAMERA_LABEL
+        } else {
+            viewport::EDITOR_CAMERA_LABEL
+        };
         let action = draw_viewport(
             ui,
             draw.as_ref(),
@@ -270,9 +275,12 @@ impl EditorApp {
             selected_transform,
             &mut self.viewport_camera,
             &mut self.transform_gizmo,
-            keyboard_shortcuts_allowed,
-            fit_view_requested,
-            wgpu_probe,
+            viewport::ViewportUiOptions {
+                keyboard_shortcuts_allowed,
+                fit_view_requested,
+                view_mode_label,
+                wgpu_probe,
+            },
         );
         self.handle_viewport_action(action);
     }
