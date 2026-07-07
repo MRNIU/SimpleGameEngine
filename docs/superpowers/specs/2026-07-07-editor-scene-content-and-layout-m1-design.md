@@ -42,15 +42,17 @@
 用户打开 editor 后可以完成以下流程：
 
 1. 中央 viewport 明显大于左右侧栏。
-2. 在左侧 Hierarchy 选择 cube、light 或 camera。
-3. 在右侧 Inspector 编辑对应组件参数。
-4. cube material color 修改后，viewport 立即显示新颜色。
-5. light color/intensity 修改后，viewport 立即体现简化亮度变化。
-6. camera projection 参数修改后，scene 立即 dirty。
-7. 选中 camera 并打开 `Pilot Camera` 后，viewport 从该 scene camera 预览。
-8. 关闭 `Pilot Camera` 后，viewport 回到 editor-only camera。
-9. material、light、camera 参数修改都能 Undo/Redo。
-10. 保存并 reopen 后，scene 内容保持；Pilot 状态、editor camera、layout state 不写入 `.scene.ron`。
+2. 新 scene 的左侧 Hierarchy 默认包含 `Root`、`Camera` 和 `Directional Light`；用户也可以创建 cube。
+3. 在左侧 Hierarchy 选择 cube、light 或 camera。
+4. 在右侧 Inspector 编辑对应组件参数。
+5. cube material color 修改后，viewport 立即显示新颜色。
+6. light color/intensity 修改后，viewport 立即体现简化亮度变化。
+7. camera projection 参数修改后，scene 立即 dirty。
+8. 选中 camera 并打开 `Pilot Camera` 后，viewport 从该 scene camera 预览。
+9. Pilot 打开时编辑 camera transform 或 projection，viewport 立即变化。
+10. 关闭 `Pilot Camera` 后，viewport 回到 editor-only camera。
+11. material、light、camera 参数修改都能 Undo/Redo。
+12. 保存并 reopen 后，scene 内容保持；Pilot 状态、editor camera、layout state 不写入 `.scene.ron`。
 
 完成后，editor 仍是最小 scene editor，不承诺完整专业 editor 或完整渲染管线能力。
 
@@ -132,6 +134,13 @@ Camera {
 
 M1 的 new scene 默认包含一个普通 `Directional Light` entity，挂在 `root` 下。它不是 protected entity，用户可以像普通实体一样选择和删除。M1 不新增 `New Light` 按钮。
 
+默认 world 规则：
+
+- `root` 和 `camera` 继续是 protected entity。
+- `directional_light` 是普通 entity，不 protected。
+- `directional_light` 初始 `LightKind::Directional`，`color = [1.0, 1.0, 1.0]`，`intensity = 1.0`。
+- `directional_light` 保存到 `.scene.ron`；Open/reopen 加载文件时不自动补 light，文件内容是真源。
+
 ## Immediate Update Flow
 
 所有 Inspector 编辑都必须即时进入当前 model，不等 save：
@@ -167,15 +176,54 @@ Material：
 Light：
 
 - render 抽取 scene 中可用 light。
-- M1 使用一个简化 brightness factor 影响 cube color。
+- M1 使用固定、可测试的简化 brightness factor 影响 cube color。
 - 多个 light 出现时，M1 只使用稳定 entity 顺序中的第一个 light；完整多光源累加留到后续渲染设计。
 - 没有 light 时保持默认可见亮度。
+
+简化 shading 合同：
+
+```text
+material_rgb = material_override.unwrap_or(default_material).base_color.rgb
+light_multiplier =
+  if first_light exists:
+    clamp([0.25, 0.25, 0.25] + first_light.color * first_light.intensity, 0.0..=2.0)
+  else:
+    [1.0, 1.0, 1.0]
+lit_rgb = clamp(material_rgb * light_multiplier, 0.0..=1.0)
+face_rgb = existing_face_shade(lit_rgb)
+selected_rgb = mix(face_rgb, SELECTED_CUBE_COLOR.rgb, 0.35)
+```
+
+规则：
+
+- `LightKind` 在 M1 中可编辑并持久化，但简化 viewport shading 不区分 Directional 和 Point。
+- `first_light` 使用 `World::entities()` 的稳定顺序。
+- selected tint 在 material + light + face shade 之后应用，避免 selected 状态完全覆盖用户正在编辑的颜色。
+- alpha 来自 material base color，并 clamp 到 `0.0..=1.0`；light 不修改 alpha。
 
 Camera：
 
 - editor 默认仍使用 editor-only `ViewCamera`。
 - `Pilot Camera` 打开时，viewport 使用选中 scene camera 转换出的 `ViewportView`。
 - 关闭 `Pilot Camera` 后，不修改 editor-only camera 原状态。
+
+Pilot Camera 的 projection 数据流必须闭合。当前 `ViewportView` 只有 `entity + transform`，M1 需要扩展为显式 view + projection value：
+
+```text
+ViewportView {
+  entity: EntityId,
+  transform: Transform,
+  projection: Projection,
+}
+```
+
+规则：
+
+- `ViewportView::from_camera(CameraView)` 必须复制 scene camera 的 `Projection`。
+- `ViewCamera::to_viewport_view()` 为 editor-only camera 提供固定默认 projection，例如 `Perspective { fov_y_degrees: 60.0 }`。
+- `viewport_draw_call_with_view` 必须读取 `view.projection`，不能只读取 transform。
+- Pilot 打开时，camera projection 编辑通过 `EditorModel -> RenderScene -> CameraView -> ViewportView -> viewport_draw_call_with_view` 影响当前 draw-call。
+- Pilot 关闭时，editor-only camera 的默认 projection 继续控制 viewport。
 
 ## Pilot Camera
 
@@ -225,6 +273,15 @@ Camera entity：
 - 字段编辑使用现有 egui 控件；不引入图标库或复杂 property grid。
 - 连续拖动或颜色选择过程不应每帧写 history；一次用户编辑提交一条 Undo entry。
 
+Inspector 编辑 session：
+
+- material、light 和 camera 字段都需要 app 层 edit session，不能直接把每帧 `changed()` 写入 history。
+- session 开始时记录 `target`、canonical `before` 值和 `dirty_before`。
+- 拖动或颜色选择过程中只做 preview，preview 立即更新 model 和 viewport，但不写 undo stack、不清 redo stack、不改变 dirty。
+- pointer release、Enter 或 focus lost 时 commit，一次 session 只写一条 history。
+- Esc cancel 时恢复 `before` 和 `dirty_before`，不写 history。
+- selection 改变、target 删除或 New/Open/reopen 成功替换 scene 时，清空 active edit session。
+
 ## EditorModel Commands
 
 History 继续属于 `EditorModel`。
@@ -245,6 +302,12 @@ SetCamera { id, before, after }
 - command target missing 时返回 editor-level error，不 panic，history 不变。
 - Save 成功清 dirty，不清 history。
 - New/Open/reopen 成功清 history，并退出 Pilot Camera。
+
+为支持即时 preview，`EditorModel` 还需要提供 command 对应的 preview/restore/commit helper。helper 的语义必须和现有 transform edit 一致：
+
+- `preview_*` 写当前 world，但不写 history、不清 redo、不改变 dirty。
+- `restore_*_preview` 恢复 preview 前状态和 `dirty_before`。
+- `commit_*_edit` canonicalize before/after，no-op 返回 `false`，真实变化才 push undo。
 
 ## Validation Rules
 
@@ -275,6 +338,7 @@ Library crate 不初始化 logging；editor 顶层继续负责用户可见状态
   - light 参数 save/load roundtrip。
   - camera projection 参数 save/load roundtrip。
 - `editor::model`：
+  - new scene 默认包含普通 `directional_light` entity，且不是 protected entity。
   - material color edit dirty + undo/redo。
   - light edit dirty + undo/redo。
   - camera projection edit dirty + undo/redo。
@@ -282,14 +346,21 @@ Library crate 不初始化 logging；editor 顶层继续负责用户可见状态
   - no-op edit 不清 redo stack。
 - `render`：
   - material color 改变 viewport vertex color。
-  - light intensity 改变简化 shading。
-  - no light 时仍生成可见 draw-call。
-  - pilot camera view 改变 draw-call projection。
+  - no light 时 `light_multiplier = [1.0, 1.0, 1.0]`，仍生成可见 draw-call。
+  - 单个 light 的 color/intensity 按固定公式改变 vertex color。
+  - 多个 light 只使用稳定顺序中的第一个 light。
+  - selected tint 在 material + light + face shade 后应用，selected 颜色仍包含 material/light 影响。
+  - `ViewportView` 携带 projection；不同 `fov_y_degrees` 或 orthographic size 会改变 draw-call projected vertex positions。
+  - pilot camera view 使用 scene camera projection，不只使用 transform。
 - `editor::app`：
   - 主布局不再使用 `ui.columns(3)`。
   - viewport 在 central panel，占剩余空间。
   - Pilot Camera 不置 dirty。
   - Pilot target 删除或 scene replace 后退出。
+  - material edit session 多次 preview 后只提交一条 history。
+  - light edit session 多次 preview 后只提交一条 history。
+  - camera projection edit session 多次 preview 后只提交一条 history。
+  - edit session cancel 恢复 preview 前值和 dirty 状态。
 
 验收命令沿用 README：
 
