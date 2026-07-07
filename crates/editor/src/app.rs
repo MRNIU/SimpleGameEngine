@@ -282,11 +282,15 @@ impl eframe::App for EditorApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.draw_top_toolbar(ui);
-        ui.separator();
-        self.draw_editor_body(ui);
-        ui.separator();
-        self.draw_status_bar(ui);
+        egui::Panel::top("editor_toolbar").show(ui, |ui| {
+            self.draw_top_toolbar(ui);
+        });
+        egui::Panel::bottom("editor_status_bar").show(ui, |ui| {
+            self.draw_status_bar(ui);
+        });
+        egui::CentralPanel::default().show(ui, |ui| {
+            self.draw_editor_body(ui);
+        });
     }
 }
 
@@ -784,6 +788,25 @@ mod tests {
         assert_eq!(app.model.world().entity(&cube).unwrap().name, "Cube");
         assert!(!app.model.is_dirty());
         assert!(!app.model.can_undo());
+    }
+
+    #[test]
+    fn bottom_panel_keeps_status_visible_after_greedy_body() {
+        egui::__run_test_ui(|ui| {
+            ui.set_min_size(egui::vec2(320.0, 240.0));
+            let status = egui::Panel::bottom("test_status_bar")
+                .show(ui, |ui| ui.label("status"))
+                .response
+                .rect;
+            let body = egui::CentralPanel::default()
+                .show(ui, |ui| {
+                    ui.allocate_exact_size(ui.available_size_before_wrap(), egui::Sense::hover())
+                        .0
+                })
+                .inner;
+
+            assert!(body.bottom() <= status.top());
+        });
     }
 
     #[test]
