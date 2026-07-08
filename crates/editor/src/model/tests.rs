@@ -266,7 +266,9 @@ fn imported_mesh_entity_uses_asset_ref_and_default_material() {
     let uuid = asset::AssetUuid::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap();
     let mut editor = super::EditorModel::default();
 
-    let entity = editor.create_imported_mesh(&uuid, "Crate").unwrap();
+    let entity = editor
+        .create_imported_mesh(&uuid, "Crate", Transform::identity())
+        .unwrap();
 
     let record = editor.world().entity(entity.as_str()).unwrap();
     assert_eq!(record.name, "Crate");
@@ -286,8 +288,12 @@ fn imported_mesh_entity_conflicts_get_suffixes() {
         asset::AssetUuid::from_string("550e8400-e29b-41d4-a716-446655440001").unwrap();
     let mut editor = super::EditorModel::default();
 
-    let first = editor.create_imported_mesh(&first_uuid, "Crate").unwrap();
-    let second = editor.create_imported_mesh(&second_uuid, "Crate").unwrap();
+    let first = editor
+        .create_imported_mesh(&first_uuid, "Crate", Transform::identity())
+        .unwrap();
+    let second = editor
+        .create_imported_mesh(&second_uuid, "Crate", Transform::identity())
+        .unwrap();
 
     assert_eq!(first.as_str(), "asset_crate");
     assert_eq!(second.as_str(), "asset_crate_1");
@@ -302,7 +308,9 @@ fn imported_mesh_entity_conflicts_get_suffixes() {
 fn imported_mesh_create_undo_redo() {
     let uuid = asset::AssetUuid::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap();
     let mut editor = super::EditorModel::default();
-    let entity = editor.create_imported_mesh(&uuid, "Crate").unwrap();
+    let entity = editor
+        .create_imported_mesh(&uuid, "Crate", Transform::identity())
+        .unwrap();
 
     assert!(editor.world().entity(entity.as_str()).is_some());
     assert!(editor.undo().unwrap());

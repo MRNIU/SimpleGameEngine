@@ -374,14 +374,21 @@ impl EditorApp {
             self.run_ui_action(EditorUiAction::DuplicateSelection);
         }
 
-        if Self::keyboard_shortcuts_allowed(context)
-            && (context
+        if Self::keyboard_shortcuts_allowed(context) {
+            if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::W)) {
+                self.run_ui_action(EditorUiAction::SetGizmoMode(GizmoMode::Move));
+            }
+            if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::R)) {
+                self.run_ui_action(EditorUiAction::SetGizmoMode(GizmoMode::Scale));
+            }
+            if context
                 .input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Delete))
                 || context.input_mut(|input| {
                     input.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)
-                }))
-        {
-            self.run_ui_action(EditorUiAction::DeleteSelection);
+                })
+            {
+                self.run_ui_action(EditorUiAction::DeleteSelection);
+            }
         }
     }
 

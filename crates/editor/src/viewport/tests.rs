@@ -414,10 +414,19 @@ fn draw_viewport_signature_accepts_keyboard_and_fit_guards() {
 }
 
 #[test]
-fn viewport_keyboard_fit_requires_pointer_hover() {
+fn viewport_keyboard_fit_uses_shortcut_guard_without_hover_gate() {
     let source = include_str!("../viewport.rs");
 
-    assert!(source.contains("response.hovered() && keyboard_shortcuts_allowed && f_pressed"));
+    assert!(source.contains("keyboard_shortcuts_allowed && f_pressed"));
+    assert!(!source.contains("response.hovered() && keyboard_shortcuts_allowed && f_pressed"));
+}
+
+#[test]
+fn viewport_right_button_navigation_does_not_capture_keyboard_focus() {
+    let source = include_str!("../viewport.rs");
+
+    assert!(source.contains("right_down && response.hovered()"));
+    assert!(!source.contains("response.request_focus()"));
 }
 
 #[test]

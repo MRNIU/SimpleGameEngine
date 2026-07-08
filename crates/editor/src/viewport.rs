@@ -82,7 +82,6 @@ pub(crate) fn draw_viewport(
         camera.adjust_speed(scroll_y);
     }
     if right_down && response.hovered() {
-        response.request_focus();
         ui.ctx().request_repaint();
         camera.move_local(
             ViewMoveInput {
@@ -100,7 +99,7 @@ pub(crate) fn draw_viewport(
     let fitted_draw =
         draw.map(|draw| fit_viewport_draw_to_size(draw, [rect.width(), rect.height()]));
     let f_pressed = ui.input(|input| input.key_pressed(egui::Key::F));
-    let keyboard_fit_requested = response.hovered() && keyboard_shortcuts_allowed && f_pressed;
+    let keyboard_fit_requested = keyboard_shortcuts_allowed && f_pressed;
     let fit_requested = fit_view_requested || keyboard_fit_requested;
     if fit_requested {
         match draw {

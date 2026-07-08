@@ -2,6 +2,7 @@
 
 use ecs::EntityId;
 use eframe::egui;
+use math::Transform;
 
 use crate::{
     model::EditorModel,
@@ -111,12 +112,6 @@ impl EditorApp {
                     ui.close();
                 }
             });
-            ui.menu_button("Create", |ui| {
-                if ui.button("Cube").clicked() {
-                    self.run_ui_action(EditorUiAction::CreateCube);
-                    ui.close();
-                }
-            });
             ui.menu_button("View", |ui| {
                 if ui.button("Fit View").clicked() {
                     self.run_ui_action(EditorUiAction::FitView);
@@ -138,55 +133,8 @@ impl EditorApp {
 
     pub(super) fn draw_top_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            ui.label("File");
-            if ui.button("New").clicked() {
-                self.run_ui_action(EditorUiAction::NewScene);
-            }
-            if ui.button("Open").clicked() {
-                self.run_ui_action(EditorUiAction::OpenSceneDialog);
-            }
-            if ui.button("Save").clicked() {
-                self.run_ui_action(EditorUiAction::SaveScene);
-            }
-            if ui.button("Save As").clicked() {
-                self.run_ui_action(EditorUiAction::SaveSceneAsDialog);
-            }
-            if ui.button("Import OBJ").clicked() {
-                self.run_ui_action(EditorUiAction::ImportObjDialog);
-            }
-            ui.separator();
-
-            ui.label("Edit");
-            if ui
-                .add_enabled(self.model.can_undo(), egui::Button::new("Undo"))
-                .clicked()
-            {
-                self.run_ui_action(EditorUiAction::Undo);
-            }
-            if ui
-                .add_enabled(self.model.can_redo(), egui::Button::new("Redo"))
-                .clicked()
-            {
-                self.run_ui_action(EditorUiAction::Redo);
-            }
-            ui.separator();
-
-            ui.label("Create");
             if ui.button("Cube").clicked() {
                 self.run_ui_action(EditorUiAction::CreateCube);
-            }
-            let has_selection = self.model.selected().is_some();
-            if ui
-                .add_enabled(has_selection, egui::Button::new("Duplicate"))
-                .clicked()
-            {
-                self.run_ui_action(EditorUiAction::DuplicateSelection);
-            }
-            if ui
-                .add_enabled(has_selection, egui::Button::new("Delete"))
-                .clicked()
-            {
-                self.run_ui_action(EditorUiAction::DeleteSelection);
             }
             ui.separator();
 
@@ -194,7 +142,7 @@ impl EditorApp {
             if ui
                 .selectable_label(
                     self.transform_gizmo.mode == viewport::GizmoMode::Move,
-                    "Move",
+                    "Move (W)",
                 )
                 .clicked()
             {
@@ -203,30 +151,11 @@ impl EditorApp {
             if ui
                 .selectable_label(
                     self.transform_gizmo.mode == viewport::GizmoMode::Scale,
-                    "Scale",
+                    "Scale (R)",
                 )
                 .clicked()
             {
                 self.run_ui_action(EditorUiAction::SetGizmoMode(viewport::GizmoMode::Scale));
-            }
-            ui.separator();
-
-            ui.label("View");
-            if ui.button("Fit").clicked() {
-                self.run_ui_action(EditorUiAction::FitView);
-            }
-            if ui
-                .add_enabled(
-                    self.pilot_camera || self.can_pilot_selected_camera(),
-                    egui::Button::new(if self.pilot_camera {
-                        "Pilot Camera: On"
-                    } else {
-                        "Pilot Camera"
-                    }),
-                )
-                .clicked()
-            {
-                self.run_ui_action(EditorUiAction::TogglePilotCamera);
             }
             ui.separator();
 
@@ -408,7 +337,7 @@ impl EditorApp {
         }
 
         if let Some(mesh) = &entity.mesh {
-            self.draw_mesh_asset_info(ui, &mesh.asset);
+            self.draw_mesh_asset_info(ui, &mesh.asset, entity.transform);
             ui.label(format!("Material: {}", mesh.material));
             let mut material = entity.material_override.unwrap_or(ecs::MaterialOverride {
                 base_color: [0.3, 0.64, 1.0, 1.0],
@@ -513,7 +442,12 @@ impl EditorApp {
         }
     }
 
-    fn draw_mesh_asset_info(&self, ui: &mut egui::Ui, asset_ref: &str) {
+    fn draw_mesh_asset_info(&self, ui: &mut egui::Ui, asset_ref: &str, transform: Transform) {
+        if let Some(size) = primitive_mesh_size_for_display(asset_ref, transform) {
+            ui.label(format!("Mesh: {asset_ref}"));
+            draw_mesh_size(ui, size);
+            return;
+        }
         let Ok(uuid) = asset::AssetUuid::parse_asset_ref(asset_ref) else {
             ui.label(format!("Mesh: {asset_ref}"));
             return;
@@ -536,7 +470,73 @@ impl EditorApp {
                 ui.label("Status: missing");
             }
         }
+        if let Some(size) = self
+            .imported_meshes
+            .get(&uuid)
+            .and_then(|mesh| mesh_size_for_display(mesh, transform))
+        {
+            draw_mesh_size(ui, size);
+        }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct MeshSizeDisplay {
+    pub(super) local: [f32; 3],
+    pub(super) scaled: [f32; 3],
+}
+
+pub(super) fn mesh_size_for_display(
+    mesh: &asset::ImportedMesh,
+    transform: Transform,
+) -> Option<MeshSizeDisplay> {
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    for vertex in &mesh.vertices {
+        for axis in 0..3 {
+            min[axis] = min[axis].min(vertex.position[axis]);
+            max[axis] = max[axis].max(vertex.position[axis]);
+        }
+    }
+    let local = [max[0] - min[0], max[1] - min[1], max[2] - min[2]];
+    if !local.iter().all(|value| value.is_finite()) {
+        return None;
+    }
+    Some(MeshSizeDisplay {
+        local,
+        scaled: [
+            local[0] * transform.scale[0].abs(),
+            local[1] * transform.scale[1].abs(),
+            local[2] * transform.scale[2].abs(),
+        ],
+    })
+}
+
+pub(super) fn primitive_mesh_size_for_display(
+    asset_ref: &str,
+    transform: Transform,
+) -> Option<MeshSizeDisplay> {
+    let local = match asset_ref {
+        "primitive:cube" => [2.0, 2.0, 2.0],
+        _ => return None,
+    };
+    Some(MeshSizeDisplay {
+        local,
+        scaled: [
+            local[0] * transform.scale[0].abs(),
+            local[1] * transform.scale[1].abs(),
+            local[2] * transform.scale[2].abs(),
+        ],
+    })
+}
+
+fn draw_mesh_size(ui: &mut egui::Ui, size: MeshSizeDisplay) {
+    ui.label(format!("Local size: {}", format_vec3(size.local)));
+    ui.label(format!("Scaled size: {}", format_vec3(size.scaled)));
+}
+
+fn format_vec3(values: [f32; 3]) -> String {
+    format!("{:.3} x {:.3} x {:.3}", values[0], values[1], values[2])
 }
 
 pub(super) fn status_bar_selection_text(model: &EditorModel) -> String {

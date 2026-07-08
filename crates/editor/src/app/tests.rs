@@ -1,6 +1,10 @@
 // Copyright The SimpleGameEngine Contributors
 
-use super::{EditorLaunchOptions, fonts::cjk_font_candidates, panels::inspector_transform_fields};
+use super::{
+    EditorLaunchOptions,
+    fonts::cjk_font_candidates,
+    panels::{inspector_transform_fields, mesh_size_for_display},
+};
 use ecs::{Camera, EntityId, EntityRecord, Light, MaterialOverride, Projection};
 use math::Transform;
 use std::path::PathBuf;
@@ -292,6 +296,23 @@ fn import_obj_path_creates_manifest_asset_entity_and_draw_call() {
     )
     .unwrap();
     assert_eq!(draw.mesh_spans[0].entity, selected);
+}
+
+#[test]
+fn import_obj_path_scales_large_mesh_to_two_unit_extent() {
+    let root = temp_project_root("import_obj_path_scales_large_mesh_to_two_unit_extent");
+    let source = root.join("large.obj");
+    std::fs::write(&source, "v 0 0 0\nv 50 0 0\nv 0 25 0\nf 1 2 3\n").unwrap();
+    let mut app = super::EditorApp {
+        project_root: root,
+        ..Default::default()
+    };
+
+    app.import_obj_path(&source).unwrap();
+
+    let selected = app.model.selected().cloned().unwrap();
+    let record = app.model.world().entity(selected.as_str()).unwrap();
+    assert_eq!(record.transform.scale, [0.04, 0.04, 0.04]);
 }
 
 #[test]
@@ -673,14 +694,68 @@ fn modified_shortcuts_are_checked_before_plain_shortcuts() {
 }
 
 #[test]
+fn keyboard_shortcuts_switch_transform_modes_with_w_and_r() {
+    let source = include_str!("../app.rs");
+    let shortcut_source = &source[source
+        .find("fn handle_keyboard_shortcuts")
+        .expect("shortcut helper present")..];
+
+    assert!(shortcut_source.contains("egui::Key::W"));
+    assert!(shortcut_source.contains("EditorUiAction::SetGizmoMode(GizmoMode::Move)"));
+    assert!(shortcut_source.contains("egui::Key::R"));
+    assert!(shortcut_source.contains("EditorUiAction::SetGizmoMode(GizmoMode::Scale)"));
+}
+
+#[test]
+fn imported_mesh_size_display_uses_local_and_scaled_extents() {
+    let mesh = asset::ImportedMesh {
+        vertices: vec![
+            asset::ImportedVertex {
+                position: [-1.0, 0.0, 2.0],
+                normal: None,
+                uv: None,
+            },
+            asset::ImportedVertex {
+                position: [3.0, 4.0, -2.0],
+                normal: None,
+                uv: None,
+            },
+        ],
+        indices: vec![0, 1],
+    };
+    let transform = Transform {
+        scale: [0.5, 2.0, 1.0],
+        ..Transform::identity()
+    };
+
+    let size = mesh_size_for_display(&mesh, transform).unwrap();
+
+    assert_eq!(size.local, [4.0, 4.0, 4.0]);
+    assert_eq!(size.scaled, [2.0, 8.0, 4.0]);
+}
+
+#[test]
+fn primitive_cube_size_display_uses_two_unit_cube() {
+    let transform = Transform {
+        scale: [1.0, 2.0, 0.5],
+        ..Transform::identity()
+    };
+
+    let size = super::panels::primitive_mesh_size_for_display("primitive:cube", transform).unwrap();
+
+    assert_eq!(size.local, [2.0, 2.0, 2.0]);
+    assert_eq!(size.scaled, [2.0, 4.0, 1.0]);
+}
+
+#[test]
 fn menu_bar_source_contains_expected_top_level_menus() {
     let source = include_str!("panels.rs");
 
     assert!(source.contains("draw_menu_bar"));
     assert!(source.contains("\"File\""));
     assert!(source.contains("\"Edit\""));
-    assert!(source.contains("\"Create\""));
     assert!(source.contains("\"View\""));
+    assert!(!source.contains("ui.menu_button(\"Create\""));
     assert!(source.contains("EditorUiAction::NewScene"));
     assert!(source.contains("EditorUiAction::FitView"));
 }
@@ -699,14 +774,27 @@ fn editor_app_draws_menu_before_toolbar() {
 #[test]
 fn toolbar_source_uses_polish_groups_and_no_toolbar_path_label() {
     let source = include_str!("panels.rs");
+    let toolbar = &source[source
+        .find("pub(super) fn draw_top_toolbar")
+        .expect("toolbar function present")
+        ..source
+            .find("pub(super) fn draw_editor_body")
+            .expect("editor body follows toolbar")];
 
-    assert!(source.contains("\"File\""));
-    assert!(source.contains("\"Edit\""));
-    assert!(source.contains("\"Create\""));
-    assert!(source.contains("\"Transform\""));
-    assert!(source.contains("\"View\""));
-    assert!(source.contains("\"State\""));
-    assert!(!source.contains("ui.label(\"Path\")"));
+    assert!(!source.contains("ui.menu_button(\"Create\""));
+    assert!(!toolbar.contains("ui.label(\"File\")"));
+    assert!(!toolbar.contains("ui.label(\"Edit\")"));
+    assert!(!toolbar.contains("ui.label(\"Create\")"));
+    assert!(!toolbar.contains("ui.label(\"View\")"));
+    assert!(!toolbar.contains("ui.button(\"New\")"));
+    assert!(!toolbar.contains("ui.button(\"Open\")"));
+    assert!(!toolbar.contains("ui.button(\"Save\")"));
+    assert!(toolbar.contains("\"Cube\""));
+    assert!(toolbar.contains("\"Move (W)\""));
+    assert!(toolbar.contains("\"Scale (R)\""));
+    assert!(toolbar.contains("\"Transform\""));
+    assert!(toolbar.contains("\"State\""));
+    assert!(!toolbar.contains("ui.label(\"Path\")"));
 }
 
 #[test]

@@ -120,11 +120,14 @@ impl EditorApp {
                 .to_owned(),
         });
         next_manifest.save_to_project_root(&self.project_root)?;
+        let transform = imported_mesh_transform(&parsed);
         self.asset_manifest = next_manifest;
         self.imported_meshes.insert(uuid.clone(), parsed);
         self.asset_load_status
             .insert(uuid.clone(), super::AssetLoadStatus::Loaded);
-        let entity = self.model.create_imported_mesh(&uuid, &asset_name)?;
+        let entity = self
+            .model
+            .create_imported_mesh(&uuid, &asset_name, transform)?;
         self.model.select(entity);
         self.status = format!("Imported {asset_name}");
         Ok(uuid)
@@ -533,6 +536,31 @@ fn source_asset_name(path: &Path) -> String {
         .filter(|stem| !stem.trim().is_empty())
         .unwrap_or("Imported Asset")
         .to_owned()
+}
+
+fn imported_mesh_transform(mesh: &asset::ImportedMesh) -> Transform {
+    let scale = imported_mesh_default_scale(mesh);
+    Transform {
+        scale: [scale; 3],
+        ..Transform::identity()
+    }
+}
+
+fn imported_mesh_default_scale(mesh: &asset::ImportedMesh) -> f32 {
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    for vertex in &mesh.vertices {
+        for axis in 0..3 {
+            min[axis] = min[axis].min(vertex.position[axis]);
+            max[axis] = max[axis].max(vertex.position[axis]);
+        }
+    }
+    let max_extent = (0..3).map(|axis| max[axis] - min[axis]).fold(0.0, f32::max);
+    if max_extent.is_finite() && max_extent > 2.0 {
+        2.0 / max_extent
+    } else {
+        1.0
+    }
 }
 
 fn smoke_project_root(scene_path: &Path) -> PathBuf {

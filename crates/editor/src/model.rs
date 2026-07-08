@@ -201,11 +201,12 @@ impl EditorModel {
         &mut self,
         asset_uuid: &asset::AssetUuid,
         asset_name: &str,
+        transform: Transform,
     ) -> Result<EntityId, EditorError> {
         let id = self.next_imported_entity_id(asset_name)?;
         let name = self.next_imported_entity_name(asset_name)?;
         let previous_selection = self.selected.clone();
-        let mut record = ecs::EntityRecord::new(id.clone(), name, Transform::identity());
+        let mut record = ecs::EntityRecord::new(id.clone(), name, transform);
         record.parent = Some(EntityId::new(ROOT_ID));
         record.mesh = Some(MeshRef::new(
             asset_uuid.to_asset_ref(),
