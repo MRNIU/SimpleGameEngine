@@ -159,7 +159,10 @@ fn view_camera_default_basis_is_z_up() {
     let up = projection.project_world_point([0.0, 0.0, 1.0]).unwrap();
     let right = projection.project_world_point([0.0, 1.0, 0.0]).unwrap();
 
-    assert!(up[1] > origin[1], "Z should map upward in normalized viewport");
+    assert!(
+        up[1] > origin[1],
+        "Z should map upward in normalized viewport"
+    );
     assert!(right[0] > origin[0], "Y should map screen-right");
 }
 
@@ -462,14 +465,8 @@ fn rotate_gizmo_drag_changes_only_rotation_with_fixed_signs() {
     assert_eq!(rotated_x.scale, start.scale);
     assert_quat_close(rotated_x.rotation, Quat::from_rotation_x(0.5).to_array());
     assert_quat_close(rotated_y.rotation, Quat::from_rotation_y(0.5).to_array());
-    assert_quat_close(
-        rotated_z.rotation,
-        Quat::from_rotation_z(0.5).to_array(),
-    );
-    assert_quat_close(
-        reverse_z.rotation,
-        Quat::from_rotation_z(-0.5).to_array(),
-    );
+    assert_quat_close(rotated_z.rotation, Quat::from_rotation_z(0.5).to_array());
+    assert_quat_close(reverse_z.rotation, Quat::from_rotation_z(-0.5).to_array());
 }
 
 #[test]

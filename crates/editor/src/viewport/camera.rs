@@ -203,10 +203,17 @@ impl ViewCamera {
                     .and_then(|draw| visible_center(draw, selected))
                     .unwrap_or(Vec3::ZERO)
                     .distance(Vec3::from_array(self.position));
-                format!("Perspective  Speed {:.2}  Distance {:.2}", self.speed, distance)
+                format!(
+                    "Perspective  Speed {:.2}  Distance {:.2}",
+                    self.speed, distance
+                )
             }
             ViewMode::Orthographic(_) => {
-                format!("{}  Ortho Scale {:.2}", self.view_mode_label(), self.ortho_scale)
+                format!(
+                    "{}  Ortho Scale {:.2}",
+                    self.view_mode_label(),
+                    self.ortho_scale
+                )
             }
         }
     }
@@ -230,7 +237,7 @@ impl Default for ViewCamera {
     fn default() -> Self {
         Self {
             position: [-5.0, -5.0, 4.0],
-            yaw: 0.785_398_2,
+            yaw: std::f32::consts::FRAC_PI_4,
             pitch: -0.45,
             speed: 1.0,
             mode: ViewMode::Perspective,
@@ -261,12 +268,14 @@ fn visible_bounds(
     draw: &ViewportDrawCall,
     selected: Option<&EntityId>,
 ) -> Option<(Vec3, Vec3, Vec3)> {
-    if let Some(span) = selected.and_then(|id| draw.mesh_spans.iter().find(|span| &span.entity == id))
+    if let Some(span) =
+        selected.and_then(|id| draw.mesh_spans.iter().find(|span| &span.entity == id))
     {
         let min = Vec3::from_array(span.world_bounds_min);
         let max = Vec3::from_array(span.world_bounds_max);
         let center = Vec3::from_array(span.world_center);
-        return (min.is_finite() && max.is_finite() && center.is_finite()).then_some((min, max, center));
+        return (min.is_finite() && max.is_finite() && center.is_finite())
+            .then_some((min, max, center));
     }
 
     let mut min = Vec3::splat(f32::INFINITY);

@@ -140,7 +140,9 @@ fn orientation_preset_does_not_dirty_scene() {
     let mut app = super::EditorApp::default();
     app.model.mark_saved();
 
-    app.handle_viewport_action(ViewportAction::SetViewPreset(crate::viewport::ViewPreset::Top));
+    app.handle_viewport_action(ViewportAction::SetViewPreset(
+        crate::viewport::ViewPreset::Top,
+    ));
 
     assert!(!app.model.is_dirty());
     assert!(app.status.contains("Top Orthographic"));
@@ -159,7 +161,9 @@ fn orientation_preset_is_ignored_while_piloting_camera() {
         .and_then(|entity| entity.camera.clone())
         .unwrap();
 
-    app.handle_viewport_action(ViewportAction::SetViewPreset(crate::viewport::ViewPreset::Top));
+    app.handle_viewport_action(ViewportAction::SetViewPreset(
+        crate::viewport::ViewPreset::Top,
+    ));
 
     let after = app
         .model
@@ -175,7 +179,9 @@ fn orientation_preset_is_ignored_while_piloting_camera() {
 #[test]
 fn scene_and_project_switch_reset_viewport_state() {
     let mut app = super::EditorApp::default();
-    app.handle_viewport_action(ViewportAction::SetViewPreset(crate::viewport::ViewPreset::Top));
+    app.handle_viewport_action(ViewportAction::SetViewPreset(
+        crate::viewport::ViewPreset::Top,
+    ));
     app.replace_with_new_scene();
 
     assert_eq!(app.viewport_camera.view_mode_label(), "Perspective");

@@ -166,7 +166,10 @@ impl ViewportProjection {
             ProjectionKind::Perspective => project_perspective_point(view_position),
             ProjectionKind::Orthographic => [view_position.x, view_position.y],
         };
-        projected.into_iter().all(f32::is_finite).then_some(projected)
+        projected
+            .into_iter()
+            .all(f32::is_finite)
+            .then_some(projected)
     }
 }
 
@@ -404,16 +407,14 @@ pub fn viewport_draw_call_with_view_and_meshes(
         };
 
         let (world_bounds_min, world_bounds_max, world_center) = match mesh.mesh_asset.as_str() {
-            "primitive:cube" => {
-                push_cube_mesh(
-                    &mut vertices,
-                    &mut indices,
-                    mesh,
-                    projection_context,
-                    color,
-                    size,
-                )?
-            }
+            "primitive:cube" => push_cube_mesh(
+                &mut vertices,
+                &mut indices,
+                mesh,
+                projection_context,
+                color,
+                size,
+            )?,
             "primitive:sphere" => {
                 has_non_cube_primitive = true;
                 push_sphere_mesh(
@@ -510,7 +511,8 @@ fn push_cube_mesh(
     size: f32,
 ) -> Option<([f32; 3], [f32; 3], [f32; 3])> {
     let world_points = transformed_cube_world_points(&mesh.transform, size);
-    let display_points = transformed_cube_world_points(&mesh.transform, size / VIEWPORT_WORLD_SCALE);
+    let display_points =
+        transformed_cube_world_points(&mesh.transform, size / VIEWPORT_WORLD_SCALE);
 
     push_cube_face(
         vertices,
@@ -706,9 +708,8 @@ fn push_primitive_vertices(
 
     for local in locals {
         let world = transform_rotation * (*local * transform_scale) + transform_translation;
-        let display_world =
-            transform_rotation * (*local * transform_scale / VIEWPORT_WORLD_SCALE)
-                + transform_translation;
+        let display_world = transform_rotation * (*local * transform_scale / VIEWPORT_WORLD_SCALE)
+            + transform_translation;
         let projected = projection_context
             .projection
             .project_world_point(display_world.to_array())?;

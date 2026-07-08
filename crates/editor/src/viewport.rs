@@ -386,31 +386,11 @@ fn paint_reference_lines(
 fn paint_orientation_cube(painter: &egui::Painter, layout: &OrientationCubeLayout) {
     for (rect, label, color) in [
         (layout.top, "Top", egui::Color32::from_rgb(80, 130, 240)),
-        (
-            layout.bottom,
-            "Bot",
-            egui::Color32::from_rgb(80, 130, 240),
-        ),
-        (
-            layout.front,
-            "Front",
-            egui::Color32::from_rgb(160, 60, 60),
-        ),
-        (
-            layout.back,
-            "Back",
-            egui::Color32::from_rgb(160, 60, 60),
-        ),
-        (
-            layout.right,
-            "Right",
-            egui::Color32::from_rgb(60, 150, 80),
-        ),
-        (
-            layout.left,
-            "Left",
-            egui::Color32::from_rgb(60, 150, 80),
-        ),
+        (layout.bottom, "Bot", egui::Color32::from_rgb(80, 130, 240)),
+        (layout.front, "Front", egui::Color32::from_rgb(160, 60, 60)),
+        (layout.back, "Back", egui::Color32::from_rgb(160, 60, 60)),
+        (layout.right, "Right", egui::Color32::from_rgb(60, 150, 80)),
+        (layout.left, "Left", egui::Color32::from_rgb(60, 150, 80)),
         (
             layout.perspective,
             "Perspective",
