@@ -60,15 +60,28 @@ impl EditorApp {
     }
 
     fn open_scene_path_or_defer(&mut self, path: PathBuf) {
+        let Some(project_root) = self.require_project_root() else {
+            return;
+        };
+        let relative = match project::path_inside_project(&project_root, &path) {
+            Ok(path) => path,
+            Err(error) => {
+                self.status = format!("Open failed: {error}");
+                return;
+            }
+        };
         if self.model.is_dirty() {
-            self.pending_action = Some(PendingFileAction::Open(path));
+            self.pending_action = Some(PendingFileAction::Open(relative));
             self.status = UNSAVED_CHANGES_STATUS.to_owned();
             return;
         }
-        self.open_scene_path(&path);
+        self.open_scene_relative_path(&relative);
     }
 
     pub(super) fn save_scene(&mut self) {
+        if self.require_project_root().is_none() {
+            return;
+        }
         if let Some(path) = self.current_path.clone() {
             let _ = self.save_scene_path(&path);
         } else {
@@ -77,10 +90,20 @@ impl EditorApp {
     }
 
     pub(super) fn save_scene_as_dialog(&mut self) {
+        let Some(project_root) = self.require_project_root() else {
+            return;
+        };
         let Some(path) = self.pick_save_scene_path() else {
             return;
         };
-        let _ = self.save_scene_path(&path);
+        let relative = match project::save_as_relative_path(&project_root, &path) {
+            Ok(path) => path,
+            Err(error) => {
+                self.status = format!("Save failed: {error}");
+                return;
+            }
+        };
+        let _ = self.save_scene_path(&relative);
     }
 
     pub(super) fn import_obj_dialog(&mut self) {
@@ -97,6 +120,9 @@ impl EditorApp {
         &mut self,
         source_path: &Path,
     ) -> anyhow::Result<asset::AssetUuid> {
+        let Some(project_root) = self.require_project_root() else {
+            anyhow::bail!("Open or create a project first");
+        };
         let is_obj = source_path
             .extension()
             .and_then(|extension| extension.to_str())
@@ -114,8 +140,8 @@ impl EditorApp {
             .map(|record| record.path.clone())
             .collect::<Vec<_>>();
         let relative_destination =
-            asset::unique_import_path(&self.project_root, source_path, existing_paths)?;
-        let absolute_destination = self.project_root.join(&relative_destination);
+            asset::unique_import_path(&project_root, source_path, existing_paths)?;
+        let absolute_destination = project_root.join(&relative_destination);
         if let Some(parent) = absolute_destination.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -135,7 +161,7 @@ impl EditorApp {
                 .unwrap_or("imported.obj")
                 .to_owned(),
         });
-        next_manifest.save_to_project_root(&self.project_root)?;
+        next_manifest.save_to_project_root(&project_root)?;
         let transform = imported_mesh_transform(&parsed);
         self.asset_manifest = next_manifest;
         self.imported_meshes.insert(uuid.clone(), parsed);
@@ -152,7 +178,7 @@ impl EditorApp {
     pub(super) fn discard_pending_action(&mut self) {
         match self.pending_action.take() {
             Some(PendingFileAction::New) => self.replace_with_new_scene(),
-            Some(PendingFileAction::Open(path)) => self.open_scene_path(&path),
+            Some(PendingFileAction::Open(path)) => self.open_scene_relative_path(&path),
             Some(PendingFileAction::NewProject(path)) => {
                 if let Err(error) = self.new_project_path(&path) {
                     self.status = format!("New project failed: {error}");
@@ -212,7 +238,6 @@ impl EditorApp {
         self.transform_gizmo.clear_drag();
         self.pilot_camera = false;
         self.clear_content_edit_sessions();
-        self.project_root = context.root.clone();
         self.current_path = Some(context.current_scene.clone());
         self.current_project = Some(context);
         self.pending_action = None;
@@ -225,11 +250,13 @@ impl EditorApp {
         &mut self,
         path: &Path,
     ) -> anyhow::Result<super::EditorAppSmokeReport> {
-        self.project_root = smoke_project_root(path);
-        self.reload_asset_cache();
+        let project_root = smoke_project_root(path);
+        let _ = fs::remove_dir_all(&project_root);
+        self.new_project_path(&project_root)?;
         let semantic_state = self.run_semantic_smoke_actions()?;
-        self.save_scene_path(path)?;
-        self.load_scene_from_path(path)?;
+        let scene_path = PathBuf::from(project::DEFAULT_SCENE_PATH);
+        self.save_scene_path(&scene_path)?;
+        self.load_scene_from_relative_path(&scene_path)?;
 
         let content_reopen_ok = self.semantic_smoke_content_reopened(&semantic_state);
         let view = self.viewport_camera.to_viewport_view();
@@ -369,7 +396,10 @@ impl EditorApp {
         self.toggle_pilot_camera();
         anyhow::ensure!(self.pilot_camera, "smoke pilot camera was not enabled");
 
-        let source = self.project_root.join("source/smoke_triangle.obj");
+        let source = self
+            .current_project_root()
+            .ok_or_else(|| anyhow::anyhow!("Open or create a project first"))?
+            .join("source/smoke_triangle.obj");
         write_smoke_obj(&source)?;
         let imported_asset = self.import_obj_path(&source)?;
 
@@ -467,29 +497,38 @@ impl EditorApp {
         self.status = "New scene".to_owned();
     }
 
-    fn open_scene_path(&mut self, path: &Path) {
-        match self.load_scene_from_path(path) {
+    fn open_scene_relative_path(&mut self, path: &Path) {
+        match self.load_scene_from_relative_path(path) {
             Ok(()) => self.status = "Opened".to_owned(),
             Err(error) => self.status = format!("Open failed: {error}"),
         }
     }
 
-    fn load_scene_from_path(&mut self, path: &Path) -> anyhow::Result<()> {
-        let input = fs::read_to_string(path)?;
+    fn load_scene_from_relative_path(&mut self, relative_path: &Path) -> anyhow::Result<()> {
+        let project_root = self
+            .current_project_root()
+            .ok_or_else(|| anyhow::anyhow!("Open or create a project first"))?;
+        let input = fs::read_to_string(project_root.join(relative_path))?;
         self.model.reopen_scene_from_str(&input)?;
         self.model.clear_history();
         self.transform_gizmo.clear_drag();
         self.pilot_camera = false;
         self.clear_content_edit_sessions();
-        self.current_path = Some(path.to_path_buf());
+        self.current_path = Some(relative_path.to_path_buf());
+        if let Some(project) = &mut self.current_project {
+            project.current_scene = relative_path.to_path_buf();
+        }
         self.reload_asset_cache();
         Ok(())
     }
 
-    fn save_scene_path(&mut self, path: &Path) -> anyhow::Result<()> {
-        match self.write_scene_to_path(path) {
+    fn save_scene_path(&mut self, relative_path: &Path) -> anyhow::Result<()> {
+        match self.write_scene_to_relative_path(relative_path) {
             Ok(()) => {
-                self.current_path = Some(path.to_path_buf());
+                self.current_path = Some(relative_path.to_path_buf());
+                if let Some(project) = &mut self.current_project {
+                    project.current_scene = relative_path.to_path_buf();
+                }
                 self.pending_action = None;
                 self.status = "Saved".to_owned();
                 Ok(())
@@ -501,7 +540,11 @@ impl EditorApp {
         }
     }
 
-    fn write_scene_to_path(&mut self, path: &Path) -> anyhow::Result<()> {
+    fn write_scene_to_relative_path(&mut self, relative_path: &Path) -> anyhow::Result<()> {
+        let project_root = self
+            .current_project_root()
+            .ok_or_else(|| anyhow::anyhow!("Open or create a project first"))?;
+        let path = project_root.join(relative_path);
         if let Some(parent) = path.parent()
             && !parent.as_os_str().is_empty()
         {
@@ -565,12 +608,18 @@ impl EditorApp {
     }
 
     pub(super) fn reload_asset_cache(&mut self) {
+        let Some(project_root) = self.current_project_root().map(Path::to_path_buf) else {
+            self.asset_manifest = asset::AssetManifest::default();
+            self.imported_meshes.clear();
+            self.asset_load_status.clear();
+            return;
+        };
         self.asset_manifest =
-            asset::AssetManifest::load_from_project_root(&self.project_root).unwrap_or_default();
+            asset::AssetManifest::load_from_project_root(&project_root).unwrap_or_default();
         self.imported_meshes.clear();
         self.asset_load_status.clear();
         for record in &self.asset_manifest.assets {
-            let path = self.project_root.join(&record.path);
+            let path = project_root.join(&record.path);
             if !path.exists() {
                 self.asset_load_status
                     .insert(record.uuid.clone(), super::AssetLoadStatus::MissingFile);
@@ -724,16 +773,16 @@ mod tests {
     #[test]
     fn dirty_open_is_blocked_and_sets_pending_action() {
         let mut app = EditorApp::default();
+        let root = open_test_project(&mut app, "dirty_open_is_blocked_project");
         app.model.create_cube();
-        let path = temp_scene_path("dirty_open_is_blocked");
+        let relative = PathBuf::from("scenes/dirty_open.scene.ron");
+        let path = root.join(&relative);
+        write_scene_with_cube(&path);
         app.set_next_open_scene_dialog_path_for_test(Some(path.clone()));
 
         app.open_scene_dialog();
 
-        assert_eq!(
-            app.pending_action,
-            Some(PendingFileAction::Open(path.clone()))
-        );
+        assert_eq!(app.pending_action, Some(PendingFileAction::Open(relative)));
         assert_eq!(app.status, "Unsaved changes: save or discard first");
         assert!(app.model.world().entity("cube").is_some());
     }
@@ -741,25 +790,35 @@ mod tests {
     #[test]
     fn save_after_dirty_guard_clears_pending_without_running_new() {
         let mut app = EditorApp::default();
-        let path = temp_scene_path("save_after_dirty_guard_clears_pending_without_running_new");
+        let root = open_test_project(
+            &mut app,
+            "save_after_dirty_guard_clears_pending_without_running_new",
+        );
         let cube = app.model.create_cube();
-        app.set_next_save_scene_dialog_path_for_test(Some(path.clone()));
         app.pending_action = Some(PendingFileAction::New);
 
         app.save_scene();
 
         assert_eq!(app.pending_action, None);
         assert!(app.model.world().entity(cube.as_str()).is_some());
-        assert_eq!(app.current_path, Some(path.clone()));
+        assert_eq!(
+            app.current_path,
+            Some(PathBuf::from("scenes/main.scene.ron"))
+        );
         assert!(!app.model.is_dirty());
         assert_eq!(app.status, "Saved");
-        assert!(path.exists());
+        assert!(root.join("scenes/main.scene.ron").exists());
     }
 
     #[test]
     fn save_as_after_dirty_guard_clears_pending_without_running_new() {
         let mut app = EditorApp::default();
-        let path = temp_scene_path("save_as_after_dirty_guard_clears_pending_without_running_new");
+        let root = open_test_project(
+            &mut app,
+            "save_as_after_dirty_guard_clears_pending_without_running_new",
+        );
+        let relative = PathBuf::from("scenes/save_as.scene.ron");
+        let path = root.join(&relative);
         let cube = app.model.create_cube();
         app.set_next_save_scene_dialog_path_for_test(Some(path.clone()));
         app.pending_action = Some(PendingFileAction::New);
@@ -768,7 +827,7 @@ mod tests {
 
         assert_eq!(app.pending_action, None);
         assert!(app.model.world().entity(cube.as_str()).is_some());
-        assert_eq!(app.current_path, Some(path.clone()));
+        assert_eq!(app.current_path, Some(relative));
         assert!(!app.model.is_dirty());
         assert_eq!(app.status, "Saved");
         assert!(path.exists());
@@ -790,16 +849,18 @@ mod tests {
 
     #[test]
     fn discard_runs_pending_open() {
-        let path = temp_scene_path("discard_runs_pending_open");
-        write_scene_with_cube(&path);
         let mut app = EditorApp::default();
+        let root = open_test_project(&mut app, "discard_runs_pending_open_project");
+        let relative = PathBuf::from("scenes/discard_open.scene.ron");
+        let path = root.join(&relative);
+        write_scene_with_cube(&path);
         app.model.create_cube();
-        app.pending_action = Some(PendingFileAction::Open(path.clone()));
+        app.pending_action = Some(PendingFileAction::Open(relative.clone()));
 
         app.discard_pending_action();
 
         assert_eq!(app.pending_action, None);
-        assert_eq!(app.current_path, Some(path));
+        assert_eq!(app.current_path, Some(relative));
         assert_eq!(app.status, "Opened");
         assert!(app.model.world().entity("cube").is_some());
         assert!(!app.model.is_dirty());
@@ -808,27 +869,33 @@ mod tests {
     #[test]
     fn save_without_current_path_uses_save_as_dialog() {
         let mut app = EditorApp::default();
-        let path = temp_scene_path("save_without_current_path_uses_save_as_dialog");
+        let root = open_test_project(&mut app, "save_without_current_path_uses_save_as_dialog");
+        app.current_path = None;
+        let relative = PathBuf::from("scenes/saved.scene.ron");
+        let path = root.join(&relative);
         app.model.create_cube();
         app.set_next_save_scene_dialog_path_for_test(Some(path.clone()));
 
         app.save_scene();
 
-        assert_eq!(app.current_path, Some(path.clone()));
+        assert_eq!(app.current_path, Some(relative));
         assert!(path.exists());
     }
 
     #[test]
     fn save_as_updates_current_path() {
         let mut app = EditorApp::default();
-        let old_path = temp_scene_path("save_as_updates_current_path_old");
-        let new_path = temp_scene_path("save_as_updates_current_path_new");
-        app.current_path = Some(old_path);
+        let root = open_test_project(&mut app, "save_as_updates_current_path");
+        let new_path = root.join("scenes/new.scene.ron");
+        app.current_path = Some(PathBuf::from("scenes/old.scene.ron"));
         app.set_next_save_scene_dialog_path_for_test(Some(new_path.clone()));
 
         app.save_scene_as_dialog();
 
-        assert_eq!(app.current_path, Some(new_path));
+        assert_eq!(
+            app.current_path,
+            Some(PathBuf::from("scenes/new.scene.ron"))
+        );
     }
 
     #[test]
@@ -846,9 +913,10 @@ mod tests {
 
     #[test]
     fn open_scene_clears_history() {
-        let path = temp_scene_path("open_scene_clears_history");
-        write_scene_with_cube(&path);
         let mut app = EditorApp::default();
+        let root = open_test_project(&mut app, "open_scene_clears_history_project");
+        let path = root.join("scenes/open.scene.ron");
+        write_scene_with_cube(&path);
         app.model.create_cube();
         app.model.mark_saved();
         app.set_next_open_scene_dialog_path_for_test(Some(path));
@@ -881,9 +949,19 @@ mod tests {
         assert!(report.app.imported_mesh_count >= 1);
         assert!(report.app.imported_asset_reopened);
         assert!(report.app.imported_viewport_span);
-        assert_eq!(app.current_path, Some(path.clone()));
+        assert_eq!(
+            app.current_path,
+            Some(PathBuf::from("scenes/main.scene.ron"))
+        );
         assert!(!app.model.is_dirty());
-        assert!(path.exists());
+        assert!(
+            app.current_project
+                .as_ref()
+                .unwrap()
+                .root
+                .join("scenes/main.scene.ron")
+                .exists()
+        );
     }
 
     fn temp_scene_path(name: &str) -> PathBuf {
@@ -898,8 +976,20 @@ mod tests {
     }
 
     fn write_scene_with_cube(path: &Path) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
         let mut model = crate::EditorModel::default();
         model.create_cube();
         fs::write(path, model.save_scene_to_string().unwrap()).unwrap();
+    }
+
+    fn open_test_project(app: &mut EditorApp, name: &str) -> PathBuf {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/tmp/file_workflow_project_tests")
+            .join(format!("{name}_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        app.new_project_path_for_test(&root).unwrap();
+        root
     }
 }

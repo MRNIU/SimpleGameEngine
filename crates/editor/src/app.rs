@@ -68,10 +68,8 @@ impl EditorLaunchOptions {
 
 impl Default for EditorApp {
     fn default() -> Self {
-        let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut app = Self {
             model: EditorModel::default(),
-            project_root,
             current_project: None,
             asset_manifest: asset::AssetManifest::default(),
             imported_meshes: BTreeMap::new(),
@@ -104,7 +102,6 @@ impl Default for EditorApp {
 #[derive(Debug)]
 pub struct EditorApp {
     model: EditorModel,
-    project_root: PathBuf,
     current_project: Option<ProjectContext>,
     asset_manifest: asset::AssetManifest,
     imported_meshes: BTreeMap<asset::AssetUuid, asset::ImportedMesh>,
@@ -312,6 +309,10 @@ impl EditorApp {
     }
 
     pub(super) fn run_ui_action(&mut self, action: EditorUiAction) {
+        if Self::action_requires_project(action) && self.current_project.is_none() {
+            self.status = "Open or create a project first".to_owned();
+            return;
+        }
         match action {
             EditorUiAction::NewProjectDialog => self.new_project_dialog(),
             EditorUiAction::OpenProjectDialog => self.open_project_dialog(),
@@ -351,6 +352,35 @@ impl EditorApp {
             }
             EditorUiAction::TogglePilotCamera => self.toggle_pilot_camera(),
         }
+    }
+
+    fn current_project_root(&self) -> Option<&std::path::Path> {
+        self.current_project
+            .as_ref()
+            .map(|project| project.root.as_path())
+    }
+
+    fn require_project_root(&mut self) -> Option<PathBuf> {
+        let root = self
+            .current_project
+            .as_ref()
+            .map(|project| project.root.clone());
+        if root.is_none() {
+            self.status = "Open or create a project first".to_owned();
+        }
+        root
+    }
+
+    fn action_requires_project(action: EditorUiAction) -> bool {
+        matches!(
+            action,
+            EditorUiAction::NewScene
+                | EditorUiAction::OpenSceneDialog
+                | EditorUiAction::SaveScene
+                | EditorUiAction::SaveSceneAsDialog
+                | EditorUiAction::ImportObjDialog
+                | EditorUiAction::CreatePrimitive(_)
+        )
     }
 
     fn command_shift() -> egui::Modifiers {

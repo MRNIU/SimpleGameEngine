@@ -197,28 +197,22 @@ fn status_bar_selection_uses_entity_name() {
 #[test]
 fn ui_action_save_clears_pending_without_running_new() {
     let mut app = super::EditorApp::default();
+    let root = temp_project_root("ui_action_save_clears_pending_without_running_new");
+    app.new_project_path_for_test(&root).unwrap();
     let cube = app.model.create_cube();
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/tmp")
-        .join(format!(
-            "ui_action_save_clears_pending_without_running_new_{}.scene.ron",
-            std::process::id()
-        ));
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).unwrap();
-    }
-    let _ = std::fs::remove_file(&path);
-    app.set_next_save_scene_dialog_path_for_test(Some(path.clone()));
     app.pending_action = Some(super::PendingFileAction::New);
 
     app.run_ui_action(super::EditorUiAction::SaveScene);
 
     assert_eq!(app.pending_action, None);
     assert!(app.model.world().entity(cube.as_str()).is_some());
-    assert_eq!(app.current_path, Some(path.clone()));
+    assert_eq!(
+        app.current_path,
+        Some(PathBuf::from("scenes/main.scene.ron"))
+    );
     assert!(!app.model.is_dirty());
     assert_eq!(app.status, "Saved");
-    assert!(path.exists());
+    assert!(root.join("scenes/main.scene.ron").exists());
 }
 
 #[test]
@@ -235,8 +229,12 @@ fn open_scene_dialog_cancel_does_not_set_pending_action() {
 
 #[test]
 fn dirty_open_scene_dialog_sets_pending_open_after_path_selection() {
-    let path = temp_scene_path("dirty_open_scene_dialog_sets_pending_open");
     let mut app = super::EditorApp::default();
+    let root = temp_project_root("dirty_open_scene_dialog_sets_pending_open");
+    app.new_project_path_for_test(&root).unwrap();
+    let relative = PathBuf::from("scenes/open.scene.ron");
+    let path = root.join(&relative);
+    write_scene_with_cube(&path);
     app.model.create_cube();
     app.set_next_open_scene_dialog_path_for_test(Some(path.clone()));
 
@@ -244,21 +242,25 @@ fn dirty_open_scene_dialog_sets_pending_open_after_path_selection() {
 
     assert_eq!(
         app.pending_action,
-        Some(super::PendingFileAction::Open(path))
+        Some(super::PendingFileAction::Open(relative))
     );
     assert_eq!(app.status, "Unsaved changes: save or discard first");
 }
 
 #[test]
 fn save_without_current_path_uses_save_as_dialog() {
-    let path = temp_scene_path("save_without_current_path_uses_save_as_dialog");
     let mut app = super::EditorApp::default();
+    let root = temp_project_root("save_without_current_path_uses_save_as_dialog");
+    app.new_project_path_for_test(&root).unwrap();
+    app.current_path = None;
+    let relative = PathBuf::from("scenes/saved.scene.ron");
+    let path = root.join(&relative);
     app.model.create_cube();
     app.set_next_save_scene_dialog_path_for_test(Some(path.clone()));
 
     app.run_ui_action(super::EditorUiAction::SaveScene);
 
-    assert_eq!(app.current_path, Some(path.clone()));
+    assert_eq!(app.current_path, Some(relative));
     assert!(path.exists());
     assert!(!app.model.is_dirty());
 }
@@ -273,12 +275,10 @@ fn status_bar_source_has_no_path_input_text_edit() {
 #[test]
 fn import_obj_path_creates_manifest_asset_entity_and_draw_call() {
     let root = temp_project_root("import_obj_path_creates_manifest_asset_entity_and_draw_call");
-    let source = root.join("source.obj");
+    let source = temp_project_root("import_obj_path_source").join("source.obj");
     write_triangle_obj(&source);
-    let mut app = super::EditorApp {
-        project_root: root.clone(),
-        ..Default::default()
-    };
+    let mut app = super::EditorApp::default();
+    app.new_project_path_for_test(&root).unwrap();
 
     let uuid = app.import_obj_path(&source).unwrap();
 
@@ -302,12 +302,13 @@ fn import_obj_path_creates_manifest_asset_entity_and_draw_call() {
 #[test]
 fn import_obj_path_scales_large_mesh_to_two_unit_extent() {
     let root = temp_project_root("import_obj_path_scales_large_mesh_to_two_unit_extent");
-    let source = root.join("large.obj");
+    let source = temp_project_root("import_obj_path_large_source").join("large.obj");
+    if let Some(parent) = source.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
     std::fs::write(&source, "v 0 0 0\nv 50 0 0\nv 0 25 0\nf 1 2 3\n").unwrap();
-    let mut app = super::EditorApp {
-        project_root: root,
-        ..Default::default()
-    };
+    let mut app = super::EditorApp::default();
+    app.new_project_path_for_test(&root).unwrap();
 
     app.import_obj_path(&source).unwrap();
 
@@ -439,8 +440,119 @@ fn new_and_open_project_reject_repository_root() {
 }
 
 #[test]
+fn project_scoped_actions_are_gated_without_project() {
+    let mut app = super::EditorApp::default();
+    let source =
+        temp_project_root("project_scoped_actions_are_gated_without_project").join("mesh.obj");
+    write_triangle_obj(&source);
+    app.set_next_import_obj_dialog_path_for_test(Some(source));
+
+    app.run_ui_action(super::EditorUiAction::CreatePrimitive(PrimitiveKind::Cube));
+    assert!(app.model.world().entity("cube").is_none());
+    assert_eq!(app.status, "Open or create a project first");
+
+    app.run_ui_action(super::EditorUiAction::SaveScene);
+    assert_eq!(app.status, "Open or create a project first");
+
+    app.run_ui_action(super::EditorUiAction::SaveSceneAsDialog);
+    assert_eq!(app.status, "Open or create a project first");
+
+    app.run_ui_action(super::EditorUiAction::OpenSceneDialog);
+    assert_eq!(app.status, "Open or create a project first");
+
+    app.run_ui_action(super::EditorUiAction::NewScene);
+    assert_eq!(app.status, "Open or create a project first");
+
+    app.run_ui_action(super::EditorUiAction::ImportObjDialog);
+    assert!(app.asset_manifest.assets.is_empty());
+    assert_eq!(app.status, "Open or create a project first");
+}
+
+#[test]
+fn import_obj_writes_inside_current_project_only() {
+    let root = temp_project_root("import_obj_writes_inside_current_project_only");
+    let outside = temp_project_root("import_obj_source_outside_project");
+    let source = outside.join("mesh.obj");
+    write_triangle_obj(&source);
+    let mut app = super::EditorApp::default();
+    app.new_project_path_for_test(&root).unwrap();
+
+    let uuid = app.import_obj_path(&source).unwrap();
+
+    let record = app.asset_manifest.find(&uuid).unwrap();
+    assert_eq!(record.path, PathBuf::from("assets/imported/mesh.obj"));
+    assert!(root.join("assets/imported/mesh.obj").exists());
+    assert!(!std::path::Path::new("assets/imported/mesh.obj").exists());
+}
+
+#[test]
+fn save_as_rejects_scene_path_outside_current_project() {
+    let root = temp_project_root("save_as_rejects_scene_path_outside_current_project");
+    let outside = temp_project_root("save_as_outside_project");
+    std::fs::create_dir_all(&outside).unwrap();
+    let mut app = super::EditorApp::default();
+    app.new_project_path_for_test(&root).unwrap();
+    app.set_next_save_scene_dialog_path_for_test(Some(outside.join("bad.scene.ron")));
+
+    app.run_ui_action(super::EditorUiAction::SaveSceneAsDialog);
+
+    assert_eq!(
+        app.current_path,
+        Some(PathBuf::from("scenes/main.scene.ron"))
+    );
+    assert_eq!(
+        app.status,
+        "Save failed: path is outside the current project"
+    );
+    assert!(!outside.join("bad.scene.ron").exists());
+}
+
+#[test]
+fn open_scene_rejects_scene_path_outside_current_project() {
+    let root = temp_project_root("open_scene_rejects_scene_path_outside_current_project");
+    let outside = temp_project_root("open_scene_outside_project");
+    std::fs::create_dir_all(&outside).unwrap();
+    let outside_scene = outside.join("bad.scene.ron");
+    std::fs::write(
+        &outside_scene,
+        r#"(
+    entities: [],
+)"#,
+    )
+    .unwrap();
+    let mut app = super::EditorApp::default();
+    app.new_project_path_for_test(&root).unwrap();
+    app.set_next_open_scene_dialog_path_for_test(Some(outside_scene));
+
+    app.run_ui_action(super::EditorUiAction::OpenSceneDialog);
+
+    assert_eq!(
+        app.current_path,
+        Some(PathBuf::from("scenes/main.scene.ron"))
+    );
+    assert_eq!(
+        app.status,
+        "Open failed: path is outside the current project"
+    );
+}
+
+#[test]
+fn shortcut_dispatch_still_routes_save_through_project_gate() {
+    let source = include_str!("../app.rs");
+    let shortcut_source = &source[source
+        .find("fn handle_keyboard_shortcuts")
+        .expect("shortcut helper present")..];
+
+    assert!(shortcut_source.contains("EditorUiAction::SaveScene"));
+    assert!(source.contains("fn require_project_root"));
+    assert!(source.contains("Open or create a project first"));
+}
+
+#[test]
 fn ui_action_create_duplicate_delete_undo_redo_use_model_state() {
     let mut app = super::EditorApp::default();
+    let root = temp_project_root("ui_action_create_duplicate_delete_undo_redo_use_model_state");
+    app.new_project_path_for_test(&root).unwrap();
 
     app.run_ui_action(super::EditorUiAction::CreatePrimitive(PrimitiveKind::Cube));
     let first = app
@@ -468,6 +580,8 @@ fn ui_action_create_duplicate_delete_undo_redo_use_model_state() {
 #[test]
 fn ui_action_create_primitives_uses_model_state() {
     let mut app = super::EditorApp::default();
+    let root = temp_project_root("ui_action_create_primitives_uses_model_state");
+    app.new_project_path_for_test(&root).unwrap();
 
     app.run_ui_action(super::EditorUiAction::CreatePrimitive(PrimitiveKind::Cube));
     app.run_ui_action(super::EditorUiAction::CreatePrimitive(
@@ -1014,17 +1128,6 @@ fn app_installs_compact_dark_tool_style() {
     assert!(source.contains("panel_fill"));
 }
 
-fn temp_scene_path(name: &str) -> std::path::PathBuf {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/tmp")
-        .join(format!("{name}_{}.scene.ron", std::process::id()));
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).unwrap();
-    }
-    let _ = std::fs::remove_file(&path);
-    path
-}
-
 fn temp_project_root(name: &str) -> std::path::PathBuf {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/tmp/editor_asset_tests")
@@ -1047,4 +1150,13 @@ fn write_triangle_obj(path: &std::path::Path) {
         std::fs::create_dir_all(parent).unwrap();
     }
     std::fs::write(path, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n").unwrap();
+}
+
+fn write_scene_with_cube(path: &std::path::Path) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    let mut model = crate::EditorModel::default();
+    model.create_cube();
+    std::fs::write(path, model.save_scene_to_string().unwrap()).unwrap();
 }

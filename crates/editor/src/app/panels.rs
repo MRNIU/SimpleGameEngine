@@ -58,6 +58,7 @@ pub(super) fn side_panel_layout(available_width: f32) -> SidePanelLayout {
 
 impl EditorApp {
     pub(super) fn draw_menu_bar(&mut self, ui: &mut egui::Ui) {
+        let has_project = self.current_project.is_some();
         ui.horizontal_wrapped(|ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("New Project...").clicked() {
@@ -69,23 +70,38 @@ impl EditorApp {
                     ui.close();
                 }
                 ui.separator();
-                if ui.button("New Scene").clicked() {
+                if ui
+                    .add_enabled(has_project, egui::Button::new("New Scene"))
+                    .clicked()
+                {
                     self.run_ui_action(EditorUiAction::NewScene);
                     ui.close();
                 }
-                if ui.button("Open Scene...").clicked() {
+                if ui
+                    .add_enabled(has_project, egui::Button::new("Open Scene..."))
+                    .clicked()
+                {
                     self.run_ui_action(EditorUiAction::OpenSceneDialog);
                     ui.close();
                 }
-                if ui.button("Save").clicked() {
+                if ui
+                    .add_enabled(has_project, egui::Button::new("Save"))
+                    .clicked()
+                {
                     self.run_ui_action(EditorUiAction::SaveScene);
                     ui.close();
                 }
-                if ui.button("Save As...").clicked() {
+                if ui
+                    .add_enabled(has_project, egui::Button::new("Save As..."))
+                    .clicked()
+                {
                     self.run_ui_action(EditorUiAction::SaveSceneAsDialog);
                     ui.close();
                 }
-                if ui.button("Import OBJ...").clicked() {
+                if ui
+                    .add_enabled(has_project, egui::Button::new("Import OBJ..."))
+                    .clicked()
+                {
                     self.run_ui_action(EditorUiAction::ImportObjDialog);
                     ui.close();
                 }
@@ -122,19 +138,31 @@ impl EditorApp {
                 }
             });
             ui.menu_button("Create", |ui| {
-                if ui.button("Cube").clicked() {
+                if ui
+                    .add_enabled(has_project, egui::Button::new("Cube"))
+                    .clicked()
+                {
                     self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cube));
                     ui.close();
                 }
-                if ui.button("Sphere").clicked() {
+                if ui
+                    .add_enabled(has_project, egui::Button::new("Sphere"))
+                    .clicked()
+                {
                     self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Sphere));
                     ui.close();
                 }
-                if ui.button("Cone").clicked() {
+                if ui
+                    .add_enabled(has_project, egui::Button::new("Cone"))
+                    .clicked()
+                {
                     self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cone));
                     ui.close();
                 }
-                if ui.button("Cylinder").clicked() {
+                if ui
+                    .add_enabled(has_project, egui::Button::new("Cylinder"))
+                    .clicked()
+                {
                     self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cylinder));
                     ui.close();
                 }
@@ -159,17 +187,30 @@ impl EditorApp {
     }
 
     pub(super) fn draw_top_toolbar(&mut self, ui: &mut egui::Ui) {
+        let has_project = self.current_project.is_some();
         ui.horizontal_wrapped(|ui| {
-            if ui.button("Cube").clicked() {
+            if ui
+                .add_enabled(has_project, egui::Button::new("Cube"))
+                .clicked()
+            {
                 self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cube));
             }
-            if ui.button("Sphere").clicked() {
+            if ui
+                .add_enabled(has_project, egui::Button::new("Sphere"))
+                .clicked()
+            {
                 self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Sphere));
             }
-            if ui.button("Cone").clicked() {
+            if ui
+                .add_enabled(has_project, egui::Button::new("Cone"))
+                .clicked()
+            {
                 self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cone));
             }
-            if ui.button("Cylinder").clicked() {
+            if ui
+                .add_enabled(has_project, egui::Button::new("Cylinder"))
+                .clicked()
+            {
                 self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cylinder));
             }
             ui.separator();
@@ -249,10 +290,16 @@ impl EditorApp {
     pub(super) fn draw_status_bar(&mut self, ui: &mut egui::Ui) {
         let selection = status_bar_selection_text(&self.model);
         ui.horizontal_wrapped(|ui| {
-            if let Some(path) = &self.current_path {
-                ui.label(path.display().to_string());
+            if let Some(project) = &self.current_project {
+                ui.label(format!("Project: {}", project.document.name));
+                ui.separator();
+                ui.label(
+                    self.current_path
+                        .as_ref()
+                        .map_or_else(|| "No file".to_owned(), |path| path.display().to_string()),
+                );
             } else {
-                ui.label("No file");
+                ui.label("No Project");
             }
             ui.separator();
             ui.label(if self.model.is_dirty() {
