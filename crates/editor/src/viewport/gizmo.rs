@@ -2,7 +2,7 @@
 
 use ecs::EntityId;
 use eframe::egui;
-use math::Transform;
+use math::{Quat, Transform, Vec3};
 use render::ViewportDrawCall;
 
 use super::screen_position_for_vertex;
@@ -12,6 +12,7 @@ const GIZMO_MOVE_HIT_SIZE: f32 = 10.0;
 const GIZMO_SCALE_HIT_SIZE: f32 = 12.0;
 const GIZMO_SCALE_OFFSET: egui::Vec2 = egui::vec2(14.0, -14.0);
 const GIZMO_WORLD_UNITS_PER_PIXEL: f32 = 0.01;
+const GIZMO_ROTATE_RADIANS_PER_PIXEL: f32 = 0.01;
 const GIZMO_SCALE_PER_PIXEL: f32 = 0.01;
 const MIN_GIZMO_SCALE: f32 = 0.01;
 
@@ -19,6 +20,7 @@ const MIN_GIZMO_SCALE: f32 = 0.01;
 pub(crate) enum GizmoMode {
     #[default]
     Move,
+    Rotate,
     Scale,
 }
 
@@ -27,6 +29,9 @@ pub(crate) enum GizmoHandle {
     MoveX,
     MoveY,
     MoveZ,
+    RotateX,
+    RotateY,
+    RotateZ,
     UniformScale,
 }
 
@@ -129,6 +134,7 @@ pub(crate) fn gizmo_layout(
 
     match mode {
         GizmoMode::Move => move_gizmo_handles(bounds.center()),
+        GizmoMode::Rotate => rotate_gizmo_handles(bounds.center()),
         GizmoMode::Scale => vec![GizmoHandleRect::new(
             GizmoHandle::UniformScale,
             egui::pos2(bounds.max.x, bounds.min.y) + GIZMO_SCALE_OFFSET,
@@ -194,6 +200,27 @@ pub(crate) fn transform_for_gizmo_drag(
         GizmoHandle::MoveZ => {
             start.translation[2] += delta.dot(z_screen_axis()) * GIZMO_WORLD_UNITS_PER_PIXEL;
         }
+        GizmoHandle::RotateX => {
+            rotate_transform(
+                &mut start,
+                Vec3::X,
+                delta.dot(egui::Vec2::X) * GIZMO_ROTATE_RADIANS_PER_PIXEL,
+            );
+        }
+        GizmoHandle::RotateY => {
+            rotate_transform(
+                &mut start,
+                Vec3::Y,
+                delta.dot(-egui::Vec2::Y) * GIZMO_ROTATE_RADIANS_PER_PIXEL,
+            );
+        }
+        GizmoHandle::RotateZ => {
+            rotate_transform(
+                &mut start,
+                Vec3::Z,
+                delta.dot(z_screen_axis()) * GIZMO_ROTATE_RADIANS_PER_PIXEL,
+            );
+        }
         GizmoHandle::UniformScale => {
             let amount = delta.dot(z_screen_axis()) * GIZMO_SCALE_PER_PIXEL;
             let next_scale = start.scale.map(|value| value + amount);
@@ -205,6 +232,14 @@ pub(crate) fn transform_for_gizmo_drag(
         }
     }
     start
+}
+
+fn rotate_transform(transform: &mut Transform, axis: Vec3, angle: f32) {
+    if !angle.is_finite() {
+        return;
+    }
+    let rotation = Quat::from_axis_angle(axis, angle) * Quat::from_array(transform.rotation);
+    transform.rotation = rotation.to_array();
 }
 
 pub(crate) fn paint_gizmo_handles(
@@ -222,7 +257,7 @@ pub(crate) fn paint_gizmo_handles(
             2.0
         };
         match handle.handle {
-            GizmoHandle::MoveX => {
+            GizmoHandle::MoveX | GizmoHandle::RotateX => {
                 painter.line_segment(
                     [
                         handle.center - handle.axis * GIZMO_HANDLE_LENGTH,
@@ -232,7 +267,7 @@ pub(crate) fn paint_gizmo_handles(
                 );
                 painter.rect_filled(handle.rect, 1.0, egui::Color32::from_rgb(230, 80, 80));
             }
-            GizmoHandle::MoveY => {
+            GizmoHandle::MoveY | GizmoHandle::RotateY => {
                 painter.line_segment(
                     [
                         handle.center - handle.axis * GIZMO_HANDLE_LENGTH,
@@ -242,7 +277,7 @@ pub(crate) fn paint_gizmo_handles(
                 );
                 painter.rect_filled(handle.rect, 1.0, egui::Color32::from_rgb(80, 210, 110));
             }
-            GizmoHandle::MoveZ => {
+            GizmoHandle::MoveZ | GizmoHandle::RotateZ => {
                 painter.line_segment(
                     [
                         handle.center - handle.axis * GIZMO_HANDLE_LENGTH,
@@ -281,6 +316,29 @@ fn move_gizmo_handles(center: egui::Pos2) -> Vec<GizmoHandleRect> {
         ),
         GizmoHandleRect::new(
             GizmoHandle::MoveZ,
+            center + z_screen_axis() * GIZMO_HANDLE_LENGTH,
+            z_screen_axis(),
+            GIZMO_MOVE_HIT_SIZE,
+        ),
+    ]
+}
+
+fn rotate_gizmo_handles(center: egui::Pos2) -> Vec<GizmoHandleRect> {
+    vec![
+        GizmoHandleRect::new(
+            GizmoHandle::RotateX,
+            center + egui::Vec2::X * GIZMO_HANDLE_LENGTH,
+            egui::Vec2::X,
+            GIZMO_MOVE_HIT_SIZE,
+        ),
+        GizmoHandleRect::new(
+            GizmoHandle::RotateY,
+            center - egui::Vec2::Y * GIZMO_HANDLE_LENGTH,
+            -egui::Vec2::Y,
+            GIZMO_MOVE_HIT_SIZE,
+        ),
+        GizmoHandleRect::new(
+            GizmoHandle::RotateZ,
             center + z_screen_axis() * GIZMO_HANDLE_LENGTH,
             z_screen_axis(),
             GIZMO_MOVE_HIT_SIZE,

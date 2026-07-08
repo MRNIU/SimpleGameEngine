@@ -6,7 +6,7 @@ use super::{
     screen_position_for_vertex,
 };
 use ecs::EntityId;
-use math::{Transform, Vec3};
+use math::{Quat, Transform, Vec3};
 use render::{ViewportDrawCall, ViewportMeshSpan, ViewportVertex};
 
 fn draw_with_two_mesh_spans() -> ViewportDrawCall {
@@ -238,6 +238,106 @@ fn move_gizmo_drag_changes_only_selected_axis() {
     assert_eq!(moved_x.translation, [1.5, 2.0, 3.0]);
     assert_eq!(moved_y.translation, [1.0, 2.5, 3.0]);
     assert_eq!(moved_z.translation, [1.0, 2.0, 3.707_106_8]);
+}
+
+fn assert_quat_close(actual: [f32; 4], expected: [f32; 4]) {
+    for (actual, expected) in actual.into_iter().zip(expected) {
+        assert!(
+            (actual - expected).abs() < 0.000_01,
+            "actual {actual} did not match expected {expected}"
+        );
+    }
+}
+
+#[test]
+fn rotate_gizmo_layout_uses_fixed_screen_axes() {
+    let draw = draw_with_two_mesh_spans();
+    let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
+
+    let handles =
+        super::gizmo_layout(&draw, rect, Some(&EntityId::new("cube_1")), GizmoMode::Rotate);
+
+    assert_eq!(handles.len(), 3);
+    let rotate_x = handles
+        .iter()
+        .find(|handle| handle.handle == GizmoHandle::RotateX)
+        .unwrap();
+    let rotate_y = handles
+        .iter()
+        .find(|handle| handle.handle == GizmoHandle::RotateY)
+        .unwrap();
+    let rotate_z = handles
+        .iter()
+        .find(|handle| handle.handle == GizmoHandle::RotateZ)
+        .unwrap();
+    assert_eq!(rotate_x.axis, egui::Vec2::X);
+    assert_eq!(rotate_y.axis, -egui::Vec2::Y);
+    let expected_z_axis =
+        (egui::Vec2::X - egui::Vec2::Y) / (egui::Vec2::X - egui::Vec2::Y).length();
+    assert_eq!(rotate_z.axis, expected_z_axis);
+    assert_eq!(rotate_x.rect.size(), egui::vec2(10.0, 10.0));
+}
+
+#[test]
+fn rotate_gizmo_drag_changes_only_rotation_with_fixed_signs() {
+    let start = Transform {
+        translation: [1.0, 2.0, 3.0],
+        scale: [2.0, 3.0, 4.0],
+        ..Transform::identity()
+    };
+    let start_pointer = egui::pos2(10.0, 10.0);
+
+    let rotated_x = super::transform_for_gizmo_drag(
+        GizmoHandle::RotateX,
+        start,
+        start_pointer,
+        egui::pos2(60.0, 10.0),
+    );
+    let rotated_y = super::transform_for_gizmo_drag(
+        GizmoHandle::RotateY,
+        start,
+        start_pointer,
+        egui::pos2(10.0, -40.0),
+    );
+    let rotated_z = super::transform_for_gizmo_drag(
+        GizmoHandle::RotateZ,
+        start,
+        start_pointer,
+        egui::pos2(60.0, -40.0),
+    );
+    let reverse_z = super::transform_for_gizmo_drag(
+        GizmoHandle::RotateZ,
+        start,
+        start_pointer,
+        egui::pos2(-40.0, 60.0),
+    );
+
+    assert_eq!(rotated_x.translation, start.translation);
+    assert_eq!(rotated_x.scale, start.scale);
+    assert_quat_close(rotated_x.rotation, Quat::from_rotation_x(0.5).to_array());
+    assert_quat_close(rotated_y.rotation, Quat::from_rotation_y(0.5).to_array());
+    assert_quat_close(
+        rotated_z.rotation,
+        Quat::from_rotation_z(0.707_106_77).to_array(),
+    );
+    assert_quat_close(
+        reverse_z.rotation,
+        Quat::from_rotation_z(-0.707_106_77).to_array(),
+    );
+}
+
+#[test]
+fn rotate_gizmo_drag_ignores_non_finite_pointer_delta() {
+    let start = Transform::identity();
+
+    let rotated = super::transform_for_gizmo_drag(
+        GizmoHandle::RotateZ,
+        start,
+        egui::pos2(0.0, 0.0),
+        egui::pos2(f32::NAN, 10.0),
+    );
+
+    assert_eq!(rotated, start);
 }
 
 #[test]
