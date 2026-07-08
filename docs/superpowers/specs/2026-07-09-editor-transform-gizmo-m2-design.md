@@ -64,6 +64,7 @@ M2 做：
 - Rotate 复用现有 viewport action 和 model preview/commit 通道。
 - Rotate 只修改 selected entity 的 `Transform.rotation`。
 - Drag target 使用 drag 开始时捕获的 `EntityId`，不是 action 到达时临时读取 selection。
+- `PreviewTransform`、`CommitTransform` 和 `RestoreTransform` 使用同一 stale-target guard：current selection 必须仍等于 captured target，且 target entity 必须存在。否则清 drag、丢弃 action、显示短状态，不写 model。
 - 如果 selection 改变、target 消失、viewport rect invalid 或 pointer delta non-finite，结束当前 drag，不 panic。
 - `render` 不新增 gizmo ownership；rotate visual 继续由 `egui::Painter` 在 viewport overlay 中绘制。
 
@@ -111,10 +112,12 @@ UniformScale
 
 Rotate mode layout：
 
-- `RotateX`：红色 handle。
-- `RotateY`：绿色 handle。
-- `RotateZ`：蓝色 handle。
-- 三个 handle 基于 selected mesh 的 screen-space bounds center 布局。
+- 起点 `center` 使用 selected mesh 的 screen-space bounds center。
+- `RotateX`：红色 handle，center 为 `center + Vec2::X * GIZMO_HANDLE_LENGTH`，axis 为 `Vec2::X`。
+- `RotateY`：绿色 handle，center 为 `center - Vec2::Y * GIZMO_HANDLE_LENGTH`，axis 为 `-Vec2::Y`。
+- `RotateZ`：蓝色 handle，center 为 `center + z_screen_axis() * GIZMO_HANDLE_LENGTH`，axis 为 `z_screen_axis()`。
+- `z_screen_axis()` 继续使用现有 normalized `(Vec2::X - Vec2::Y)`，不新增第二套 screen axis 定义。
+- rotate hit rect 使用和 move handle 相同的 hit size，除非实现时已有常量名需要复用。
 - 首版不做真实 3D circle/ring。可以用三条短弧、短线或带方形命中点的简化 overlay。
 - 命中规则继续走 `GizmoHandleRect`，并沿用“更近 handle center 优先”的规则。
 
@@ -128,6 +131,11 @@ Rotate drag 使用最小 screen-space 映射：
 - `RotateX`：pointer delta 在 X handle screen axis 上的投影，映射到绕 world X 轴的 angle。
 - `RotateY`：pointer delta 在 Y handle screen axis 上的投影，映射到绕 world Y 轴的 angle。
 - `RotateZ`：pointer delta 在 Z handle screen axis 上的投影，映射到绕 world Z 轴的 angle。
+- 正方向测试期望固定：
+  - `RotateX` 从 `(10, 10)` 拖到 `(60, 10)`，angle 为 `+0.5` rad。
+  - `RotateY` 从 `(10, 10)` 拖到 `(10, -40)`，angle 为 `+0.5` rad。
+  - `RotateZ` 从 `(10, 10)` 拖到 `(60, -40)`，angle 为 `+0.7071068` rad。
+- 上述反方向拖拽产生同幅度负 angle。
 - 生成 `delta_rotation * start_rotation` 后写回 `Transform.rotation`。
 - 只修改 `rotation`，不修改 `translation` 或 `scale`。
 - 新 quaternion 必须 finite 且非零；最终由现有 `canonical_transform` 归一化。
@@ -157,6 +165,7 @@ drag RotateX/Y/Z
 -> preview mutates current world transform without dirty/history
 -> Esc
 -> ViewportAction::RestoreTransform { target, transform: start_transform }
+-> EditorApp applies same stale-target guard as preview/commit
 -> EditorModel::restore_transform_preview(...)
 -> end drag session
 ```
@@ -184,8 +193,8 @@ Commit 规则：
 | --- | --- |
 | 没有 selection | 不显示 rotate gizmo |
 | selected entity 不可见 | 不显示 rotate gizmo |
-| target selection 改变 | 清 drag，显示短状态 |
-| target entity 不存在 | 清 drag，丢弃 transform action |
+| preview/commit/restore 时 selection 不再等于 captured target | 清 drag，丢弃 action，显示短状态 |
+| preview/commit/restore 时 target entity 不存在 | 清 drag，丢弃 action，显示短状态 |
 | viewport rect invalid | 不处理 rotate hit test/drag |
 | pointer delta non-finite | 返回 start transform |
 | candidate transform invalid | 不写入 model，显示短错误 |
@@ -199,8 +208,10 @@ Commit 规则：
 - `editor::viewport` tests：
   - `GizmoMode` 包含 `Move`、`Rotate`、`Scale`。
   - rotate layout 产出 `RotateX`、`RotateY`、`RotateZ`。
+  - rotate layout 的 handle center、axis 和 hit size 符合固定 screen-axis contract。
   - hit test 能选中 rotate handle。
   - `RotateX/Y/Z` drag 只改变 `rotation`，不改变 translation/scale。
+  - `RotateX/Y/Z` 正向和反向拖拽产生固定符号和幅度的 angle。
   - rotation quaternion finite 且可被 canonical normalization 接受。
   - non-finite pointer delta 返回 start transform。
 - `editor::app` tests：
@@ -208,6 +219,7 @@ Commit 规则：
   - toolbar 包含 `Rotate (E)`。
   - rotate preview 不 dirty、不写 history。
   - rotate commit 写一个 Undo entry。
+  - `RestoreTransform` 和 preview/commit 使用同一 stale-target guard；selection 改变或 target 缺失时清 drag、不写 model、不 panic。
 - editor smoke：
   - 语义 smoke 中增加一次 rotate drag。
   - 验证 preview 不 dirty、不写 history。
