@@ -21,6 +21,18 @@ fn runtime_loads_editor_smoke_scene() {
 }
 
 #[test]
+fn runtime_loads_builtin_primitive_scene() {
+    let root = temp_runtime_project("runtime_builtin_primitives");
+    let scene_path = root.join("primitive_scene.scene.ron");
+    std::fs::write(&scene_path, primitive_scene()).unwrap();
+
+    let draw = runtime::load_viewport_draw_from_path_with_project_root(&scene_path, &root).unwrap();
+
+    assert_eq!(draw.mesh_spans.len(), 3);
+    assert_eq!(draw.index_count, 108);
+}
+
+#[test]
 fn runtime_loads_imported_asset_from_explicit_project_root() {
     let root = temp_runtime_project("runtime_imported_asset");
     let uuid = asset::AssetUuid::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap();
@@ -93,4 +105,67 @@ fn imported_scene(uuid: &asset::AssetUuid) -> String {
 )"#,
         uuid.to_asset_ref()
     )
+}
+
+fn primitive_scene() -> &'static str {
+    r#"(
+    entities: [
+        (
+            id: "camera",
+            name: "Camera",
+            transform: (
+                translation: (0.0, 2.0, 5.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            parent: None,
+            camera: Some((projection: Perspective(fov_y_degrees: 60.0))),
+            mesh: None,
+            material_override: None,
+            light: None,
+        ),
+        (
+            id: "cube",
+            name: "Cube",
+            transform: (
+                translation: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            parent: None,
+            camera: None,
+            mesh: Some((asset: "primitive:cube", material: "primitive:default_material")),
+            material_override: None,
+            light: None,
+        ),
+        (
+            id: "sphere",
+            name: "Sphere",
+            transform: (
+                translation: (2.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            parent: None,
+            camera: None,
+            mesh: Some((asset: "primitive:sphere", material: "primitive:default_material")),
+            material_override: None,
+            light: None,
+        ),
+        (
+            id: "cone",
+            name: "Cone",
+            transform: (
+                translation: (4.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            parent: None,
+            camera: None,
+            mesh: Some((asset: "primitive:cone", material: "primitive:default_material")),
+            material_override: None,
+            light: None,
+        ),
+    ],
+)"#
 }

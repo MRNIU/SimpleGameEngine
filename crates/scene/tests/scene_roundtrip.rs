@@ -89,3 +89,42 @@ fn scene_roundtrip_rebuilds_children_cache_and_render_components() {
     assert_eq!(light.light.as_ref().unwrap().intensity, 1.25);
     assert!(!serialized.contains("children"));
 }
+
+#[test]
+fn scene_roundtrip_preserves_builtin_primitive_refs() {
+    let mut world = World::new();
+    world.spawn(EntityId::new("sphere"), "Sphere", Transform::identity());
+    world
+        .insert_mesh(
+            "sphere",
+            MeshRef::new("primitive:sphere", "primitive:default_material"),
+        )
+        .unwrap();
+    world.spawn(EntityId::new("cone"), "Cone", Transform::identity());
+    world
+        .insert_mesh(
+            "cone",
+            MeshRef::new("primitive:cone", "primitive:default_material"),
+        )
+        .unwrap();
+
+    let serialized = save_scene(&world).unwrap();
+    let loaded = load_scene(&serialized).unwrap();
+
+    assert!(serialized.contains("primitive:sphere"));
+    assert!(serialized.contains("primitive:cone"));
+    assert_eq!(
+        loaded
+            .entity("sphere")
+            .unwrap()
+            .mesh
+            .as_ref()
+            .unwrap()
+            .asset,
+        "primitive:sphere"
+    );
+    assert_eq!(
+        loaded.entity("cone").unwrap().mesh.as_ref().unwrap().asset,
+        "primitive:cone"
+    );
+}

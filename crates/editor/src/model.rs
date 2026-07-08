@@ -830,6 +830,9 @@ impl EditorModel {
     pub fn run_smoke_actions_in_place(&mut self) -> anyhow::Result<EditorSmokeReport> {
         let _first = self.create_cube();
         let second = self.create_cube();
+        let _sphere = self.create_primitive(PrimitiveKind::Sphere);
+        let _cone = self.create_primitive(PrimitiveKind::Cone);
+        self.select(second.clone());
         self.rename_entity(&second, "Smoke Cube")?;
         self.set_transform(
             &second,
