@@ -328,6 +328,117 @@ fn import_obj_dialog_cancel_does_not_change_manifest_or_scene() {
 }
 
 #[test]
+fn editor_starts_without_current_project() {
+    let app = super::EditorApp::default();
+
+    assert!(app.current_project.is_none());
+    assert!(app.current_path.is_none());
+    assert_eq!(app.status, "");
+}
+
+#[test]
+fn new_project_dialog_creates_project_and_sets_current_scene() {
+    let root = temp_project_root("new_project_dialog_creates_project_and_sets_current_scene");
+    let mut app = super::EditorApp::default();
+    app.set_next_new_project_dialog_path_for_test(Some(root.clone()));
+
+    app.run_ui_action(super::EditorUiAction::NewProjectDialog);
+
+    let project = app.current_project.as_ref().expect("project opened");
+    assert_eq!(project.root, root);
+    assert_eq!(
+        project.current_scene,
+        PathBuf::from("scenes/main.scene.ron")
+    );
+    assert_eq!(
+        app.current_path,
+        Some(PathBuf::from("scenes/main.scene.ron"))
+    );
+    assert!(project.root.join("project.sge.ron").exists());
+    assert!(project.root.join("scenes/main.scene.ron").exists());
+    assert_eq!(app.status, "Project created");
+}
+
+#[test]
+fn open_project_dialog_loads_project_without_using_cwd() {
+    let root = temp_project_root("open_project_dialog_loads_project_without_using_cwd");
+    super::project::create_project(&root).unwrap();
+    let mut app = super::EditorApp::default();
+    app.set_next_open_project_dialog_path_for_test(Some(root.clone()));
+
+    app.run_ui_action(super::EditorUiAction::OpenProjectDialog);
+
+    let project = app.current_project.as_ref().expect("project opened");
+    assert_eq!(project.root, root);
+    assert_eq!(
+        project.current_scene,
+        PathBuf::from("scenes/main.scene.ron")
+    );
+    assert_eq!(app.status, "Project opened");
+}
+
+#[test]
+fn dirty_new_project_defers_switch_until_discard() {
+    let first_root = temp_project_root("dirty_new_project_first");
+    let second_root = temp_project_root("dirty_new_project_second");
+    let mut app = super::EditorApp::default();
+    app.new_project_path_for_test(&first_root).unwrap();
+    app.model.create_cube();
+    app.set_next_new_project_dialog_path_for_test(Some(second_root.clone()));
+
+    app.run_ui_action(super::EditorUiAction::NewProjectDialog);
+
+    assert_eq!(
+        app.pending_action,
+        Some(super::PendingFileAction::NewProject(second_root.clone()))
+    );
+    assert_eq!(app.current_project.as_ref().unwrap().root, first_root);
+    assert_eq!(app.status, "Unsaved changes: save or discard first");
+
+    app.run_ui_action(super::EditorUiAction::DiscardPendingAction);
+
+    assert_eq!(app.pending_action, None);
+    assert_eq!(app.current_project.as_ref().unwrap().root, second_root);
+    assert_eq!(app.status, "Project created");
+}
+
+#[test]
+fn dirty_open_project_defers_switch_until_discard() {
+    let first_root = temp_project_root("dirty_open_project_first");
+    let second_root = temp_project_root("dirty_open_project_second");
+    super::project::create_project(&second_root).unwrap();
+    let mut app = super::EditorApp::default();
+    app.new_project_path_for_test(&first_root).unwrap();
+    app.model.create_cube();
+    app.set_next_open_project_dialog_path_for_test(Some(second_root.clone()));
+
+    app.run_ui_action(super::EditorUiAction::OpenProjectDialog);
+
+    assert_eq!(
+        app.pending_action,
+        Some(super::PendingFileAction::OpenProject(second_root.clone()))
+    );
+    assert_eq!(app.current_project.as_ref().unwrap().root, first_root);
+    assert_eq!(app.status, "Unsaved changes: save or discard first");
+
+    app.run_ui_action(super::EditorUiAction::DiscardPendingAction);
+
+    assert_eq!(app.pending_action, None);
+    assert_eq!(app.current_project.as_ref().unwrap().root, second_root);
+    assert_eq!(app.status, "Project opened");
+}
+
+#[test]
+fn new_and_open_project_reject_repository_root() {
+    let root = temp_repository_root("new_and_open_project_reject_repository_root");
+    let mut app = super::EditorApp::default();
+
+    assert!(app.new_project_path_for_test(&root).is_err());
+    assert!(app.open_project_path_for_test(&root).is_err());
+    assert!(app.current_project.is_none());
+}
+
+#[test]
 fn ui_action_create_duplicate_delete_undo_redo_use_model_state() {
     let mut app = super::EditorApp::default();
 
@@ -919,10 +1030,21 @@ fn temp_project_root(name: &str) -> std::path::PathBuf {
         .join("../../target/tmp/editor_asset_tests")
         .join(format!("{name}_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(root.join("assets/imported")).unwrap();
+    root
+}
+
+fn temp_repository_root(name: &str) -> std::path::PathBuf {
+    let root = temp_project_root(name);
+    std::fs::create_dir_all(root.join("crates")).unwrap();
+    std::fs::create_dir_all(root.join("assets/primitives")).unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
+    std::fs::write(root.join("AGENTS.md"), "# rules\n").unwrap();
     root
 }
 
 fn write_triangle_obj(path: &std::path::Path) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
     std::fs::write(path, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n").unwrap();
 }

@@ -7,6 +7,7 @@ use eframe::egui;
 use math::Transform;
 
 use crate::{
+    app::project::ProjectContext,
     model::{EditorError, EditorModel, EditorSmokeReport, PrimitiveKind},
     viewport::{
         GizmoMode, TransformGizmoState, ViewCamera, ViewportAction, ViewportWgpuProbe,
@@ -71,6 +72,7 @@ impl Default for EditorApp {
         let mut app = Self {
             model: EditorModel::default(),
             project_root,
+            current_project: None,
             asset_manifest: asset::AssetManifest::default(),
             imported_meshes: BTreeMap::new(),
             asset_load_status: BTreeMap::new(),
@@ -103,6 +105,7 @@ impl Default for EditorApp {
 pub struct EditorApp {
     model: EditorModel,
     project_root: PathBuf,
+    current_project: Option<ProjectContext>,
     asset_manifest: asset::AssetManifest,
     imported_meshes: BTreeMap<asset::AssetUuid, asset::ImportedMesh>,
     asset_load_status: BTreeMap<asset::AssetUuid, AssetLoadStatus>,
@@ -131,6 +134,8 @@ pub struct EditorApp {
 enum PendingFileAction {
     New,
     Open(PathBuf),
+    NewProject(PathBuf),
+    OpenProject(PathBuf),
 }
 
 #[cfg(test)]
@@ -139,6 +144,8 @@ struct TestDialogPaths {
     open_scene: Option<Option<PathBuf>>,
     save_scene: Option<Option<PathBuf>>,
     import_obj: Option<Option<PathBuf>>,
+    new_project: Option<Option<PathBuf>>,
+    open_project: Option<Option<PathBuf>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,6 +157,8 @@ enum AssetLoadStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum EditorUiAction {
+    NewProjectDialog,
+    OpenProjectDialog,
     NewScene,
     OpenSceneDialog,
     SaveScene,
@@ -304,6 +313,8 @@ impl EditorApp {
 
     pub(super) fn run_ui_action(&mut self, action: EditorUiAction) {
         match action {
+            EditorUiAction::NewProjectDialog => self.new_project_dialog(),
+            EditorUiAction::OpenProjectDialog => self.open_project_dialog(),
             EditorUiAction::NewScene => self.new_scene(),
             EditorUiAction::OpenSceneDialog => self.open_scene_dialog(),
             EditorUiAction::SaveScene => self.save_scene(),

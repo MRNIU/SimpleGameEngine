@@ -14,7 +14,7 @@ use crate::{
     viewport::{GizmoDrag, GizmoHandle, ViewportAction, transform_for_gizmo_drag},
 };
 
-use super::{EditorApp, PendingFileAction};
+use super::{EditorApp, PendingFileAction, project};
 
 const UNSAVED_CHANGES_STATUS: &str = "Unsaved changes: save or discard first";
 
@@ -27,6 +27,22 @@ struct SemanticSmokeState {
 }
 
 impl EditorApp {
+    pub(super) fn new_project_dialog(&mut self) {
+        let Some(path) = self.pick_new_project_path() else {
+            self.pending_action = None;
+            return;
+        };
+        self.new_project_path_or_defer(path);
+    }
+
+    pub(super) fn open_project_dialog(&mut self) {
+        let Some(path) = self.pick_open_project_path() else {
+            self.pending_action = None;
+            return;
+        };
+        self.open_project_path_or_defer(path);
+    }
+
     pub(super) fn new_scene(&mut self) {
         if self.model.is_dirty() {
             self.pending_action = Some(PendingFileAction::New);
@@ -137,8 +153,72 @@ impl EditorApp {
         match self.pending_action.take() {
             Some(PendingFileAction::New) => self.replace_with_new_scene(),
             Some(PendingFileAction::Open(path)) => self.open_scene_path(&path),
+            Some(PendingFileAction::NewProject(path)) => {
+                if let Err(error) = self.new_project_path(&path) {
+                    self.status = format!("New project failed: {error}");
+                }
+            }
+            Some(PendingFileAction::OpenProject(path)) => {
+                if let Err(error) = self.open_project_path(&path) {
+                    self.status = format!("Open project failed: {error}");
+                }
+            }
             None => self.status.clear(),
         }
+    }
+
+    fn new_project_path_or_defer(&mut self, path: PathBuf) {
+        if self.model.is_dirty() {
+            self.pending_action = Some(PendingFileAction::NewProject(path));
+            self.status = UNSAVED_CHANGES_STATUS.to_owned();
+            return;
+        }
+        if let Err(error) = self.new_project_path(&path) {
+            self.status = format!("New project failed: {error}");
+        }
+    }
+
+    fn open_project_path_or_defer(&mut self, path: PathBuf) {
+        if self.model.is_dirty() {
+            self.pending_action = Some(PendingFileAction::OpenProject(path));
+            self.status = UNSAVED_CHANGES_STATUS.to_owned();
+            return;
+        }
+        if let Err(error) = self.open_project_path(&path) {
+            self.status = format!("Open project failed: {error}");
+        }
+    }
+
+    fn new_project_path(&mut self, path: &Path) -> anyhow::Result<()> {
+        let context = project::create_project(path)?;
+        self.install_project_context(context, "Project created")
+    }
+
+    fn open_project_path(&mut self, path: &Path) -> anyhow::Result<()> {
+        let context = project::open_project(path)?;
+        self.install_project_context(context, "Project opened")
+    }
+
+    fn install_project_context(
+        &mut self,
+        context: project::ProjectContext,
+        status: &str,
+    ) -> anyhow::Result<()> {
+        let scene_path = context.root.join(&context.current_scene);
+        let input = fs::read_to_string(&scene_path)?;
+        self.model.reopen_scene_from_str(&input)?;
+        self.model.clear_history();
+        self.model.mark_saved();
+        self.transform_gizmo.clear_drag();
+        self.pilot_camera = false;
+        self.clear_content_edit_sessions();
+        self.project_root = context.root.clone();
+        self.current_path = Some(context.current_scene.clone());
+        self.current_project = Some(context);
+        self.pending_action = None;
+        self.reload_asset_cache();
+        self.status = status.to_owned();
+        Ok(())
     }
 
     pub(super) fn run_smoke_file_workflow(
@@ -466,6 +546,24 @@ impl EditorApp {
             .pick_file()
     }
 
+    fn pick_new_project_path(&mut self) -> Option<PathBuf> {
+        #[cfg(test)]
+        if let Some(path) = self.test_dialog_paths.new_project.take() {
+            return path;
+        }
+
+        rfd::FileDialog::new().pick_folder()
+    }
+
+    fn pick_open_project_path(&mut self) -> Option<PathBuf> {
+        #[cfg(test)]
+        if let Some(path) = self.test_dialog_paths.open_project.take() {
+            return path;
+        }
+
+        rfd::FileDialog::new().pick_folder()
+    }
+
     pub(super) fn reload_asset_cache(&mut self) {
         self.asset_manifest =
             asset::AssetManifest::load_from_project_root(&self.project_root).unwrap_or_default();
@@ -530,6 +628,26 @@ impl EditorApp {
     #[cfg(test)]
     pub(super) fn set_next_import_obj_dialog_path_for_test(&mut self, path: Option<PathBuf>) {
         self.test_dialog_paths.import_obj = Some(path);
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_next_new_project_dialog_path_for_test(&mut self, path: Option<PathBuf>) {
+        self.test_dialog_paths.new_project = Some(path);
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_next_open_project_dialog_path_for_test(&mut self, path: Option<PathBuf>) {
+        self.test_dialog_paths.open_project = Some(path);
+    }
+
+    #[cfg(test)]
+    pub(super) fn new_project_path_for_test(&mut self, path: &Path) -> anyhow::Result<()> {
+        self.new_project_path(path)
+    }
+
+    #[cfg(test)]
+    pub(super) fn open_project_path_for_test(&mut self, path: &Path) -> anyhow::Result<()> {
+        self.open_project_path(path)
     }
 }
 

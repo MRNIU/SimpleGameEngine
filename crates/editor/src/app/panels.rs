@@ -60,6 +60,15 @@ impl EditorApp {
     pub(super) fn draw_menu_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
             ui.menu_button("File", |ui| {
+                if ui.button("New Project...").clicked() {
+                    self.run_ui_action(EditorUiAction::NewProjectDialog);
+                    ui.close();
+                }
+                if ui.button("Open Project...").clicked() {
+                    self.run_ui_action(EditorUiAction::OpenProjectDialog);
+                    ui.close();
+                }
+                ui.separator();
                 if ui.button("New Scene").clicked() {
                     self.run_ui_action(EditorUiAction::NewScene);
                     ui.close();
