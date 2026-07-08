@@ -6,7 +6,7 @@ use super::{
     panels::{inspector_transform_fields, mesh_size_for_display},
 };
 use ecs::{Camera, EntityId, EntityRecord, Light, MaterialOverride, Projection};
-use math::Transform;
+use math::{Quat, Transform};
 use std::path::PathBuf;
 
 use crate::model::PrimitiveKind;
@@ -132,6 +132,45 @@ fn viewport_action_handler_supports_gizmo_preview_commit_and_undo() {
             .transform
             .translation,
         [0.0, 0.0, 0.0]
+    );
+}
+
+#[test]
+fn rotate_viewport_transform_previews_then_commits_one_history_entry() {
+    let mut app = super::EditorApp::default();
+    let cube = app.model.create_cube();
+    app.model.mark_saved();
+    app.model.clear_history();
+    let before = app.model.world().entity(&cube).unwrap().transform;
+    let after = Transform {
+        rotation: Quat::from_rotation_z(0.5).to_array(),
+        ..before
+    };
+
+    app.handle_viewport_action(ViewportAction::PreviewTransform {
+        target: cube.clone(),
+        transform: after,
+    });
+
+    assert_eq!(
+        app.model.world().entity(&cube).unwrap().transform.rotation,
+        after.rotation
+    );
+    assert!(!app.model.is_dirty());
+    assert!(!app.model.can_undo());
+
+    app.handle_viewport_action(ViewportAction::CommitTransform {
+        target: cube.clone(),
+        before,
+        after,
+    });
+
+    assert!(app.model.is_dirty());
+    assert!(app.model.can_undo());
+    assert!(app.model.undo().unwrap());
+    assert_eq!(
+        app.model.world().entity(&cube).unwrap().transform.rotation,
+        before.rotation
     );
 }
 
@@ -1065,7 +1104,7 @@ fn modified_shortcuts_are_checked_before_plain_shortcuts() {
 }
 
 #[test]
-fn keyboard_shortcuts_switch_transform_modes_with_w_and_r() {
+fn keyboard_shortcuts_switch_transform_modes_with_w_e_and_r() {
     let source = include_str!("../app.rs");
     let shortcut_source = &source[source
         .find("fn handle_keyboard_shortcuts")
@@ -1073,6 +1112,8 @@ fn keyboard_shortcuts_switch_transform_modes_with_w_and_r() {
 
     assert!(shortcut_source.contains("egui::Key::W"));
     assert!(shortcut_source.contains("EditorUiAction::SetGizmoMode(GizmoMode::Move)"));
+    assert!(shortcut_source.contains("egui::Key::E"));
+    assert!(shortcut_source.contains("EditorUiAction::SetGizmoMode(GizmoMode::Rotate)"));
     assert!(shortcut_source.contains("egui::Key::R"));
     assert!(shortcut_source.contains("EditorUiAction::SetGizmoMode(GizmoMode::Scale)"));
 }
@@ -1170,6 +1211,7 @@ fn toolbar_source_uses_polish_groups_and_no_toolbar_path_label() {
     assert!(toolbar.contains("\"Cone\""));
     assert!(toolbar.contains("\"Cylinder\""));
     assert!(toolbar.contains("\"Move (W)\""));
+    assert!(toolbar.contains("\"Rotate (E)\""));
     assert!(toolbar.contains("\"Scale (R)\""));
     assert!(toolbar.contains("\"Transform\""));
     assert!(toolbar.contains("\"State\""));

@@ -426,6 +426,9 @@ impl EditorApp {
             if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::W)) {
                 self.run_ui_action(EditorUiAction::SetGizmoMode(GizmoMode::Move));
             }
+            if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::E)) {
+                self.run_ui_action(EditorUiAction::SetGizmoMode(GizmoMode::Rotate));
+            }
             if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::R)) {
                 self.run_ui_action(EditorUiAction::SetGizmoMode(GizmoMode::Scale));
             }

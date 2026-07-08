@@ -227,6 +227,15 @@ impl EditorApp {
             }
             if ui
                 .selectable_label(
+                    self.transform_gizmo.mode == viewport::GizmoMode::Rotate,
+                    "Rotate (E)",
+                )
+                .clicked()
+            {
+                self.run_ui_action(EditorUiAction::SetGizmoMode(viewport::GizmoMode::Rotate));
+            }
+            if ui
+                .selectable_label(
                     self.transform_gizmo.mode == viewport::GizmoMode::Scale,
                     "Scale (R)",
                 )
