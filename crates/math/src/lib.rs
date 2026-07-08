@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub use glam::{Mat4, Quat, Vec3};
+pub use glam::{Mat3, Mat4, Quat, Vec3};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Transform {

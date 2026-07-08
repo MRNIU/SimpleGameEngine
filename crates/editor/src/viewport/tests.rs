@@ -7,7 +7,7 @@ use super::{
 };
 use ecs::EntityId;
 use math::{Quat, Transform, Vec3};
-use render::{ViewportDrawCall, ViewportMeshSpan, ViewportVertex};
+use render::{ViewportDrawCall, ViewportMeshSpan, ViewportProjection, ViewportVertex};
 
 fn draw_with_two_mesh_spans() -> ViewportDrawCall {
     ViewportDrawCall {
@@ -55,11 +55,17 @@ fn draw_with_two_mesh_spans() -> ViewportDrawCall {
                 entity: EntityId::new("cube"),
                 vertex_range: 0..4,
                 index_range: 0..6,
+                world_bounds_min: [-0.8, -0.2, 0.0],
+                world_bounds_max: [-0.4, 0.2, 0.0],
+                world_center: [-0.6, 0.0, 0.0],
             },
             ViewportMeshSpan {
                 entity: EntityId::new("cube_1"),
                 vertex_range: 4..8,
                 index_range: 6..12,
+                world_bounds_min: [0.4, -0.2, 0.0],
+                world_bounds_max: [0.8, 0.2, 0.0],
+                world_center: [0.6, 0.0, 0.0],
             },
         ],
     }
@@ -141,6 +147,74 @@ fn view_camera_movement_changes_editor_only_view() {
     assert_ne!(before.transform.translation, after.transform.translation);
     assert!(movement.length() >= 1.0);
     assert_eq!(after.entity, EntityId::new("editor_view"));
+}
+
+#[test]
+fn view_camera_default_basis_is_z_up() {
+    let camera = ViewCamera::default();
+    let view = camera.to_viewport_view();
+    let projection = ViewportProjection::from_view(&view).unwrap();
+
+    let origin = projection.project_world_point([0.0, 0.0, 0.0]).unwrap();
+    let up = projection.project_world_point([0.0, 0.0, 1.0]).unwrap();
+    let right = projection.project_world_point([0.0, 1.0, 0.0]).unwrap();
+
+    assert!(up[1] > origin[1], "Z should map upward in normalized viewport");
+    assert!(right[0] > origin[0], "Y should map screen-right");
+}
+
+#[test]
+fn orthographic_presets_are_finite_and_named() {
+    let mut camera = ViewCamera::default();
+
+    for preset in [
+        super::ViewPreset::Top,
+        super::ViewPreset::Bottom,
+        super::ViewPreset::Front,
+        super::ViewPreset::Back,
+        super::ViewPreset::Right,
+        super::ViewPreset::Left,
+    ] {
+        camera.set_preset(preset);
+        let view = camera.to_viewport_view();
+        assert!(view.transform.translation.into_iter().all(f32::is_finite));
+        assert!(view.transform.rotation.into_iter().all(f32::is_finite));
+        assert!(camera.view_mode_label().contains("Orthographic"));
+    }
+}
+
+#[test]
+fn camera_hint_uses_world_metrics_for_distance() {
+    let mut draw = draw_with_two_mesh_spans();
+    draw.mesh_spans[0].world_center = [0.0, 0.0, 0.0];
+    draw.mesh_spans[1].world_center = [0.0, 3.0, 4.0];
+    let camera = ViewCamera::default();
+
+    let hint = camera.hint_text(Some(&draw), Some(&EntityId::new("cube_1")));
+
+    assert!(hint.contains("Speed"));
+    assert!(hint.contains("Distance"));
+    assert!(hint.contains("9.43"));
+}
+
+#[test]
+fn orthographic_fit_uses_world_metrics_for_center_and_scale() {
+    let mut camera = ViewCamera::default();
+    camera.set_preset(super::ViewPreset::Top);
+    let mut draw = draw_with_two_mesh_spans();
+    draw.mesh_spans[1].world_bounds_min = [10.0, 20.0, 0.0];
+    draw.mesh_spans[1].world_bounds_max = [14.0, 26.0, 2.0];
+    draw.mesh_spans[1].world_center = [12.0, 23.0, 1.0];
+
+    assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
+    let view = camera.to_viewport_view();
+
+    assert!(view.transform.translation.into_iter().all(f32::is_finite));
+    assert!(
+        camera
+            .hint_text(Some(&draw), Some(&EntityId::new("cube_1")))
+            .contains("Ortho Scale")
+    );
 }
 
 #[test]
@@ -501,8 +575,13 @@ fn fit_visible_draw_pans_edge_selection_toward_center() {
 
     assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
     let view = camera.to_viewport_view();
+    let projection = ViewportProjection::from_view(&view).unwrap();
+    let center = projection
+        .project_world_point(draw.mesh_spans[1].world_center)
+        .unwrap();
 
-    assert!((view.transform.translation[0] - 5.0).abs() < 0.1);
+    assert!(center[0].abs() < 0.000_1);
+    assert!(center[1].abs() < 0.000_1);
 }
 
 #[test]
@@ -512,8 +591,11 @@ fn fit_visible_draw_without_selection_centers_all_visible_cubes() {
 
     assert!(camera.fit_draw(&draw, None));
     let view = camera.to_viewport_view();
+    let projection = ViewportProjection::from_view(&view).unwrap();
+    let center = projection.project_world_point([0.0, 0.0, 0.0]).unwrap();
 
-    assert!(view.transform.translation[0].abs() < 0.1);
+    assert!(center[0].abs() < 0.000_1);
+    assert!(center[1].abs() < 0.000_1);
 }
 
 #[test]

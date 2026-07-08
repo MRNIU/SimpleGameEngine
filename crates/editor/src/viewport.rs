@@ -9,7 +9,7 @@ mod camera;
 mod gizmo;
 mod wgpu_bridge;
 
-pub(crate) use camera::{ViewCamera, ViewMoveInput};
+pub(crate) use camera::{ViewCamera, ViewMoveInput, ViewPreset};
 #[cfg(test)]
 pub(crate) use gizmo::GizmoHandleRect;
 pub(crate) use gizmo::{
