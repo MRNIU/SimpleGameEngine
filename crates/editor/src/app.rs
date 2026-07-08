@@ -269,6 +269,12 @@ impl EditorApp {
     }
 
     fn restore_viewport_transform(&mut self, target: EntityId, transform: Transform) {
+        if !self.target_is_current_selection(&target) {
+            self.transform_gizmo.clear_drag();
+            self.status = "Gizmo target changed".to_owned();
+            return;
+        }
+
         match self
             .model
             .restore_transform_preview(&target, transform, self.model.is_dirty())

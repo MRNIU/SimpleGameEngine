@@ -163,6 +163,33 @@ fn viewport_transform_action_drops_stale_target() {
 }
 
 #[test]
+fn restore_transform_action_drops_stale_target() {
+    let mut app = super::EditorApp::default();
+    let cube = app.model.create_cube();
+    app.model.mark_saved();
+    app.model.clear_history();
+    let before = app.model.world().entity(&cube).unwrap().transform;
+    app.model.select(EntityId::new("root"));
+    app.transform_gizmo.start_drag(crate::viewport::GizmoDrag {
+        target: cube.clone(),
+        handle: crate::viewport::GizmoHandle::MoveX,
+        start_pointer: egui::pos2(0.0, 0.0),
+        start_transform: before,
+    });
+
+    app.handle_viewport_action(ViewportAction::RestoreTransform {
+        target: cube.clone(),
+        transform: Transform::from_translation([3.0, 0.0, 0.0]),
+    });
+
+    assert_eq!(app.model.world().entity(&cube).unwrap().transform, before);
+    assert_eq!(app.transform_gizmo.drag(), None);
+    assert_eq!(app.status, "Gizmo target changed");
+    assert!(!app.model.is_dirty());
+    assert!(!app.model.can_undo());
+}
+
+#[test]
 fn name_edit_session_commits_one_history_entry() {
     let mut app = super::EditorApp::default();
     let cube = app.model.create_cube();
