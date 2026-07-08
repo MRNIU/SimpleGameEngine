@@ -322,12 +322,12 @@ impl EditorApp {
             .transform;
         let start_pointer = egui::pos2(10.0, 10.0);
         let end_pointer = egui::pos2(60.0, 10.0);
-        let after =
+        let moved =
             transform_for_gizmo_drag(GizmoHandle::MoveX, before, start_pointer, end_pointer);
 
         self.handle_viewport_action(ViewportAction::PreviewTransform {
             target: target.clone(),
-            transform: after,
+            transform: moved,
         });
         anyhow::ensure!(!self.model.is_dirty(), "gizmo preview dirtied the scene");
         anyhow::ensure!(!self.model.can_undo(), "gizmo preview wrote history");
@@ -335,7 +335,7 @@ impl EditorApp {
         self.handle_viewport_action(ViewportAction::CommitTransform {
             target: target.clone(),
             before,
-            after,
+            after: moved,
         });
         anyhow::ensure!(
             self.model.is_dirty(),
@@ -356,8 +356,67 @@ impl EditorApp {
             self.model
                 .world()
                 .entity(target.as_str())
-                .is_some_and(|entity| entity.transform == after),
+                .is_some_and(|entity| entity.transform == moved),
             "gizmo redo did not restore the committed transform"
+        );
+        self.model.mark_saved();
+        self.model.clear_history();
+
+        let rotate_pointer = egui::pos2(60.0, -40.0);
+        let rotate_preview =
+            transform_for_gizmo_drag(GizmoHandle::RotateZ, moved, start_pointer, rotate_pointer);
+        self.handle_viewport_action(ViewportAction::PreviewTransform {
+            target: target.clone(),
+            transform: rotate_preview,
+        });
+        let rotated = self
+            .model
+            .world()
+            .entity(target.as_str())
+            .ok_or_else(|| anyhow::anyhow!("smoke target cube missing after rotate preview"))?
+            .transform;
+        anyhow::ensure!(
+            rotated.translation == moved.translation
+                && rotated.scale == moved.scale
+                && rotated.rotation != moved.rotation,
+            "gizmo rotate preview did not update the transform"
+        );
+        anyhow::ensure!(
+            !self.model.is_dirty(),
+            "gizmo rotate preview dirtied the scene"
+        );
+        anyhow::ensure!(
+            !self.model.can_undo(),
+            "gizmo rotate preview wrote history"
+        );
+        self.handle_viewport_action(ViewportAction::CommitTransform {
+            target: target.clone(),
+            before: moved,
+            after: rotated,
+        });
+        anyhow::ensure!(
+            self.model.is_dirty(),
+            "gizmo rotate commit did not dirty the scene"
+        );
+        anyhow::ensure!(
+            self.model.can_undo(),
+            "gizmo rotate commit did not write history"
+        );
+        self.model.undo()?;
+        anyhow::ensure!(
+            self.model
+                .world()
+                .entity(target.as_str())
+                .is_some_and(|entity| entity.transform == moved),
+            "gizmo rotate undo did not restore the moved transform"
+        );
+        self.model.redo()?;
+        anyhow::ensure!(
+            self.model
+                .world()
+                .entity(target.as_str())
+                .is_some_and(|entity| entity.transform == rotated),
+            "gizmo rotate redo did not restore the rotated transform"
         );
 
         self.model.set_material_override(
@@ -385,7 +444,7 @@ impl EditorApp {
             target: target.clone(),
             handle: GizmoHandle::MoveX,
             start_pointer,
-            start_transform: after,
+            start_transform: rotated,
         });
         anyhow::ensure!(
             self.transform_gizmo.has_drag(),
@@ -405,7 +464,7 @@ impl EditorApp {
 
         Ok(SemanticSmokeState {
             target,
-            expected_transform: after,
+            expected_transform: rotated,
             imported_asset,
             transform_undo_redo_ok: true,
         })
