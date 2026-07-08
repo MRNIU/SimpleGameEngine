@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    ViewportView, extract_render_scene, fit_viewport_draw_to_size, viewport_draw_call,
-    viewport_draw_call_with_selection, viewport_draw_call_with_view,
+    ViewportProjection, ViewportView, extract_render_scene, fit_viewport_draw_to_size,
+    viewport_draw_call, viewport_draw_call_with_selection, viewport_draw_call_with_view,
     viewport_draw_call_with_view_and_meshes, viewport_pipeline_info, viewport_vertex_buffer_layout,
     viewport_vertex_bytes,
 };
@@ -281,6 +281,96 @@ fn viewport_view_projection_changes_projected_positions() {
     let narrow_draw = viewport_draw_call_with_view(&scene, None, &narrow).unwrap();
 
     assert_ne!(wide_draw.vertices, narrow_draw.vertices);
+}
+
+#[test]
+fn orthographic_projection_does_not_skew_screen_xy_by_depth() {
+    let view = ViewportView::new(
+        EntityId::new("top"),
+        Transform::identity(),
+        Projection::Orthographic { vertical_size: 5.0 },
+    );
+    let projection = ViewportProjection::from_view(&view).unwrap();
+
+    let near = projection.project_world_point([1.0, 2.0, 0.0]).unwrap();
+    let far = projection.project_world_point([1.0, 2.0, 10.0]).unwrap();
+
+    assert_eq!(near, far);
+}
+
+#[test]
+fn viewport_projection_matches_draw_call_vertices_for_cube_center() {
+    let mut world = world_with_camera();
+    add_cube(&mut world, "cube", [2.0, 0.0, 0.0]);
+    let scene = extract_render_scene(&world);
+    let view = ViewportView::new(
+        EntityId::new("editor_view"),
+        Transform::identity(),
+        Projection::Perspective {
+            fov_y_degrees: 60.0,
+        },
+    );
+
+    let draw = viewport_draw_call_with_view(&scene, Some(&EntityId::new("cube")), &view).unwrap();
+    let projection = ViewportProjection::from_view(&view).unwrap();
+    let projected = projection
+        .project_world_point(draw.mesh_spans[0].world_center)
+        .unwrap();
+
+    assert!(draw.vertices.iter().any(|vertex| {
+        (vertex.position[0] - projected[0]).abs() < 0.5
+            && (vertex.position[1] - projected[1]).abs() < 0.5
+    }));
+}
+
+#[test]
+fn viewport_mesh_span_records_world_metrics_for_primitives() {
+    let mut world = world_with_camera();
+    add_cube(&mut world, "cube", [1.0, 2.0, 3.0]);
+
+    let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
+    let span = &draw.mesh_spans[0];
+
+    assert_eq!(span.entity, EntityId::new("cube"));
+    assert!(span.world_bounds_min[0] < 1.0);
+    assert!(span.world_bounds_max[0] > 1.0);
+    assert_eq!(span.world_center, [1.0, 2.0, 3.0]);
+}
+
+#[test]
+fn viewport_mesh_span_records_world_metrics_for_imported_meshes() {
+    let uuid = AssetUuid::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap();
+    let asset_ref = format!("asset:{uuid}");
+    let mut meshes = BTreeMap::new();
+    meshes.insert(uuid, imported_triangle_mesh());
+    let mut world = world_with_camera();
+    add_mesh(
+        &mut world,
+        "imported",
+        "Imported",
+        &asset_ref,
+        Transform::from_translation([3.0, 4.0, 5.0]),
+    );
+
+    let draw = viewport_draw_call_with_view_and_meshes(
+        &extract_render_scene(&world),
+        Some(&EntityId::new("imported")),
+        &ViewportView::new(
+            EntityId::new("editor_view"),
+            Transform::identity(),
+            Projection::Perspective {
+                fov_y_degrees: 60.0,
+            },
+        ),
+        &meshes,
+    )
+    .unwrap();
+    let span = &draw.mesh_spans[0];
+
+    assert_eq!(span.entity, EntityId::new("imported"));
+    assert_eq!(span.world_bounds_min, [3.0, 4.0, 5.0]);
+    assert_eq!(span.world_bounds_max, [4.0, 5.0, 5.0]);
+    assert_eq!(span.world_center, [3.5, 4.5, 5.0]);
 }
 
 #[test]
