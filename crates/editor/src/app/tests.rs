@@ -549,6 +549,30 @@ fn shortcut_dispatch_still_routes_save_through_project_gate() {
 }
 
 #[test]
+fn editor_smoke_creates_temp_project_not_repo_assets() {
+    let mut app = super::EditorApp::default();
+    let path = temp_project_root("editor_smoke_creates_temp_project_not_repo_assets")
+        .join("seed.scene.ron");
+
+    let report = app.run_smoke_file_workflow(&path).unwrap();
+
+    let project = app.current_project.as_ref().expect("smoke project exists");
+    assert!(project.root.join("project.sge.ron").exists());
+    assert!(project.root.join("assets/asset_manifest.ron").exists());
+    assert!(
+        project
+            .root
+            .join("assets/imported/smoke_triangle.obj")
+            .exists()
+    );
+    assert!(report.app.imported_asset_reopened);
+    assert_eq!(
+        app.current_path,
+        Some(PathBuf::from("scenes/main.scene.ron"))
+    );
+}
+
+#[test]
 fn ui_action_create_duplicate_delete_undo_redo_use_model_state() {
     let mut app = super::EditorApp::default();
     let root = temp_project_root("ui_action_create_duplicate_delete_undo_redo_use_model_state");
