@@ -11,7 +11,7 @@ use math::Transform;
 
 use crate::{
     model::{EditorModel, PrimitiveKind},
-    viewport::{GizmoDrag, GizmoHandle, ViewportAction, transform_for_gizmo_drag},
+    viewport::{GizmoDrag, GizmoHandle, ViewPreset, ViewportAction, transform_for_gizmo_drag},
 };
 
 use super::{EditorApp, PendingFileAction, project};
@@ -254,6 +254,7 @@ impl EditorApp {
         self.new_project_path(&project_root)?;
         let semantic_state = self.run_semantic_smoke_actions()?;
         let scene_path = PathBuf::from(project::DEFAULT_SCENE_PATH);
+        self.viewport_camera.set_preset(ViewPreset::Top);
         self.save_scene_path(&scene_path)?;
         self.load_scene_from_relative_path(&scene_path)?;
 
@@ -285,6 +286,10 @@ impl EditorApp {
         anyhow::ensure!(
             app.pilot_camera_cleared_after_reopen,
             "smoke pilot camera survived reopen"
+        );
+        anyhow::ensure!(
+            app.viewport_state_reset_after_reopen,
+            "smoke viewport state survived reopen"
         );
         anyhow::ensure!(app.asset_count >= 1, "smoke imported asset missing");
         anyhow::ensure!(
@@ -529,6 +534,8 @@ impl EditorApp {
             history_cleared_after_reopen: !self.model.can_undo() && !self.model.can_redo(),
             gizmo_drag_cleared_after_reopen: !self.transform_gizmo.has_drag(),
             pilot_camera_cleared_after_reopen: !self.pilot_camera,
+            viewport_state_reset_after_reopen: self.viewport_camera.view_mode_label()
+                == "Perspective",
             asset_count: self.asset_manifest.assets.len(),
             imported_mesh_count: self.imported_meshes.len(),
             imported_asset_reopened: self.model.world().entities().any(|entity| {
@@ -1000,6 +1007,7 @@ mod tests {
         assert!(report.app.history_cleared_after_reopen);
         assert!(report.app.gizmo_drag_cleared_after_reopen);
         assert!(report.app.pilot_camera_cleared_after_reopen);
+        assert!(report.app.viewport_state_reset_after_reopen);
         assert!(report.app.asset_count >= 1);
         assert!(report.app.imported_mesh_count >= 1);
         assert!(report.app.imported_asset_reopened);

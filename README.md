@@ -19,10 +19,11 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 - Cargo workspace 包含 `app`、`ecs`、`math`、`asset`、`scene`、`render`、`window`、`input`、`editor`、`runtime`。
 - `asset` 负责 `assets/asset_manifest.ron`、稳定 UUID、OBJ loader、导入目标路径和 imported CPU mesh 数据；`ecs` 保存 entity/component 真源，`scene` 负责 `.scene.ron` roundtrip，`render` 从 ECS 抽取 viewport 数据并保留 `wgpu` viewport pipeline 边界。
 - `editor` 使用 `eframe::Renderer::Wgpu`，提供 Unreal-like 左 Hierarchy / 中央 Viewport / 右 Inspector 布局，顶部菜单栏、分组 toolbar、底部状态栏、固定快捷键、material color、light 参数、camera projection 的即时 Inspector 编辑，以及 editor-only `Pilot Camera` 预览开关。
+- `editor` viewport 使用 `Z-up` editor camera、固定 `X-Y` grid、XYZ axis、orientation cube、camera speed/distance hint 和 Move/Rotate/Scale gizmo。
 - `editor` 启动时没有隐式用户 project。用户可以创建 project，或通过 `Open Project...` 选择已有 `project.sge.ron`；project-scoped scene 保存和 OBJ 导入在 project 打开前禁用。
 - 用户 project 在自身根目录下使用 `scenes/main.scene.ron`、`assets/asset_manifest.ron` 和 `assets/imported/`。仓库根 `assets/` 只保存 engine-owned primitive/default material 资源；OBJ loader sample inputs 位于 `examples/editor_smoke/assets/obj/`。
 - 默认 runtime/editor sample project 位于 `examples/editor_smoke/`。
-- `editor` 还保留 toolbar、`render::ViewportRenderer` viewport、editor-only viewport camera controls、viewport click selection、Move/Rotate/Scale transform gizmo、Undo/Redo、内置 Cube/Sphere/Cone/Cylinder primitive 创建、系统文件对话框 New/Open Project、New/Open/Save/Save As scene 和 Import OBJ 文件工作流、Assets 区和 imported OBJ viewport 显示；用户工作流不再保留可编辑 path input。
+- `editor` 还保留 toolbar、`render::ViewportRenderer` viewport、editor-only viewport camera controls、viewport reference aids、viewport click selection、Move/Rotate/Scale transform gizmo、Undo/Redo、内置 Cube/Sphere/Cone/Cylinder primitive 创建、系统文件对话框 New/Open Project、New/Open/Save/Save As scene 和 Import OBJ 文件工作流、Assets 区和 imported OBJ viewport 显示；用户工作流不再保留可编辑 path input。
 - `runtime` 可以按显式 project root 加载 scene + manifest + imported OBJ，并生成 viewport draw call。
 - 当前发布版 `eframe/egui-wgpu 0.35.0` 仍依赖 `wgpu 29`；workspace 统一到 `wgpu 29.0.4`，避免 editor/render 跨版本共享 GPU 类型。
 
@@ -97,14 +98,14 @@ cargo run -p runtime -- examples/editor_smoke/scenes/main.scene.ron examples/edi
 # 运行 editor；host-native 是 opt-in，GUI smoke 不属于默认 Dev Container gate
 cargo run -p editor
 
-# 虚拟 X editor smoke；通过退出码和 summary log 验证临时 project、文件工作流 save/open、OBJ import、manifest/cache、Move/Rotate/Scale gizmo semantic preview/commit/Undo/Redo、material/light/camera 内容编辑、editor-only state 清理和 ViewportRenderer prepare/paint
+# 虚拟 X editor smoke；通过退出码和 summary log 验证临时 project、文件工作流 save/open、OBJ import、manifest/cache、Move/Rotate/Scale gizmo semantic preview/commit/Undo/Redo、material/light/camera 内容编辑、editor-only state 清理、viewport reference state reset 和 ViewportRenderer prepare/paint
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron'
 
 # host-native 自动 smoke；opt-in，只使用已存在的宿主 Rust 环境
 cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron
 ```
 
-虚拟 X 和 host-native `--smoke` 会在 smoke 输出 seed 目录下创建临时 project，并证明 editor 文件工作流 save/open 闭环、内部 OBJ import、manifest/cache、`asset:<uuid>` reopen、imported mesh viewport span、Move/Rotate/Scale gizmo semantic preview/commit/Undo/Redo、material/light/camera 参数 smoke、editor-only history/gizmo/Pilot 清理，以及真实 `ViewportRenderer` prepare/paint 触达；它们仍不等于人工确认真实窗口像素、真实 OS 鼠标坐标自动化、真实系统文件对话框或跨平台 GPU 兼容性证明。
+虚拟 X 和 host-native `--smoke` 会在 smoke 输出 seed 目录下创建临时 project，并证明 editor 文件工作流 save/open 闭环、内部 OBJ import、manifest/cache、`asset:<uuid>` reopen、imported mesh viewport span、Move/Rotate/Scale gizmo semantic preview/commit/Undo/Redo、material/light/camera 参数 smoke、editor-only history/gizmo/Pilot 清理、viewport reference state reset，以及真实 `ViewportRenderer` prepare/paint 触达；它们仍不等于人工确认真实窗口像素、真实 OS 鼠标坐标自动化、真实系统文件对话框或跨平台 GPU 兼容性证明。
 
 ## 代码结构
 
