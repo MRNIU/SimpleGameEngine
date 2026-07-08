@@ -17,6 +17,7 @@ use crate::{
 mod file_workflow;
 mod fonts;
 mod panels;
+mod project;
 
 use fonts::install_cjk_font;
 
