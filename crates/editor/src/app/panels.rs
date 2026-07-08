@@ -5,7 +5,7 @@ use eframe::egui;
 use math::Transform;
 
 use crate::{
-    model::EditorModel,
+    model::{EditorModel, PrimitiveKind},
     viewport::{self, draw_viewport},
 };
 
@@ -112,6 +112,20 @@ impl EditorApp {
                     ui.close();
                 }
             });
+            ui.menu_button("Create", |ui| {
+                if ui.button("Cube").clicked() {
+                    self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cube));
+                    ui.close();
+                }
+                if ui.button("Sphere").clicked() {
+                    self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Sphere));
+                    ui.close();
+                }
+                if ui.button("Cone").clicked() {
+                    self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cone));
+                    ui.close();
+                }
+            });
             ui.menu_button("View", |ui| {
                 if ui.button("Fit View").clicked() {
                     self.run_ui_action(EditorUiAction::FitView);
@@ -134,7 +148,13 @@ impl EditorApp {
     pub(super) fn draw_top_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
             if ui.button("Cube").clicked() {
-                self.run_ui_action(EditorUiAction::CreateCube);
+                self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cube));
+            }
+            if ui.button("Sphere").clicked() {
+                self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Sphere));
+            }
+            if ui.button("Cone").clicked() {
+                self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cone));
             }
             ui.separator();
 
@@ -517,7 +537,7 @@ pub(super) fn primitive_mesh_size_for_display(
     transform: Transform,
 ) -> Option<MeshSizeDisplay> {
     let local = match asset_ref {
-        "primitive:cube" => [2.0, 2.0, 2.0],
+        "primitive:cube" | "primitive:sphere" | "primitive:cone" => [2.0, 2.0, 2.0],
         _ => return None,
     };
     Some(MeshSizeDisplay {

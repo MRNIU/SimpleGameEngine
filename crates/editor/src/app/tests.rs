@@ -9,6 +9,7 @@ use ecs::{Camera, EntityId, EntityRecord, Light, MaterialOverride, Projection};
 use math::Transform;
 use std::path::PathBuf;
 
+use crate::model::PrimitiveKind;
 use crate::viewport::ViewportAction;
 
 #[test]
@@ -330,7 +331,7 @@ fn import_obj_dialog_cancel_does_not_change_manifest_or_scene() {
 fn ui_action_create_duplicate_delete_undo_redo_use_model_state() {
     let mut app = super::EditorApp::default();
 
-    app.run_ui_action(super::EditorUiAction::CreateCube);
+    app.run_ui_action(super::EditorUiAction::CreatePrimitive(PrimitiveKind::Cube));
     let first = app
         .model
         .selected()
@@ -351,6 +352,29 @@ fn ui_action_create_duplicate_delete_undo_redo_use_model_state() {
 
     app.run_ui_action(super::EditorUiAction::Redo);
     assert!(app.model.world().entity(duplicate.as_str()).is_none());
+}
+
+#[test]
+fn ui_action_create_primitives_uses_model_state() {
+    let mut app = super::EditorApp::default();
+
+    app.run_ui_action(super::EditorUiAction::CreatePrimitive(PrimitiveKind::Cube));
+    app.run_ui_action(super::EditorUiAction::CreatePrimitive(
+        PrimitiveKind::Sphere,
+    ));
+    app.run_ui_action(super::EditorUiAction::CreatePrimitive(PrimitiveKind::Cone));
+
+    let assets = app
+        .model
+        .world()
+        .entities()
+        .filter_map(|entity| entity.mesh.as_ref().map(|mesh| mesh.asset.as_str()))
+        .collect::<Vec<_>>();
+    assert!(assets.contains(&"primitive:cube"));
+    assert!(assets.contains(&"primitive:sphere"));
+    assert!(assets.contains(&"primitive:cone"));
+    assert!(app.model.is_dirty());
+    assert!(app.model.can_undo());
 }
 
 #[test]
@@ -735,16 +759,17 @@ fn imported_mesh_size_display_uses_local_and_scaled_extents() {
 }
 
 #[test]
-fn primitive_cube_size_display_uses_two_unit_cube() {
+fn primitive_size_display_uses_two_unit_bounds() {
     let transform = Transform {
         scale: [1.0, 2.0, 0.5],
         ..Transform::identity()
     };
 
-    let size = super::panels::primitive_mesh_size_for_display("primitive:cube", transform).unwrap();
-
-    assert_eq!(size.local, [2.0, 2.0, 2.0]);
-    assert_eq!(size.scaled, [2.0, 4.0, 1.0]);
+    for asset_ref in ["primitive:cube", "primitive:sphere", "primitive:cone"] {
+        let size = super::panels::primitive_mesh_size_for_display(asset_ref, transform).unwrap();
+        assert_eq!(size.local, [2.0, 2.0, 2.0]);
+        assert_eq!(size.scaled, [2.0, 4.0, 1.0]);
+    }
 }
 
 #[test]
@@ -754,8 +779,8 @@ fn menu_bar_source_contains_expected_top_level_menus() {
     assert!(source.contains("draw_menu_bar"));
     assert!(source.contains("\"File\""));
     assert!(source.contains("\"Edit\""));
+    assert!(source.contains("ui.menu_button(\"Create\""));
     assert!(source.contains("\"View\""));
-    assert!(!source.contains("ui.menu_button(\"Create\""));
     assert!(source.contains("EditorUiAction::NewScene"));
     assert!(source.contains("EditorUiAction::FitView"));
 }
@@ -781,7 +806,6 @@ fn toolbar_source_uses_polish_groups_and_no_toolbar_path_label() {
             .find("pub(super) fn draw_editor_body")
             .expect("editor body follows toolbar")];
 
-    assert!(!source.contains("ui.menu_button(\"Create\""));
     assert!(!toolbar.contains("ui.label(\"File\")"));
     assert!(!toolbar.contains("ui.label(\"Edit\")"));
     assert!(!toolbar.contains("ui.label(\"Create\")"));
@@ -790,6 +814,8 @@ fn toolbar_source_uses_polish_groups_and_no_toolbar_path_label() {
     assert!(!toolbar.contains("ui.button(\"Open\")"));
     assert!(!toolbar.contains("ui.button(\"Save\")"));
     assert!(toolbar.contains("\"Cube\""));
+    assert!(toolbar.contains("\"Sphere\""));
+    assert!(toolbar.contains("\"Cone\""));
     assert!(toolbar.contains("\"Move (W)\""));
     assert!(toolbar.contains("\"Scale (R)\""));
     assert!(toolbar.contains("\"Transform\""));

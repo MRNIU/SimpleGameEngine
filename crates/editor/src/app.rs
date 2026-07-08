@@ -7,7 +7,7 @@ use eframe::egui;
 use math::Transform;
 
 use crate::{
-    model::{EditorError, EditorModel, EditorSmokeReport},
+    model::{EditorError, EditorModel, EditorSmokeReport, PrimitiveKind},
     viewport::{
         GizmoMode, TransformGizmoState, ViewCamera, ViewportAction, ViewportWgpuProbe,
         install_viewport_renderer,
@@ -157,7 +157,7 @@ pub(super) enum EditorUiAction {
     DiscardPendingAction,
     Undo,
     Redo,
-    CreateCube,
+    CreatePrimitive(PrimitiveKind),
     DuplicateSelection,
     DeleteSelection,
     SetGizmoMode(GizmoMode),
@@ -319,8 +319,8 @@ impl EditorApp {
                     self.status = "Redone".to_owned();
                 }
             }
-            EditorUiAction::CreateCube => {
-                self.model.create_cube();
+            EditorUiAction::CreatePrimitive(kind) => {
+                self.model.create_primitive(kind);
             }
             EditorUiAction::DuplicateSelection => match self.model.duplicate_selected() {
                 Ok(_) => self.status = "Duplicated".to_owned(),
