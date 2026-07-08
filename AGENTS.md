@@ -29,7 +29,7 @@
 | `crates/scene/` | `.scene.ron` save/load 和可保存 world subset | GPU 资源、窗口状态、editor panel 状态 |
 | `crates/render/` | wgpu 初始化、viewport mesh render、camera | editor 数据结构所有权 |
 | `crates/editor/` | egui panels、hierarchy、inspector、viewport | 底层 ECS 存储实现 |
-| `assets/` | primitive 和示例资源 | 运行时生成缓存 |
+| `assets/` | engine-owned primitive 和默认材质资源 | 用户 project 资源、运行时生成缓存 |
 | `crates/*/tests/` | Rust integration tests | 依赖人工 GUI 的唯一验证 |
 
 旧 `src/`、`test/unit_test/`、`test/system_test/`、`cmake/`、CMake 配置和 C++ 资源路径不是新的保留边界；当前 Rust reset 后如需参考旧实现，通过 Git 历史查看。
@@ -69,8 +69,8 @@
 
 最后审阅日期：2026-07-09
 
-- 当前阶段：editor 使用显式 `project.sge.ron` project 工作上下文；用户 scene 和 imported OBJ 只能写入当前 project，仓库根不能作为用户 project。
-- 示例 project 真源：`examples/projects/editor_smoke/`。
+- 当前阶段：editor 使用显式 project 工作上下文；Open Project 选择已有 `project.sge.ron`，不把空文件夹初始化为 project；用户 scene 和 imported OBJ 只能写入当前 project。
+- 示例 project 真源：`examples/editor_smoke/`。
 - 已通过证据：人工 host-native editor smoke 已确认真实窗口像素输出、两次 `New Cube`、手动移动第二个 cube、保存并重新打开 `.scene.ron`
 - 已完成收口：editor 已按现有 `model` / `app` / `viewport` 边界拆薄，文件 IO 留在 `editor::app`，`crates/editor/src/lib.rs` 只保留模块入口和 re-export
 - 下一个里程碑：继续扩 editor 功能前先明确单个用户可见目标，不新增空壳 crate 或大管线

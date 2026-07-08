@@ -604,7 +604,9 @@ impl EditorApp {
             return path;
         }
 
-        rfd::FileDialog::new().pick_folder()
+        rfd::FileDialog::new()
+            .add_filter("SimpleGameEngine Project", &["sge.ron"])
+            .pick_file()
     }
 
     pub(super) fn reload_asset_cache(&mut self) {
@@ -936,10 +938,10 @@ mod tests {
 
         let report = app.run_smoke_file_workflow(&path).unwrap();
 
-        assert_eq!(report.semantic.mesh_count, 6);
+        assert_eq!(report.semantic.mesh_count, 7);
         assert!(report.semantic.has_camera);
         assert!(report.semantic.has_light);
-        assert_eq!(report.semantic.viewport_index_count, 240);
+        assert_eq!(report.semantic.viewport_index_count, 276);
         assert!(report.semantic.transform_undo_redo_ok);
         assert!(report.semantic.content_reopen_ok);
         assert!(report.app.history_cleared_after_reopen);

@@ -296,7 +296,7 @@ fn import_obj_path_creates_manifest_asset_entity_and_draw_call() {
         &app.imported_meshes,
     )
     .unwrap();
-    assert_eq!(draw.mesh_spans[0].entity, selected);
+    assert!(draw.mesh_spans.iter().any(|span| span.entity == selected));
 }
 
 #[test]
@@ -361,11 +361,11 @@ fn new_project_dialog_creates_project_and_sets_current_scene() {
 }
 
 #[test]
-fn open_project_dialog_loads_project_without_using_cwd() {
-    let root = temp_project_root("open_project_dialog_loads_project_without_using_cwd");
+fn open_project_dialog_loads_project_marker_file() {
+    let root = temp_project_root("open_project_dialog_loads_project_marker_file");
     super::project::create_project(&root).unwrap();
     let mut app = super::EditorApp::default();
-    app.set_next_open_project_dialog_path_for_test(Some(root.clone()));
+    app.set_next_open_project_dialog_path_for_test(Some(root.join("project.sge.ron")));
 
     app.run_ui_action(super::EditorUiAction::OpenProjectDialog);
 
@@ -375,7 +375,46 @@ fn open_project_dialog_loads_project_without_using_cwd() {
         project.current_scene,
         PathBuf::from("scenes/main.scene.ron")
     );
+    assert!(app.model.world().entity("cube").is_some());
     assert_eq!(app.status, "Project opened");
+}
+
+#[test]
+fn open_project_dialog_rejects_folder_without_marker() {
+    let root = temp_project_root("open_project_dialog_rejects_folder_without_marker");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("notes.txt"), "not a project").unwrap();
+    let mut app = super::EditorApp::default();
+    app.set_next_open_project_dialog_path_for_test(Some(root.clone()));
+
+    app.run_ui_action(super::EditorUiAction::OpenProjectDialog);
+
+    assert!(app.current_project.is_none());
+    assert_eq!(app.status, "Open project failed: project.sge.ron not found");
+    assert!(!root.join("project.sge.ron").exists());
+}
+
+#[test]
+fn open_project_dialog_rejects_corrupt_project_file_without_switching() {
+    let first_root = temp_project_root("open_project_corrupt_first");
+    let corrupt_root = temp_project_root("open_project_corrupt_second");
+    std::fs::create_dir_all(&corrupt_root).unwrap();
+    std::fs::write(corrupt_root.join("project.sge.ron"), "not valid ron").unwrap();
+    let mut app = super::EditorApp::default();
+    app.new_project_path_for_test(&first_root).unwrap();
+    app.set_next_open_project_dialog_path_for_test(Some(corrupt_root.join("project.sge.ron")));
+
+    app.run_ui_action(super::EditorUiAction::OpenProjectDialog);
+
+    assert_eq!(app.current_project.as_ref().unwrap().root, first_root);
+    assert!(
+        app.status
+            .starts_with("Open project failed: failed to parse project file:")
+    );
+    assert_eq!(
+        std::fs::read_to_string(corrupt_root.join("project.sge.ron")).unwrap(),
+        "not valid ron"
+    );
 }
 
 #[test]
@@ -411,13 +450,15 @@ fn dirty_open_project_defers_switch_until_discard() {
     let mut app = super::EditorApp::default();
     app.new_project_path_for_test(&first_root).unwrap();
     app.model.create_cube();
-    app.set_next_open_project_dialog_path_for_test(Some(second_root.clone()));
+    app.set_next_open_project_dialog_path_for_test(Some(second_root.join("project.sge.ron")));
 
     app.run_ui_action(super::EditorUiAction::OpenProjectDialog);
 
     assert_eq!(
         app.pending_action,
-        Some(super::PendingFileAction::OpenProject(second_root.clone()))
+        Some(super::PendingFileAction::OpenProject(
+            second_root.join("project.sge.ron")
+        ))
     );
     assert_eq!(app.current_project.as_ref().unwrap().root, first_root);
     assert_eq!(app.status, "Unsaved changes: save or discard first");
@@ -430,13 +471,18 @@ fn dirty_open_project_defers_switch_until_discard() {
 }
 
 #[test]
-fn new_and_open_project_reject_repository_root() {
-    let root = temp_repository_root("new_and_open_project_reject_repository_root");
+fn new_and_open_project_allow_repository_root_shape() {
+    let root = temp_repository_root("new_and_open_project_allow_repository_root_shape");
     let mut app = super::EditorApp::default();
 
-    assert!(app.new_project_path_for_test(&root).is_err());
-    assert!(app.open_project_path_for_test(&root).is_err());
-    assert!(app.current_project.is_none());
+    app.new_project_path_for_test(&root).unwrap();
+    assert!(app.current_project.is_some());
+    assert!(app.model.world().entity("cube").is_some());
+
+    let mut reopened = super::EditorApp::default();
+    reopened.open_project_path_for_test(&root).unwrap();
+    assert!(reopened.current_project.is_some());
+    assert!(reopened.model.world().entity("cube").is_some());
 }
 
 #[test]
@@ -549,6 +595,14 @@ fn shortcut_dispatch_still_routes_save_through_project_gate() {
 }
 
 #[test]
+fn open_project_filter_does_not_advertise_scene_ron_files() {
+    let source = include_str!("file_workflow.rs");
+
+    assert!(source.contains(r#"add_filter("SimpleGameEngine Project", &["sge.ron"])"#));
+    assert!(!source.contains(r#"&["sge.ron", "ron"]"#));
+}
+
+#[test]
 fn editor_smoke_creates_temp_project_not_repo_assets() {
     let mut app = super::EditorApp::default();
     let path = temp_project_root("editor_smoke_creates_temp_project_not_repo_assets")
@@ -569,6 +623,19 @@ fn editor_smoke_creates_temp_project_not_repo_assets() {
     assert_eq!(
         app.current_path,
         Some(PathBuf::from("scenes/main.scene.ron"))
+    );
+}
+
+#[test]
+fn sample_project_is_direct_child_of_examples() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/editor_smoke");
+
+    assert!(root.join("project.sge.ron").exists());
+    assert!(root.join("scenes/main.scene.ron").exists());
+    assert!(
+        !root
+            .join("../projects/editor_smoke/project.sge.ron")
+            .exists()
     );
 }
 

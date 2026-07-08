@@ -34,16 +34,12 @@ pub(super) enum ProjectError {
     InvalidRelativePath,
     #[error("scene path must end with .scene.ron")]
     InvalidSceneExtension,
-    #[error("repository root cannot be used as a user project")]
-    RepositoryRoot,
-    #[error("project directory is not empty")]
-    NonEmptyDirectory,
-    #[error("missing project file")]
-    MissingProjectFile,
     #[error("unsupported project version: {0}")]
     UnsupportedVersion(u32),
     #[error("path is outside the current project")]
     OutsideProject,
+    #[error("project.sge.ron not found")]
+    MissingProjectFile,
     #[error("failed to read or write project file: {0}")]
     Io(#[from] std::io::Error),
     #[error("failed to serialize project file: {0}")]
@@ -106,25 +102,40 @@ pub(super) fn save_as_relative_path(
     validate_relative_scene_path(&relative_parent.join(file_name))
 }
 
-pub(super) fn is_repository_root(path: &Path) -> bool {
-    path.join("Cargo.toml").is_file()
-        && path.join("crates").is_dir()
-        && path.join("AGENTS.md").is_file()
-        && path.join("assets/primitives").is_dir()
+pub(super) fn create_project(root: &Path) -> Result<ProjectContext, ProjectError> {
+    initialize_project_files(root, true)
 }
 
-pub(super) fn create_project(root: &Path) -> Result<ProjectContext, ProjectError> {
-    if is_repository_root(root) {
-        return Err(ProjectError::RepositoryRoot);
-    }
-    if root.exists() {
-        if root.join(PROJECT_FILE_NAME).exists() {
-            return Err(ProjectError::NonEmptyDirectory);
+pub(super) fn open_project(selection: &Path) -> Result<ProjectContext, ProjectError> {
+    let root = project_root_for_selection(selection)?;
+    initialize_project_files(&root, false)
+}
+
+fn project_root_for_selection(selection: &Path) -> Result<PathBuf, ProjectError> {
+    if selection
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == PROJECT_FILE_NAME)
+    {
+        if !selection.is_file() {
+            return Err(ProjectError::MissingProjectFile);
         }
-        if fs::read_dir(root)?.next().is_some() {
-            return Err(ProjectError::NonEmptyDirectory);
-        }
+        return Ok(selection
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf());
     }
+    if selection.join(PROJECT_FILE_NAME).is_file() {
+        return Ok(selection.to_path_buf());
+    }
+    Err(ProjectError::MissingProjectFile)
+}
+
+fn initialize_project_files(
+    root: &Path,
+    create_missing_project_file: bool,
+) -> Result<ProjectContext, ProjectError> {
+    fs::create_dir_all(root)?;
     fs::create_dir_all(root.join("scenes"))?;
     fs::create_dir_all(root.join("assets/imported"))?;
 
@@ -132,64 +143,42 @@ pub(super) fn create_project(root: &Path) -> Result<ProjectContext, ProjectError
         .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.trim().is_empty())
-        .ok_or(ProjectError::EmptyName)?
+        .unwrap_or("project")
         .to_owned();
     let document = ProjectDocument {
         version: PROJECT_VERSION,
         name,
         default_scene: PathBuf::from(DEFAULT_SCENE_PATH),
     };
-    write_document(root, &document)?;
-
-    let model = crate::model::EditorModel::default();
-    fs::write(root.join(DEFAULT_SCENE_PATH), model.save_scene_to_string()?)?;
-    asset::AssetManifest::default().save_to_project_root(root)?;
-
-    Ok(ProjectContext {
-        root: root.to_path_buf(),
-        document,
-        current_scene: PathBuf::from(DEFAULT_SCENE_PATH),
-    })
-}
-
-pub(super) fn open_project(selection: &Path) -> Result<ProjectContext, ProjectError> {
-    let root = if selection
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name == PROJECT_FILE_NAME)
-    {
-        selection
-            .parent()
-            .ok_or(ProjectError::MissingProjectFile)?
-            .to_path_buf()
-    } else {
-        selection.to_path_buf()
-    };
-    if is_repository_root(&root) {
-        return Err(ProjectError::RepositoryRoot);
-    }
 
     let document_path = root.join(PROJECT_FILE_NAME);
-    if !document_path.exists() {
+    let document = if document_path.exists() {
+        let document: ProjectDocument = ron::from_str(&fs::read_to_string(&document_path)?)?;
+        validate_document(&document)?;
+        document
+    } else if create_missing_project_file {
+        write_document(root, &document)?;
+        document
+    } else {
         return Err(ProjectError::MissingProjectFile);
-    }
-    let document: ProjectDocument = ron::from_str(&fs::read_to_string(&document_path)?)?;
-    validate_document(&document)?;
+    };
+
     let current_scene = document.default_scene.clone();
     let scene_path = root.join(&current_scene);
     if !scene_path.exists() {
         if let Some(parent) = scene_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let model = crate::model::EditorModel::default();
+        let mut model = crate::model::EditorModel::default();
+        model.create_cube();
         fs::write(&scene_path, model.save_scene_to_string()?)?;
     }
-    if !asset::manifest_path(&root).exists() {
-        asset::AssetManifest::default().save_to_project_root(&root)?;
+    if !asset::manifest_path(root).exists() {
+        asset::AssetManifest::default().save_to_project_root(root)?;
     }
 
     Ok(ProjectContext {
-        root,
+        root: root.to_path_buf(),
         document,
         current_scene,
     })
@@ -258,15 +247,48 @@ mod tests {
     }
 
     #[test]
-    fn create_project_rejects_non_empty_non_project_directory() {
-        let root = temp_root("create_project_rejects_non_empty_non_project_directory");
+    fn create_project_initializes_non_empty_directory_with_default_cube() {
+        let root = temp_root("create_project_initializes_non_empty_directory_with_default_cube");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("notes.txt"), "not a project").unwrap();
+
+        create_project(&root).unwrap();
+
+        assert!(root.join("notes.txt").exists());
+        assert_default_scene_has_cube(&root);
+    }
+
+    #[test]
+    fn open_project_rejects_folder_without_marker() {
+        let root = temp_root("open_project_rejects_folder_without_marker");
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("notes.txt"), "not a project").unwrap();
 
         assert!(matches!(
-            create_project(&root),
-            Err(ProjectError::NonEmptyDirectory)
+            open_project(&root),
+            Err(ProjectError::MissingProjectFile)
         ));
+        assert!(!root.join(PROJECT_FILE_NAME).exists());
+    }
+
+    #[test]
+    fn open_project_accepts_project_marker_file() {
+        let root = temp_root("open_project_accepts_project_marker_file");
+        create_project(&root).unwrap();
+
+        let context = open_project(&root.join(PROJECT_FILE_NAME)).unwrap();
+
+        assert_eq!(context.root, root);
+    }
+
+    #[test]
+    fn open_project_accepts_folder_with_project_marker() {
+        let root = temp_root("open_project_accepts_folder_with_project_marker");
+        create_project(&root).unwrap();
+
+        let context = open_project(&root).unwrap();
+
+        assert_eq!(context.root, root);
     }
 
     #[test]
@@ -314,22 +336,22 @@ mod tests {
     }
 
     #[test]
-    fn repository_root_guard_rejects_current_repo_shape() {
-        let root = temp_root("repository_root_guard_rejects_current_repo_shape");
+    fn repository_root_shape_is_allowed_as_project() {
+        let root = temp_root("repository_root_shape_is_allowed_as_project");
         fs::create_dir_all(root.join("crates")).unwrap();
         fs::create_dir_all(root.join("assets/primitives")).unwrap();
         fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
         fs::write(root.join("AGENTS.md"), "# rules\n").unwrap();
 
-        assert!(is_repository_root(&root));
-        assert!(matches!(
-            create_project(&root),
-            Err(ProjectError::RepositoryRoot)
-        ));
-        assert!(matches!(
-            open_project(&root),
-            Err(ProjectError::RepositoryRoot)
-        ));
+        create_project(&root).unwrap();
+        open_project(&root).unwrap();
+        assert_default_scene_has_cube(&root);
+    }
+
+    fn assert_default_scene_has_cube(root: &Path) {
+        let scene = fs::read_to_string(root.join(DEFAULT_SCENE_PATH)).unwrap();
+        let model = crate::model::EditorModel::from_scene_str(&scene).unwrap();
+        assert!(model.world().entity("cube").is_some());
     }
 
     fn temp_root(name: &str) -> PathBuf {

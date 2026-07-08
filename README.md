@@ -19,9 +19,9 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 - Cargo workspace 包含 `app`、`ecs`、`math`、`asset`、`scene`、`render`、`window`、`input`、`editor`、`runtime`。
 - `asset` 负责 `assets/asset_manifest.ron`、稳定 UUID、OBJ loader、导入目标路径和 imported CPU mesh 数据；`ecs` 保存 entity/component 真源，`scene` 负责 `.scene.ron` roundtrip，`render` 从 ECS 抽取 viewport 数据并保留 `wgpu` viewport pipeline 边界。
 - `editor` 使用 `eframe::Renderer::Wgpu`，提供 Unreal-like 左 Hierarchy / 中央 Viewport / 右 Inspector 布局，顶部菜单栏、分组 toolbar、底部状态栏、固定快捷键、material color、light 参数、camera projection 的即时 Inspector 编辑，以及 editor-only `Pilot Camera` 预览开关。
-- `editor` 启动时没有隐式用户 project。用户需要创建或打开带 `project.sge.ron` 标记的 project；project-scoped scene 保存和 OBJ 导入在 project 打开前禁用。
-- 用户 project 在自身根目录下使用 `scenes/main.scene.ron`、`assets/asset_manifest.ron` 和 `assets/imported/`。仓库 `assets/` 是 engine/sample input，不是默认用户 project。
-- 默认 runtime/editor sample project 位于 `examples/projects/editor_smoke/`。
+- `editor` 启动时没有隐式用户 project。用户可以创建 project，或通过 `Open Project...` 选择已有 `project.sge.ron`；project-scoped scene 保存和 OBJ 导入在 project 打开前禁用。
+- 用户 project 在自身根目录下使用 `scenes/main.scene.ron`、`assets/asset_manifest.ron` 和 `assets/imported/`。仓库根 `assets/` 只保存 engine-owned primitive/default material 资源；OBJ loader sample inputs 位于 `examples/editor_smoke/assets/obj/`。
+- 默认 runtime/editor sample project 位于 `examples/editor_smoke/`。
 - `editor` 还保留 toolbar、`render::ViewportRenderer` viewport、editor-only viewport camera controls、viewport click selection、Move/Scale transform gizmo、Undo/Redo、内置 Cube/Sphere/Cone/Cylinder primitive 创建、系统文件对话框 New/Open Project、New/Open/Save/Save As scene 和 Import OBJ 文件工作流、Assets 区和 imported OBJ viewport 显示；用户工作流不再保留可编辑 path input。
 - `runtime` 可以按显式 project root 加载 scene + manifest + imported OBJ，并生成 viewport draw call。
 - 当前发布版 `eframe/egui-wgpu 0.35.0` 仍依赖 `wgpu 29`；workspace 统一到 `wgpu 29.0.4`，避免 editor/render 跨版本共享 GPU 类型。
@@ -92,7 +92,7 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo test --workspace --all-targets'
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo build --workspace'
 
 # 运行 runtime sample project
-cargo run -p runtime -- examples/projects/editor_smoke/scenes/main.scene.ron examples/projects/editor_smoke
+cargo run -p runtime -- examples/editor_smoke/scenes/main.scene.ron examples/editor_smoke
 
 # 运行 editor；host-native 是 opt-in，GUI smoke 不属于默认 Dev Container gate
 cargo run -p editor
@@ -111,8 +111,8 @@ cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron
 | 路径 | 职责 |
 |------|------|
 | `crates/` | Rust engine/editor workspace crates |
-| `assets/` | primitive 和示例资源 |
-| `examples/` | 示例入口和 smoke |
+| `assets/` | engine-owned primitive 和默认材质资源 |
+| `examples/` | 示例 project 和 smoke 入口 |
 | `crates/*/tests/` | Rust integration tests |
 | `docs/` | 项目约定 |
 

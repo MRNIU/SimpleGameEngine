@@ -6,7 +6,10 @@ use std::path::Path;
 fn upstream_obj_samples_load() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
-        .join("assets/obj");
+        .join("examples")
+        .join("editor_smoke")
+        .join("assets")
+        .join("obj");
     for relative_path in [
         "african_head.obj",
         "box.obj",

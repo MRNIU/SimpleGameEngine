@@ -4,8 +4,8 @@
 
 use std::{env, path::PathBuf};
 
-const DEFAULT_PROJECT_ROOT: &str = "examples/projects/editor_smoke";
-const DEFAULT_SCENE_PATH: &str = "examples/projects/editor_smoke/scenes/main.scene.ron";
+const DEFAULT_PROJECT_ROOT: &str = "examples/editor_smoke";
+const DEFAULT_SCENE_PATH: &str = "examples/editor_smoke/scenes/main.scene.ron";
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
