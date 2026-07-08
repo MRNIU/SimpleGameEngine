@@ -342,20 +342,11 @@ pub fn viewport_draw_call_with_view_and_meshes(
         light_multiplier,
     };
     let mut has_imported_mesh = false;
+    let mut has_non_cube_primitive = false;
 
     for mesh in &scene.meshes {
-        if mesh.mesh_asset != "primitive:cube" {
-            continue;
-        }
         let vertex_start = vertices.len();
         let index_start = indices.len();
-        let mesh_translation = Vec3::from_array(mesh.transform.translation);
-        let center = view_rotation
-            * (mesh_translation - camera_translation)
-            * VIEWPORT_WORLD_SCALE
-            * projection_scale;
-        let corners =
-            transformed_cube_corners(&mesh.transform, view_rotation, size * projection_scale);
         let color = lit_material_color(mesh.base_color, light_multiplier);
         let color = if selected_entity.is_some_and(|selected| selected == &mesh.entity) {
             selected_tint(color)
@@ -363,54 +354,42 @@ pub fn viewport_draw_call_with_view_and_meshes(
             color
         };
 
-        push_cube_face(
-            &mut vertices,
-            &mut indices,
-            center,
-            &corners,
-            [0, 1, 2, 3],
-            shade_color(color, 0.38),
-        )?;
-        push_cube_face(
-            &mut vertices,
-            &mut indices,
-            center,
-            &corners,
-            [0, 4, 7, 3],
-            shade_color(color, 0.46),
-        )?;
-        push_cube_face(
-            &mut vertices,
-            &mut indices,
-            center,
-            &corners,
-            [0, 1, 5, 4],
-            shade_color(color, 0.54),
-        )?;
-        push_cube_face(
-            &mut vertices,
-            &mut indices,
-            center,
-            &corners,
-            [4, 5, 6, 7],
-            shade_color(color, 1.0),
-        )?;
-        push_cube_face(
-            &mut vertices,
-            &mut indices,
-            center,
-            &corners,
-            [1, 5, 6, 2],
-            shade_color(color, 0.82),
-        )?;
-        push_cube_face(
-            &mut vertices,
-            &mut indices,
-            center,
-            &corners,
-            [3, 2, 6, 7],
-            shade_color(color, 0.68),
-        )?;
+        match mesh.mesh_asset.as_str() {
+            "primitive:cube" => {
+                push_cube_mesh(
+                    &mut vertices,
+                    &mut indices,
+                    mesh,
+                    projection_context,
+                    color,
+                    size,
+                )?;
+            }
+            "primitive:sphere" => {
+                has_non_cube_primitive = true;
+                push_sphere_mesh(
+                    &mut vertices,
+                    &mut indices,
+                    mesh,
+                    projection_context,
+                    color,
+                    size,
+                )?;
+            }
+            "primitive:cone" => {
+                has_non_cube_primitive = true;
+                push_cone_mesh(
+                    &mut vertices,
+                    &mut indices,
+                    mesh,
+                    projection_context,
+                    color,
+                    size,
+                )?;
+            }
+            asset if asset.starts_with("primitive:") => continue,
+            _ => continue,
+        }
 
         mesh_spans.push(ViewportMeshSpan {
             entity: mesh.entity.clone(),
@@ -445,6 +424,8 @@ pub fn viewport_draw_call_with_view_and_meshes(
     Some(ViewportDrawCall {
         label: if has_imported_mesh {
             "viewport:mesh".to_owned()
+        } else if has_non_cube_primitive {
+            "viewport:primitive".to_owned()
         } else {
             "primitive:cube".to_owned()
         },
@@ -455,6 +436,186 @@ pub fn viewport_draw_call_with_view_and_meshes(
         indices,
         mesh_spans,
     })
+}
+
+fn push_cube_mesh(
+    vertices: &mut Vec<ViewportVertex>,
+    indices: &mut Vec<u16>,
+    mesh: &MeshDraw,
+    projection_context: ViewportProjectionContext,
+    color: [f32; 4],
+    size: f32,
+) -> Option<()> {
+    let mesh_translation = Vec3::from_array(mesh.transform.translation);
+    let center = projection_context.view_rotation
+        * (mesh_translation - projection_context.camera_translation)
+        * VIEWPORT_WORLD_SCALE
+        * projection_context.projection_scale;
+    let corners = transformed_cube_corners(
+        &mesh.transform,
+        projection_context.view_rotation,
+        size * projection_context.projection_scale,
+    );
+
+    push_cube_face(
+        vertices,
+        indices,
+        center,
+        &corners,
+        [0, 1, 2, 3],
+        shade_color(color, 0.38),
+    )?;
+    push_cube_face(
+        vertices,
+        indices,
+        center,
+        &corners,
+        [0, 4, 7, 3],
+        shade_color(color, 0.46),
+    )?;
+    push_cube_face(
+        vertices,
+        indices,
+        center,
+        &corners,
+        [0, 1, 5, 4],
+        shade_color(color, 0.54),
+    )?;
+    push_cube_face(
+        vertices,
+        indices,
+        center,
+        &corners,
+        [4, 5, 6, 7],
+        shade_color(color, 1.0),
+    )?;
+    push_cube_face(
+        vertices,
+        indices,
+        center,
+        &corners,
+        [1, 5, 6, 2],
+        shade_color(color, 0.82),
+    )?;
+    push_cube_face(
+        vertices,
+        indices,
+        center,
+        &corners,
+        [3, 2, 6, 7],
+        shade_color(color, 0.68),
+    )?;
+    Some(())
+}
+
+fn push_sphere_mesh(
+    vertices: &mut Vec<ViewportVertex>,
+    indices: &mut Vec<u16>,
+    mesh: &MeshDraw,
+    projection_context: ViewportProjectionContext,
+    color: [f32; 4],
+    size: f32,
+) -> Option<()> {
+    let vertex_start = vertices.len();
+    let radius = size;
+    push_primitive_vertices(
+        vertices,
+        mesh,
+        projection_context,
+        color,
+        &[
+            Vec3::new(0.0, radius, 0.0),
+            Vec3::new(radius, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, radius),
+            Vec3::new(-radius, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, -radius),
+            Vec3::new(0.0, -radius, 0.0),
+        ],
+    );
+    push_primitive_indices(
+        indices,
+        vertex_start,
+        &[
+            0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1, 5, 2, 1, 5, 3, 2, 5, 4, 3, 5, 1, 4,
+        ],
+    )
+}
+
+fn push_cone_mesh(
+    vertices: &mut Vec<ViewportVertex>,
+    indices: &mut Vec<u16>,
+    mesh: &MeshDraw,
+    projection_context: ViewportProjectionContext,
+    color: [f32; 4],
+    size: f32,
+) -> Option<()> {
+    let vertex_start = vertices.len();
+    let radius = size;
+    let height = size;
+    push_primitive_vertices(
+        vertices,
+        mesh,
+        projection_context,
+        color,
+        &[
+            Vec3::new(0.0, height, 0.0),
+            Vec3::new(radius, -height, 0.0),
+            Vec3::new(0.707_106_77 * radius, -height, 0.707_106_77 * radius),
+            Vec3::new(0.0, -height, radius),
+            Vec3::new(-0.707_106_77 * radius, -height, 0.707_106_77 * radius),
+            Vec3::new(-radius, -height, 0.0),
+            Vec3::new(-0.707_106_77 * radius, -height, -0.707_106_77 * radius),
+            Vec3::new(0.0, -height, -radius),
+            Vec3::new(0.707_106_77 * radius, -height, -0.707_106_77 * radius),
+            Vec3::new(0.0, -height, 0.0),
+        ],
+    );
+    push_primitive_indices(
+        indices,
+        vertex_start,
+        &[
+            0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7, 0, 7, 8, 0, 8, 1, 9, 2, 1, 9, 3,
+            2, 9, 4, 3, 9, 5, 4, 9, 6, 5, 9, 7, 6, 9, 8, 7, 9, 1, 8,
+        ],
+    )
+}
+
+fn push_primitive_vertices(
+    vertices: &mut Vec<ViewportVertex>,
+    mesh: &MeshDraw,
+    projection_context: ViewportProjectionContext,
+    color: [f32; 4],
+    locals: &[Vec3],
+) {
+    let mesh_center = Vec3::from_array(mesh.transform.translation);
+    let center = projection_context.view_rotation
+        * (mesh_center - projection_context.camera_translation)
+        * VIEWPORT_WORLD_SCALE
+        * projection_context.projection_scale;
+    let transform_rotation = Quat::from_array(normalized_quaternion(mesh.transform.rotation));
+    let transform_scale =
+        Vec3::from_array(mesh.transform.scale) * projection_context.projection_scale;
+
+    for local in locals {
+        let local = transform_rotation * (*local * transform_scale);
+        let projected = project_point(center + projection_context.view_rotation * local);
+        vertices.push(ViewportVertex {
+            position: [projected[0], projected[1], 0.0],
+            color,
+        });
+    }
+}
+
+fn push_primitive_indices(
+    indices: &mut Vec<u16>,
+    vertex_start: usize,
+    local_indices: &[u16],
+) -> Option<()> {
+    for index in local_indices {
+        let index = vertex_start.checked_add(usize::from(*index))?;
+        indices.push(u16::try_from(index).ok()?);
+    }
+    Some(())
 }
 
 fn push_imported_mesh(

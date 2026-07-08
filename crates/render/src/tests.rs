@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     ViewportView, extract_render_scene, fit_viewport_draw_to_size, viewport_draw_call,
@@ -60,6 +60,31 @@ fn add_cube_with_transform(world: &mut World, id: &str, transform: Transform) {
             MeshRef::new("primitive:cube", "primitive:default_material"),
         )
         .unwrap();
+}
+
+fn add_mesh(world: &mut World, id: &str, name: &str, asset: &str, transform: Transform) {
+    world.spawn(EntityId::new(id), name, transform);
+    world
+        .insert_mesh(id, MeshRef::new(asset, "primitive:default_material"))
+        .unwrap();
+}
+
+fn rounded_positions(draw: &super::ViewportDrawCall, span_index: usize) -> BTreeSet<String> {
+    draw.mesh_spans[span_index]
+        .vertex_range
+        .clone()
+        .map(|index| {
+            let position = draw.vertices[index].position;
+            format!("{:.3},{:.3},{:.3}", position[0], position[1], position[2])
+        })
+        .collect()
+}
+
+fn span_index_for(draw: &super::ViewportDrawCall, entity: &str) -> usize {
+    draw.mesh_spans
+        .iter()
+        .position(|span| span.entity == EntityId::new(entity))
+        .unwrap()
 }
 
 fn add_light(world: &mut World, id: &str, color: [f32; 3], intensity: f32) {
@@ -422,6 +447,174 @@ fn viewport_draw_call_records_entity_spans_for_each_cube() {
     assert_eq!(draw.mesh_spans[1].entity, EntityId::new("cube_1"));
     assert_eq!(draw.mesh_spans[1].vertex_range, 24..48);
     assert_eq!(draw.mesh_spans[1].index_range, 36..72);
+}
+
+#[test]
+fn viewport_draw_call_renders_distinct_primitive_geometry_and_spans() {
+    let mut world = world_with_camera();
+    add_mesh(
+        &mut world,
+        "cube",
+        "Cube",
+        "primitive:cube",
+        Transform::identity(),
+    );
+    add_mesh(
+        &mut world,
+        "sphere",
+        "Sphere",
+        "primitive:sphere",
+        Transform::from_translation([2.0, 0.0, 0.0]),
+    );
+    add_mesh(
+        &mut world,
+        "cone",
+        "Cone",
+        "primitive:cone",
+        Transform::from_translation([4.0, 0.0, 0.0]),
+    );
+
+    let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
+
+    assert_eq!(draw.mesh_spans.len(), 3);
+    let cube = span_index_for(&draw, "cube");
+    let sphere = span_index_for(&draw, "sphere");
+    let cone = span_index_for(&draw, "cone");
+    assert_eq!(draw.mesh_spans[cube].vertex_range.len(), 24);
+    assert_eq!(draw.mesh_spans[cube].index_range.len(), 36);
+    assert_eq!(draw.mesh_spans[sphere].vertex_range.len(), 6);
+    assert_eq!(draw.mesh_spans[sphere].index_range.len(), 24);
+    assert_eq!(draw.mesh_spans[cone].vertex_range.len(), 10);
+    assert_eq!(draw.mesh_spans[cone].index_range.len(), 48);
+    assert_ne!(
+        rounded_positions(&draw, cube),
+        rounded_positions(&draw, sphere)
+    );
+    assert_ne!(
+        rounded_positions(&draw, sphere),
+        rounded_positions(&draw, cone)
+    );
+}
+
+#[test]
+fn viewport_draw_call_material_and_selection_apply_to_non_cube_primitives() {
+    let mut world = world_with_camera();
+    add_mesh(
+        &mut world,
+        "sphere",
+        "Sphere",
+        "primitive:sphere",
+        Transform::identity(),
+    );
+    add_mesh(
+        &mut world,
+        "cone",
+        "Cone",
+        "primitive:cone",
+        Transform::from_translation([2.0, 0.0, 0.0]),
+    );
+    world.entity_mut("sphere").unwrap().material_override = Some(MaterialOverride {
+        base_color: [0.2, 0.8, 0.3, 0.6],
+    });
+    let scene = extract_render_scene(&world);
+
+    let normal = viewport_draw_call(&scene).unwrap();
+    let selected = viewport_draw_call_with_selection(&scene, Some(&EntityId::new("cone"))).unwrap();
+
+    let sphere_start = normal.mesh_spans[span_index_for(&normal, "sphere")]
+        .vertex_range
+        .start;
+    assert_eq!(normal.vertices[sphere_start].color[3], 0.6);
+    let cone_start = normal.mesh_spans[span_index_for(&normal, "cone")]
+        .vertex_range
+        .start;
+    assert_ne!(
+        selected.vertices[cone_start].color,
+        normal.vertices[cone_start].color
+    );
+}
+
+#[test]
+fn viewport_draw_call_applies_non_cube_rotation_and_scale() {
+    let mut identity = world_with_camera();
+    add_mesh(
+        &mut identity,
+        "sphere",
+        "Sphere",
+        "primitive:sphere",
+        Transform::identity(),
+    );
+    add_mesh(
+        &mut identity,
+        "cone",
+        "Cone",
+        "primitive:cone",
+        Transform::from_translation([2.0, 0.0, 0.0]),
+    );
+    let mut transformed = world_with_camera();
+    add_mesh(
+        &mut transformed,
+        "sphere",
+        "Sphere",
+        "primitive:sphere",
+        Transform {
+            rotation: [
+                0.0,
+                0.0,
+                std::f32::consts::FRAC_1_SQRT_2,
+                std::f32::consts::FRAC_1_SQRT_2,
+            ],
+            scale: [1.0, 2.0, 0.5],
+            ..Transform::identity()
+        },
+    );
+    add_mesh(
+        &mut transformed,
+        "cone",
+        "Cone",
+        "primitive:cone",
+        Transform {
+            translation: [2.0, 0.0, 0.0],
+            rotation: [0.5, 0.0, 0.0, 0.866_025_4],
+            scale: [0.5, 1.5, 2.0],
+        },
+    );
+
+    let identity_draw = viewport_draw_call(&extract_render_scene(&identity)).unwrap();
+    let transformed_draw = viewport_draw_call(&extract_render_scene(&transformed)).unwrap();
+
+    assert_ne!(
+        rounded_positions(&identity_draw, 0),
+        rounded_positions(&transformed_draw, 0)
+    );
+    assert_ne!(
+        rounded_positions(&identity_draw, 1),
+        rounded_positions(&transformed_draw, 1)
+    );
+}
+
+#[test]
+fn viewport_draw_call_skips_unknown_primitive_without_blocking_known_meshes() {
+    let mut world = world_with_camera();
+    add_mesh(
+        &mut world,
+        "unknown",
+        "Unknown",
+        "primitive:capsule",
+        Transform::identity(),
+    );
+    add_mesh(
+        &mut world,
+        "sphere",
+        "Sphere",
+        "primitive:sphere",
+        Transform::identity(),
+    );
+
+    let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
+
+    assert_eq!(draw.mesh_spans.len(), 1);
+    assert_eq!(draw.mesh_spans[0].entity, EntityId::new("sphere"));
 }
 
 #[test]
