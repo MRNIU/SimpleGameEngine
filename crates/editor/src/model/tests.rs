@@ -262,6 +262,61 @@ fn commit_transform_edit_pushes_one_history_entry() {
 }
 
 #[test]
+fn create_primitives_use_expected_ids_names_mesh_refs_and_selection() {
+    let mut editor = super::EditorModel::default();
+
+    let cube = editor.create_primitive(super::PrimitiveKind::Cube);
+    let sphere = editor.create_primitive(super::PrimitiveKind::Sphere);
+    let cone = editor.create_primitive(super::PrimitiveKind::Cone);
+    let second_sphere = editor.create_primitive(super::PrimitiveKind::Sphere);
+
+    let cases = [
+        (&cube, "cube", "Cube", "primitive:cube"),
+        (&sphere, "sphere", "Sphere", "primitive:sphere"),
+        (&cone, "cone", "Cone", "primitive:cone"),
+        (&second_sphere, "sphere_1", "Sphere 2", "primitive:sphere"),
+    ];
+    for (id, expected_id, expected_name, expected_asset) in cases {
+        let record = editor.world().entity(id.as_str()).unwrap();
+        assert_eq!(id.as_str(), expected_id);
+        assert_eq!(record.name, expected_name);
+        assert_eq!(record.parent, Some(EntityId::new("root")));
+        assert_eq!(record.mesh.as_ref().unwrap().asset, expected_asset);
+        assert_eq!(
+            record.mesh.as_ref().unwrap().material,
+            "primitive:default_material"
+        );
+    }
+    assert_eq!(editor.selected(), Some(&second_sphere));
+    assert!(editor.is_dirty());
+    assert!(editor.can_undo());
+}
+
+#[test]
+fn primitive_create_undo_redo_restores_entity() {
+    let mut editor = super::EditorModel::default();
+    let cone = editor.create_primitive(super::PrimitiveKind::Cone);
+
+    assert!(editor.world().entity(cone.as_str()).is_some());
+    assert!(editor.undo().unwrap());
+    assert!(editor.world().entity(cone.as_str()).is_none());
+    assert!(editor.redo().unwrap());
+    assert!(editor.world().entity(cone.as_str()).is_some());
+    assert_eq!(editor.selected(), Some(&cone));
+}
+
+#[test]
+fn create_cube_remains_wrapper_for_cube_primitive() {
+    let mut editor = super::EditorModel::default();
+
+    let cube = editor.create_cube();
+
+    let record = editor.world().entity(cube.as_str()).unwrap();
+    assert_eq!(cube.as_str(), "cube");
+    assert_eq!(record.mesh.as_ref().unwrap().asset, "primitive:cube");
+}
+
+#[test]
 fn imported_mesh_entity_uses_asset_ref_and_default_material() {
     let uuid = asset::AssetUuid::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap();
     let mut editor = super::EditorModel::default();

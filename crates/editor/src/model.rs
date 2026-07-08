@@ -20,12 +20,47 @@ const CAMERA_ID: &str = "camera";
 const LIGHT_ID: &str = "directional_light";
 const HISTORY_LIMIT: usize = 100;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PrimitiveKind {
+    Cube,
+    Sphere,
+    Cone,
+}
+
+impl PrimitiveKind {
+    #[must_use]
+    pub(crate) const fn asset_ref(self) -> &'static str {
+        match self {
+            Self::Cube => "primitive:cube",
+            Self::Sphere => "primitive:sphere",
+            Self::Cone => "primitive:cone",
+        }
+    }
+
+    #[must_use]
+    const fn id_base(self) -> &'static str {
+        match self {
+            Self::Cube => "cube",
+            Self::Sphere => "sphere",
+            Self::Cone => "cone",
+        }
+    }
+
+    #[must_use]
+    const fn display_name(self) -> &'static str {
+        match self {
+            Self::Cube => "Cube",
+            Self::Sphere => "Sphere",
+            Self::Cone => "Cone",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct EditorModel {
     world: World,
     selected: Option<EntityId>,
     dirty: bool,
-    next_cube_index: u32,
     undo_stack: Vec<EditorCommand>,
     redo_stack: Vec<EditorCommand>,
 }
@@ -145,7 +180,6 @@ impl EditorModel {
             world,
             selected: None,
             dirty: false,
-            next_cube_index: 0,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
         }
@@ -157,7 +191,6 @@ impl EditorModel {
             world,
             selected: None,
             dirty: false,
-            next_cube_index: 0,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
         })
@@ -182,17 +215,22 @@ impl EditorModel {
     }
 
     pub fn create_cube(&mut self) -> EntityId {
-        let id = self.next_cube_id();
+        self.create_primitive(PrimitiveKind::Cube)
+    }
+
+    pub(crate) fn create_primitive(&mut self, kind: PrimitiveKind) -> EntityId {
+        let id = self.next_primitive_id(kind.id_base());
+        let name = self.next_primitive_name(kind.display_name());
         let previous_selection = self.selected.clone();
-        let mut record = ecs::EntityRecord::new(id.clone(), "Cube", Transform::identity());
+        let mut record = ecs::EntityRecord::new(id.clone(), name, Transform::identity());
         record.parent = Some(EntityId::new(ROOT_ID));
-        record.mesh = Some(MeshRef::new("primitive:cube", "primitive:default_material"));
+        record.mesh = Some(MeshRef::new(kind.asset_ref(), "primitive:default_material"));
         let command = EditorCommand::CreateEntity {
             record,
             previous_selection,
         };
         self.apply_command(&command)
-            .expect("create cube command is internally valid");
+            .expect("create primitive command is internally valid");
         self.push_undo(command);
         id
     }
@@ -873,18 +911,31 @@ impl EditorModel {
         self.dirty
     }
 
-    fn next_cube_id(&mut self) -> EntityId {
-        loop {
-            let id = if self.next_cube_index == 0 {
-                EntityId::new("cube")
+    fn next_primitive_id(&self, base: &str) -> EntityId {
+        for index in 0..=u32::MAX {
+            let id = if index == 0 {
+                EntityId::new(base)
             } else {
-                EntityId::new(format!("cube_{}", self.next_cube_index))
+                EntityId::new(format!("{base}_{index}"))
             };
-            self.next_cube_index = self.next_cube_index.saturating_add(1);
             if self.world.entity(id.as_str()).is_none() {
                 return id;
             }
         }
+        unreachable!("primitive entity id generation exhausted")
+    }
+
+    fn next_primitive_name(&self, base: &str) -> String {
+        if !self.entity_name_exists(base) {
+            return base.to_owned();
+        }
+        for index in 2..=u32::MAX {
+            let name = format!("{base} {index}");
+            if !self.entity_name_exists(&name) {
+                return name;
+            }
+        }
+        unreachable!("primitive entity name generation exhausted")
     }
 
     fn next_imported_entity_id(&self, asset_name: &str) -> Result<EntityId, EditorError> {
