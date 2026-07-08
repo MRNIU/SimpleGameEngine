@@ -67,9 +67,10 @@
 
 ## 项目状态
 
-最后审阅日期：2026-07-06
+最后审阅日期：2026-07-09
 
-- 当前阶段：Rust reset 已落地为 Cargo workspace；editor 已通过 `eframe::Renderer::Wgpu` 接入 `render::ViewportRenderer`，并具备 `.scene.ron` New/Open/Save/Save As/Discard 文件工作流
+- 当前阶段：editor 使用显式 `project.sge.ron` project 工作上下文；用户 scene 和 imported OBJ 只能写入当前 project，仓库根不能作为用户 project。
+- 示例 project 真源：`examples/projects/editor_smoke/`。
 - 已通过证据：人工 host-native editor smoke 已确认真实窗口像素输出、两次 `New Cube`、手动移动第二个 cube、保存并重新打开 `.scene.ron`
 - 已完成收口：editor 已按现有 `model` / `app` / `viewport` 边界拆薄，文件 IO 留在 `editor::app`，`crates/editor/src/lib.rs` 只保留模块入口和 re-export
 - 下一个里程碑：继续扩 editor 功能前先明确单个用户可见目标，不新增空壳 crate 或大管线
