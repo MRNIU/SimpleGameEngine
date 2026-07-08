@@ -369,7 +369,7 @@ fn span_screen_bounds(
 }
 
 fn z_screen_axis() -> egui::Vec2 {
-    normalized_screen_axis(egui::Vec2::X - egui::Vec2::Y)
+    -egui::Vec2::Y
 }
 
 fn normalized_screen_axis(axis: egui::Vec2) -> egui::Vec2 {

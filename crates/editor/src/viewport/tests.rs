@@ -239,6 +239,68 @@ fn hit_test_empty_space_clears_selection() {
 }
 
 #[test]
+fn reference_grid_uses_xy_plane_and_z_axis_marker() {
+    let lines = super::reference_lines();
+
+    assert!(lines.iter().any(|line| {
+        line.start[2] == 0.0
+            && line.end[2] == 0.0
+            && line.color == egui::Color32::from_rgb(160, 60, 60)
+    }));
+    assert!(lines.iter().any(|line| {
+        line.start == [0.0, 0.0, 0.0]
+            && line.end[2] > 0.0
+            && line.color == egui::Color32::from_rgb(80, 130, 240)
+    }));
+}
+
+#[test]
+fn orientation_cube_hit_test_returns_presets_and_perspective() {
+    let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
+    let layout = super::orientation_cube_layout(rect);
+
+    assert_eq!(
+        super::orientation_cube_hit_test(&layout, layout.top.center()),
+        Some(ViewportAction::SetViewPreset(super::ViewPreset::Top))
+    );
+    assert_eq!(
+        super::orientation_cube_hit_test(&layout, layout.perspective.center()),
+        Some(ViewportAction::ReturnToPerspective)
+    );
+}
+
+#[test]
+fn orientation_overlay_consumes_before_scene_selection() {
+    let draw = draw_with_two_mesh_spans();
+    let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
+    let layout = super::orientation_cube_layout(rect);
+    let pointer = layout.top.center();
+
+    let overlay = super::orientation_cube_hit_test(&layout, pointer);
+    let selection = hit_test_viewport_draw(&draw, rect, pointer);
+
+    assert!(matches!(overlay, Some(ViewportAction::SetViewPreset(_))));
+    assert_ne!(overlay, Some(selection));
+}
+
+#[test]
+fn move_z_gizmo_uses_screen_up_axis() {
+    let start = Transform {
+        translation: [1.0, 2.0, 3.0],
+        ..Transform::identity()
+    };
+
+    let moved = super::transform_for_gizmo_drag(
+        GizmoHandle::MoveZ,
+        start,
+        egui::pos2(10.0, 10.0),
+        egui::pos2(10.0, -40.0),
+    );
+
+    assert_eq!(moved.translation, [1.0, 2.0, 3.5]);
+}
+
+#[test]
 fn gizmo_layout_uses_fitted_draw_and_selected_span() {
     let draw = draw_with_two_mesh_spans();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
@@ -319,7 +381,7 @@ fn move_gizmo_drag_changes_only_selected_axis() {
 
     assert_eq!(moved_x.translation, [1.5, 2.0, 3.0]);
     assert_eq!(moved_y.translation, [1.0, 2.5, 3.0]);
-    assert_eq!(moved_z.translation, [1.0, 2.0, 3.707_106_8]);
+    assert_eq!(moved_z.translation, [1.0, 2.0, 3.5]);
 }
 
 fn assert_quat_close(actual: [f32; 4], expected: [f32; 4]) {
@@ -358,9 +420,7 @@ fn rotate_gizmo_layout_uses_fixed_screen_axes() {
         .unwrap();
     assert_eq!(rotate_x.axis, egui::Vec2::X);
     assert_eq!(rotate_y.axis, -egui::Vec2::Y);
-    let expected_z_axis =
-        (egui::Vec2::X - egui::Vec2::Y) / (egui::Vec2::X - egui::Vec2::Y).length();
-    assert_eq!(rotate_z.axis, expected_z_axis);
+    assert_eq!(rotate_z.axis, -egui::Vec2::Y);
     assert_eq!(rotate_x.rect.size(), egui::vec2(10.0, 10.0));
 }
 
@@ -404,11 +464,11 @@ fn rotate_gizmo_drag_changes_only_rotation_with_fixed_signs() {
     assert_quat_close(rotated_y.rotation, Quat::from_rotation_y(0.5).to_array());
     assert_quat_close(
         rotated_z.rotation,
-        Quat::from_rotation_z(0.707_106_77).to_array(),
+        Quat::from_rotation_z(0.5).to_array(),
     );
     assert_quat_close(
         reverse_z.rotation,
-        Quat::from_rotation_z(-0.707_106_77).to_array(),
+        Quat::from_rotation_z(-0.5).to_array(),
     );
 }
 
@@ -447,7 +507,7 @@ fn uniform_scale_drag_changes_all_scale_axes_and_clamps_minimum() {
         egui::pos2(-200.0, 220.0),
     );
 
-    assert_eq!(grown.scale, [1.707_106_8, 2.707_106_8, 3.707_106_8]);
+    assert_eq!(grown.scale, [1.5, 2.5, 3.5]);
     assert_eq!(clamped.scale, [0.01, 0.01, 0.01]);
 }
 

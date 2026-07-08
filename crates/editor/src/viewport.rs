@@ -27,6 +27,25 @@ pub(crate) struct ViewportUiOptions<'a> {
     pub(crate) wgpu_probe: Option<&'a ViewportWgpuProbe>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ReferenceLine {
+    pub(crate) start: [f32; 3],
+    pub(crate) end: [f32; 3],
+    pub(crate) color: egui::Color32,
+    pub(crate) width: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct OrientationCubeLayout {
+    pub(crate) top: egui::Rect,
+    pub(crate) bottom: egui::Rect,
+    pub(crate) front: egui::Rect,
+    pub(crate) back: egui::Rect,
+    pub(crate) right: egui::Rect,
+    pub(crate) left: egui::Rect,
+    pub(crate) perspective: egui::Rect,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ViewportAction {
     None,
@@ -121,6 +140,7 @@ pub(crate) fn draw_viewport(
     let press_origin = ui.input(|input| input.pointer.press_origin());
     let esc_pressed = ui.input(|input| input.key_pressed(egui::Key::Escape));
     let mut pointer_consumed_by_gizmo = false;
+    let orientation_layout = orientation_cube_layout(rect);
 
     if esc_pressed && let Some(drag) = gizmo.drag().cloned() {
         gizmo.clear_drag();
@@ -128,6 +148,13 @@ pub(crate) fn draw_viewport(
             target: drag.target,
             transform: drag.start_transform,
         };
+    }
+
+    if primary_pressed
+        && let Some(pointer) = response.interact_pointer_pos()
+        && let Some(overlay_action) = orientation_cube_hit_test(&orientation_layout, pointer)
+    {
+        return overlay_action;
     }
 
     if !primary_down && let Some(drag) = gizmo.drag().cloned() {
@@ -190,6 +217,10 @@ pub(crate) fn draw_viewport(
     } else if let Some(draw) = fitted_draw.as_ref() {
         paint_fallback_viewport(rect, &painter, draw);
     }
+    let view = camera.to_viewport_view();
+    if let Some(projection) = render::ViewportProjection::from_view(&view) {
+        paint_reference_lines(&painter, rect, &projection);
+    }
     painter.text(
         rect.left_top() + egui::vec2(10.0, 8.0),
         egui::Align2::LEFT_TOP,
@@ -197,8 +228,90 @@ pub(crate) fn draw_viewport(
         egui::FontId::proportional(13.0),
         egui::Color32::from_rgb(205, 214, 224),
     );
+    paint_orientation_cube(&painter, &orientation_layout);
     paint_gizmo_handles(&painter, &handles, gizmo.hovered(), gizmo.active());
     action
+}
+
+pub(crate) fn reference_lines() -> Vec<ReferenceLine> {
+    let mut lines = Vec::new();
+    for i in -10..=10 {
+        let value = i as f32;
+        lines.push(ReferenceLine {
+            start: [-10.0, value, 0.0],
+            end: [10.0, value, 0.0],
+            color: egui::Color32::from_rgb(65, 72, 78),
+            width: 1.0,
+        });
+        lines.push(ReferenceLine {
+            start: [value, -10.0, 0.0],
+            end: [value, 10.0, 0.0],
+            color: egui::Color32::from_rgb(65, 72, 78),
+            width: 1.0,
+        });
+    }
+    lines.push(ReferenceLine {
+        start: [-10.0, 0.0, 0.0],
+        end: [10.0, 0.0, 0.0],
+        color: egui::Color32::from_rgb(160, 60, 60),
+        width: 2.0,
+    });
+    lines.push(ReferenceLine {
+        start: [0.0, -10.0, 0.0],
+        end: [0.0, 10.0, 0.0],
+        color: egui::Color32::from_rgb(60, 150, 80),
+        width: 2.0,
+    });
+    lines.push(ReferenceLine {
+        start: [0.0, 0.0, 0.0],
+        end: [0.0, 0.0, 3.0],
+        color: egui::Color32::from_rgb(80, 130, 240),
+        width: 2.0,
+    });
+    lines
+}
+
+pub(crate) fn orientation_cube_layout(rect: egui::Rect) -> OrientationCubeLayout {
+    let size = egui::vec2(30.0, 22.0);
+    let origin = rect.right_top() + egui::vec2(-118.0, 12.0);
+    OrientationCubeLayout {
+        top: egui::Rect::from_min_size(origin + egui::vec2(36.0, 0.0), size),
+        bottom: egui::Rect::from_min_size(origin + egui::vec2(36.0, 52.0), size),
+        front: egui::Rect::from_min_size(origin + egui::vec2(36.0, 26.0), size),
+        back: egui::Rect::from_min_size(origin + egui::vec2(72.0, 26.0), size),
+        right: egui::Rect::from_min_size(origin + egui::vec2(72.0, 0.0), size),
+        left: egui::Rect::from_min_size(origin, size),
+        perspective: egui::Rect::from_min_size(
+            origin + egui::vec2(0.0, 82.0),
+            egui::vec2(102.0, 22.0),
+        ),
+    }
+}
+
+pub(crate) fn orientation_cube_hit_test(
+    layout: &OrientationCubeLayout,
+    pointer: egui::Pos2,
+) -> Option<ViewportAction> {
+    [
+        (layout.top, ViewportAction::SetViewPreset(ViewPreset::Top)),
+        (
+            layout.bottom,
+            ViewportAction::SetViewPreset(ViewPreset::Bottom),
+        ),
+        (
+            layout.front,
+            ViewportAction::SetViewPreset(ViewPreset::Front),
+        ),
+        (layout.back, ViewportAction::SetViewPreset(ViewPreset::Back)),
+        (
+            layout.right,
+            ViewportAction::SetViewPreset(ViewPreset::Right),
+        ),
+        (layout.left, ViewportAction::SetViewPreset(ViewPreset::Left)),
+        (layout.perspective, ViewportAction::ReturnToPerspective),
+    ]
+    .into_iter()
+    .find_map(|(rect, action)| rect.contains(pointer).then_some(action))
 }
 
 fn viewport_canvas_size(available: egui::Vec2) -> egui::Vec2 {
@@ -246,6 +359,79 @@ fn paint_fallback_viewport(rect: egui::Rect, painter: &egui::Painter, draw: &Vie
         egui::Stroke::new(1.0, egui::Color32::WHITE),
         egui::StrokeKind::Inside,
     );
+}
+
+fn paint_reference_lines(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    projection: &render::ViewportProjection,
+) {
+    for line in reference_lines() {
+        let Some(start) = projection.project_world_point(line.start) else {
+            continue;
+        };
+        let Some(end) = projection.project_world_point(line.end) else {
+            continue;
+        };
+        painter.line_segment(
+            [
+                screen_position_for_vertex(rect, [start[0], start[1], 0.0]),
+                screen_position_for_vertex(rect, [end[0], end[1], 0.0]),
+            ],
+            egui::Stroke::new(line.width, line.color),
+        );
+    }
+}
+
+fn paint_orientation_cube(painter: &egui::Painter, layout: &OrientationCubeLayout) {
+    for (rect, label, color) in [
+        (layout.top, "Top", egui::Color32::from_rgb(80, 130, 240)),
+        (
+            layout.bottom,
+            "Bot",
+            egui::Color32::from_rgb(80, 130, 240),
+        ),
+        (
+            layout.front,
+            "Front",
+            egui::Color32::from_rgb(160, 60, 60),
+        ),
+        (
+            layout.back,
+            "Back",
+            egui::Color32::from_rgb(160, 60, 60),
+        ),
+        (
+            layout.right,
+            "Right",
+            egui::Color32::from_rgb(60, 150, 80),
+        ),
+        (
+            layout.left,
+            "Left",
+            egui::Color32::from_rgb(60, 150, 80),
+        ),
+        (
+            layout.perspective,
+            "Perspective",
+            egui::Color32::from_rgb(42, 48, 54),
+        ),
+    ] {
+        painter.rect_filled(rect, 2.0, color);
+        painter.rect_stroke(
+            rect,
+            2.0,
+            egui::Stroke::new(1.0, egui::Color32::WHITE),
+            egui::StrokeKind::Inside,
+        );
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::proportional(11.0),
+            egui::Color32::WHITE,
+        );
+    }
 }
 
 #[must_use]
