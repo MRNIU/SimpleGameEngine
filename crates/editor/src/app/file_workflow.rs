@@ -385,10 +385,7 @@ impl EditorApp {
             !self.model.is_dirty(),
             "gizmo rotate preview dirtied the scene"
         );
-        anyhow::ensure!(
-            !self.model.can_undo(),
-            "gizmo rotate preview wrote history"
-        );
+        anyhow::ensure!(!self.model.can_undo(), "gizmo rotate preview wrote history");
         self.handle_viewport_action(ViewportAction::CommitTransform {
             target: target.clone(),
             before: moved,

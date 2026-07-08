@@ -254,8 +254,12 @@ fn rotate_gizmo_layout_uses_fixed_screen_axes() {
     let draw = draw_with_two_mesh_spans();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
 
-    let handles =
-        super::gizmo_layout(&draw, rect, Some(&EntityId::new("cube_1")), GizmoMode::Rotate);
+    let handles = super::gizmo_layout(
+        &draw,
+        rect,
+        Some(&EntityId::new("cube_1")),
+        GizmoMode::Rotate,
+    );
 
     assert_eq!(handles.len(), 3);
     let rotate_x = handles
