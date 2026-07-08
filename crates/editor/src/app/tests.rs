@@ -363,6 +363,9 @@ fn ui_action_create_primitives_uses_model_state() {
         PrimitiveKind::Sphere,
     ));
     app.run_ui_action(super::EditorUiAction::CreatePrimitive(PrimitiveKind::Cone));
+    app.run_ui_action(super::EditorUiAction::CreatePrimitive(
+        PrimitiveKind::Cylinder,
+    ));
 
     let assets = app
         .model
@@ -373,6 +376,7 @@ fn ui_action_create_primitives_uses_model_state() {
     assert!(assets.contains(&"primitive:cube"));
     assert!(assets.contains(&"primitive:sphere"));
     assert!(assets.contains(&"primitive:cone"));
+    assert!(assets.contains(&"primitive:cylinder"));
     assert!(app.model.is_dirty());
     assert!(app.model.can_undo());
 }
@@ -765,7 +769,12 @@ fn primitive_size_display_uses_two_unit_bounds() {
         ..Transform::identity()
     };
 
-    for asset_ref in ["primitive:cube", "primitive:sphere", "primitive:cone"] {
+    for asset_ref in [
+        "primitive:cube",
+        "primitive:sphere",
+        "primitive:cone",
+        "primitive:cylinder",
+    ] {
         let size = super::panels::primitive_mesh_size_for_display(asset_ref, transform).unwrap();
         assert_eq!(size.local, [2.0, 2.0, 2.0]);
         assert_eq!(size.scaled, [2.0, 4.0, 1.0]);
@@ -816,6 +825,7 @@ fn toolbar_source_uses_polish_groups_and_no_toolbar_path_label() {
     assert!(toolbar.contains("\"Cube\""));
     assert!(toolbar.contains("\"Sphere\""));
     assert!(toolbar.contains("\"Cone\""));
+    assert!(toolbar.contains("\"Cylinder\""));
     assert!(toolbar.contains("\"Move (W)\""));
     assert!(toolbar.contains("\"Scale (R)\""));
     assert!(toolbar.contains("\"Transform\""));

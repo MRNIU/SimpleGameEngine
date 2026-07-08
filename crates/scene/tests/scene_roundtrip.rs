@@ -107,12 +107,20 @@ fn scene_roundtrip_preserves_builtin_primitive_refs() {
             MeshRef::new("primitive:cone", "primitive:default_material"),
         )
         .unwrap();
+    world.spawn(EntityId::new("cylinder"), "Cylinder", Transform::identity());
+    world
+        .insert_mesh(
+            "cylinder",
+            MeshRef::new("primitive:cylinder", "primitive:default_material"),
+        )
+        .unwrap();
 
     let serialized = save_scene(&world).unwrap();
     let loaded = load_scene(&serialized).unwrap();
 
     assert!(serialized.contains("primitive:sphere"));
     assert!(serialized.contains("primitive:cone"));
+    assert!(serialized.contains("primitive:cylinder"));
     assert_eq!(
         loaded
             .entity("sphere")
@@ -126,5 +134,15 @@ fn scene_roundtrip_preserves_builtin_primitive_refs() {
     assert_eq!(
         loaded.entity("cone").unwrap().mesh.as_ref().unwrap().asset,
         "primitive:cone"
+    );
+    assert_eq!(
+        loaded
+            .entity("cylinder")
+            .unwrap()
+            .mesh
+            .as_ref()
+            .unwrap()
+            .asset,
+        "primitive:cylinder"
     );
 }

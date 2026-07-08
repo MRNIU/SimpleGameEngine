@@ -473,19 +473,29 @@ fn viewport_draw_call_renders_distinct_primitive_geometry_and_spans() {
         "primitive:cone",
         Transform::from_translation([4.0, 0.0, 0.0]),
     );
+    add_mesh(
+        &mut world,
+        "cylinder",
+        "Cylinder",
+        "primitive:cylinder",
+        Transform::from_translation([6.0, 0.0, 0.0]),
+    );
 
     let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
 
-    assert_eq!(draw.mesh_spans.len(), 3);
+    assert_eq!(draw.mesh_spans.len(), 4);
     let cube = span_index_for(&draw, "cube");
     let sphere = span_index_for(&draw, "sphere");
     let cone = span_index_for(&draw, "cone");
+    let cylinder = span_index_for(&draw, "cylinder");
     assert_eq!(draw.mesh_spans[cube].vertex_range.len(), 24);
     assert_eq!(draw.mesh_spans[cube].index_range.len(), 36);
     assert_eq!(draw.mesh_spans[sphere].vertex_range.len(), 6);
     assert_eq!(draw.mesh_spans[sphere].index_range.len(), 24);
     assert_eq!(draw.mesh_spans[cone].vertex_range.len(), 10);
     assert_eq!(draw.mesh_spans[cone].index_range.len(), 48);
+    assert_eq!(draw.mesh_spans[cylinder].vertex_range.len(), 18);
+    assert_eq!(draw.mesh_spans[cylinder].index_range.len(), 96);
     assert_ne!(
         rounded_positions(&draw, cube),
         rounded_positions(&draw, sphere)
@@ -493,6 +503,10 @@ fn viewport_draw_call_renders_distinct_primitive_geometry_and_spans() {
     assert_ne!(
         rounded_positions(&draw, sphere),
         rounded_positions(&draw, cone)
+    );
+    assert_ne!(
+        rounded_positions(&draw, cone),
+        rounded_positions(&draw, cylinder)
     );
 }
 

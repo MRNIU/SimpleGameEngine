@@ -28,8 +28,8 @@ fn runtime_loads_builtin_primitive_scene() {
 
     let draw = runtime::load_viewport_draw_from_path_with_project_root(&scene_path, &root).unwrap();
 
-    assert_eq!(draw.mesh_spans.len(), 3);
-    assert_eq!(draw.index_count, 108);
+    assert_eq!(draw.mesh_spans.len(), 4);
+    assert_eq!(draw.index_count, 204);
 }
 
 #[test]
@@ -163,6 +163,20 @@ fn primitive_scene() -> &'static str {
             parent: None,
             camera: None,
             mesh: Some((asset: "primitive:cone", material: "primitive:default_material")),
+            material_override: None,
+            light: None,
+        ),
+        (
+            id: "cylinder",
+            name: "Cylinder",
+            transform: (
+                translation: (6.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            parent: None,
+            camera: None,
+            mesh: Some((asset: "primitive:cylinder", material: "primitive:default_material")),
             material_override: None,
             light: None,
         ),

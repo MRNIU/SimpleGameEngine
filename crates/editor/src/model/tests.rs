@@ -268,12 +268,14 @@ fn create_primitives_use_expected_ids_names_mesh_refs_and_selection() {
     let cube = editor.create_primitive(super::PrimitiveKind::Cube);
     let sphere = editor.create_primitive(super::PrimitiveKind::Sphere);
     let cone = editor.create_primitive(super::PrimitiveKind::Cone);
+    let cylinder = editor.create_primitive(super::PrimitiveKind::Cylinder);
     let second_sphere = editor.create_primitive(super::PrimitiveKind::Sphere);
 
     let cases = [
         (&cube, "cube", "Cube", "primitive:cube"),
         (&sphere, "sphere", "Sphere", "primitive:sphere"),
         (&cone, "cone", "Cone", "primitive:cone"),
+        (&cylinder, "cylinder", "Cylinder", "primitive:cylinder"),
         (&second_sphere, "sphere_1", "Sphere 2", "primitive:sphere"),
     ];
     for (id, expected_id, expected_name, expected_asset) in cases {

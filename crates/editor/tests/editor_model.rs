@@ -323,9 +323,9 @@ fn editor_model_reopen_preserves_selection_only_when_entity_still_exists() {
 fn editor_smoke_actions_create_save_reopen_and_verify_viewport() {
     let report = EditorModel::default().run_smoke_actions().unwrap();
 
-    assert_eq!(report.mesh_count, 5);
+    assert_eq!(report.mesh_count, 6);
     assert!(report.has_camera);
-    assert_eq!(report.viewport_index_count, 180);
+    assert_eq!(report.viewport_index_count, 276);
     assert!(!report.transform_undo_redo_ok);
     assert!(!report.content_reopen_ok);
 }
@@ -334,10 +334,10 @@ fn editor_smoke_actions_create_save_reopen_and_verify_viewport() {
 fn smoke_actions_include_scene_content_edits() {
     let report = EditorModel::default().run_smoke_actions().unwrap();
 
-    assert!(report.mesh_count >= 5);
+    assert!(report.mesh_count >= 6);
     assert!(report.has_camera);
     assert!(report.has_light);
-    assert!(report.viewport_index_count >= 180);
+    assert!(report.viewport_index_count >= 276);
     assert!(!report.transform_undo_redo_ok);
     assert!(!report.content_reopen_ok);
 }

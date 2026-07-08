@@ -125,6 +125,10 @@ impl EditorApp {
                     self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cone));
                     ui.close();
                 }
+                if ui.button("Cylinder").clicked() {
+                    self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cylinder));
+                    ui.close();
+                }
             });
             ui.menu_button("View", |ui| {
                 if ui.button("Fit View").clicked() {
@@ -155,6 +159,9 @@ impl EditorApp {
             }
             if ui.button("Cone").clicked() {
                 self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cone));
+            }
+            if ui.button("Cylinder").clicked() {
+                self.run_ui_action(EditorUiAction::CreatePrimitive(PrimitiveKind::Cylinder));
             }
             ui.separator();
 
@@ -537,7 +544,9 @@ pub(super) fn primitive_mesh_size_for_display(
     transform: Transform,
 ) -> Option<MeshSizeDisplay> {
     let local = match asset_ref {
-        "primitive:cube" | "primitive:sphere" | "primitive:cone" => [2.0, 2.0, 2.0],
+        "primitive:cube" | "primitive:sphere" | "primitive:cone" | "primitive:cylinder" => {
+            [2.0, 2.0, 2.0]
+        }
         _ => return None,
     };
     Some(MeshSizeDisplay {

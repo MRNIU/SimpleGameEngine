@@ -387,6 +387,17 @@ pub fn viewport_draw_call_with_view_and_meshes(
                     size,
                 )?;
             }
+            "primitive:cylinder" => {
+                has_non_cube_primitive = true;
+                push_cylinder_mesh(
+                    &mut vertices,
+                    &mut indices,
+                    mesh,
+                    projection_context,
+                    color,
+                    size,
+                )?;
+            }
             asset if asset.starts_with("primitive:") => continue,
             _ => continue,
         }
@@ -578,6 +589,61 @@ fn push_cone_mesh(
             2, 9, 4, 3, 9, 5, 4, 9, 6, 5, 9, 7, 6, 9, 8, 7, 9, 1, 8,
         ],
     )
+}
+
+fn push_cylinder_mesh(
+    vertices: &mut Vec<ViewportVertex>,
+    indices: &mut Vec<u16>,
+    mesh: &MeshDraw,
+    projection_context: ViewportProjectionContext,
+    color: [f32; 4],
+    size: f32,
+) -> Option<()> {
+    let vertex_start = vertices.len();
+    let radius = size;
+    let height = size;
+    let diagonal = 0.707_106_77 * radius;
+    push_primitive_vertices(
+        vertices,
+        mesh,
+        projection_context,
+        color,
+        &[
+            Vec3::new(0.0, height, 0.0),
+            Vec3::new(0.0, -height, 0.0),
+            Vec3::new(radius, height, 0.0),
+            Vec3::new(diagonal, height, diagonal),
+            Vec3::new(0.0, height, radius),
+            Vec3::new(-diagonal, height, diagonal),
+            Vec3::new(-radius, height, 0.0),
+            Vec3::new(-diagonal, height, -diagonal),
+            Vec3::new(0.0, height, -radius),
+            Vec3::new(diagonal, height, -diagonal),
+            Vec3::new(radius, -height, 0.0),
+            Vec3::new(diagonal, -height, diagonal),
+            Vec3::new(0.0, -height, radius),
+            Vec3::new(-diagonal, -height, diagonal),
+            Vec3::new(-radius, -height, 0.0),
+            Vec3::new(-diagonal, -height, -diagonal),
+            Vec3::new(0.0, -height, -radius),
+            Vec3::new(diagonal, -height, -diagonal),
+        ],
+    );
+    for segment in 0_u16..8 {
+        let next = (segment + 1) % 8;
+        let top = 2 + segment;
+        let top_next = 2 + next;
+        let bottom = 10 + segment;
+        let bottom_next = 10 + next;
+        push_primitive_indices(
+            indices,
+            vertex_start,
+            &[top, bottom, bottom_next, top, bottom_next, top_next],
+        )?;
+        push_primitive_indices(indices, vertex_start, &[0, top, top_next])?;
+        push_primitive_indices(indices, vertex_start, &[1, bottom_next, bottom])?;
+    }
+    Some(())
 }
 
 fn push_primitive_vertices(

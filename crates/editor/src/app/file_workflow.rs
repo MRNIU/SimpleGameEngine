@@ -202,6 +202,7 @@ impl EditorApp {
         let target = self.model.create_cube();
         let _sphere = self.model.create_primitive(PrimitiveKind::Sphere);
         let _cone = self.model.create_primitive(PrimitiveKind::Cone);
+        let _cylinder = self.model.create_primitive(PrimitiveKind::Cylinder);
         self.model.select(target.clone());
         self.model.mark_saved();
         self.model.clear_history();
@@ -749,10 +750,10 @@ mod tests {
 
         let report = app.run_smoke_file_workflow(&path).unwrap();
 
-        assert_eq!(report.semantic.mesh_count, 5);
+        assert_eq!(report.semantic.mesh_count, 6);
         assert!(report.semantic.has_camera);
         assert!(report.semantic.has_light);
-        assert_eq!(report.semantic.viewport_index_count, 144);
+        assert_eq!(report.semantic.viewport_index_count, 240);
         assert!(report.semantic.transform_undo_redo_ok);
         assert!(report.semantic.content_reopen_ok);
         assert!(report.app.history_cleared_after_reopen);

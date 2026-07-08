@@ -25,6 +25,7 @@ pub(crate) enum PrimitiveKind {
     Cube,
     Sphere,
     Cone,
+    Cylinder,
 }
 
 impl PrimitiveKind {
@@ -34,6 +35,7 @@ impl PrimitiveKind {
             Self::Cube => "primitive:cube",
             Self::Sphere => "primitive:sphere",
             Self::Cone => "primitive:cone",
+            Self::Cylinder => "primitive:cylinder",
         }
     }
 
@@ -43,6 +45,7 @@ impl PrimitiveKind {
             Self::Cube => "cube",
             Self::Sphere => "sphere",
             Self::Cone => "cone",
+            Self::Cylinder => "cylinder",
         }
     }
 
@@ -52,6 +55,7 @@ impl PrimitiveKind {
             Self::Cube => "Cube",
             Self::Sphere => "Sphere",
             Self::Cone => "Cone",
+            Self::Cylinder => "Cylinder",
         }
     }
 }
@@ -832,6 +836,7 @@ impl EditorModel {
         let second = self.create_cube();
         let _sphere = self.create_primitive(PrimitiveKind::Sphere);
         let _cone = self.create_primitive(PrimitiveKind::Cone);
+        let _cylinder = self.create_primitive(PrimitiveKind::Cylinder);
         self.select(second.clone());
         self.rename_entity(&second, "Smoke Cube")?;
         self.set_transform(
