@@ -9,7 +9,7 @@
 本 milestone 做：
 
 - 统一世界显示语义为 `X` forward/red、`Y` right/green、`Z` up/blue。
-- 旧 scene、测试输入和示例资源不做兼容迁移；仓库内旧轴向内容全部按新 `Z-up` 语义重写。
+- 旧 scene、smoke 输入和测试场景不做兼容迁移；仓库内这些旧轴向 fixture 全部按新 `Z-up` 语义重写。
 - 透视 editor camera 改为 `Z-up` basis：yaw 绕 world `+Z`，pitch 绕 camera-local right。
 - `W/A/S/D` navigation、Fit View、Move/Rotate/Scale gizmo 和 render projection 使用同一套 `Z-up` 语义。
 - viewport 显示固定 `X-Y` 地面 grid、XYZ 主轴和右上角 orientation cube。
@@ -55,7 +55,7 @@
 - `Z` handle 在屏幕上表达为向上，不再使用旧的斜向深度轴。
 - `render`、`editor::viewport`、默认 scene、smoke、tests 和 imported mesh viewport projection 必须使用同一套语义。
 
-Imported OBJ 顶点在 M1 中按项目 world coordinates 解释，默认源文件已经是 `Z-up`。`asset::load_obj_mesh` 不做 `Y-up` / `Z-up` 自动转换；外部 DCC 坐标差异以后作为 import option 单独设计。
+Imported OBJ 顶点在 M1 中按项目 world coordinates 原样解释。`asset::load_obj_mesh` 不做 `Y-up` / `Z-up` 自动转换，也不判断第三方 sample 的真实轴向；`crates/asset/tests/upstream_examples.rs` 只证明 sample 能被 loader 读取。仓库内 scene/smoke/test fixture 如引用 OBJ，只按新 `Z-up` world 重新摆放 entity transform，不重写第三方 OBJ 文件本身。外部 DCC 坐标差异以后作为 import option 单独设计。
 
 旧 `.scene.ron` 按实验期格式处理。仓库内旧轴向 scene 示例、smoke 输入和测试输入直接删除或用 `Z-up` 重新生成；不实现旧格式检测、兼容渲染或自动转换。
 
@@ -154,9 +154,36 @@ ViewportProjection::from_view(view).project_world_point(world_point)
 要求：
 
 - perspective 和 orthographic 都返回 finite normalized viewport position。
+- perspective 可以保留当前 stylized depth skew；orthographic 必须排除 depth skew。
+- orthographic projection 只使用 screen-right 和 screen-up 对 world/view position 的投影来计算屏幕 `x/y`，view-space depth 不得混入屏幕 `x/y`。
+- 当前 `project_point(point)` 这类无 projection 参数的 helper 不能继续作为 orthographic 路径；要改成 projection-aware helper，或拆成 `project_perspective_point` / `project_orthographic_point` 两条显式路径。
 - draw-call 内部使用同一 helper 或同一 projection context。
 - editor 只负责把 normalized viewport position 映射到 egui screen rect。
 - 不在 `editor::viewport` 复制一套与 render 不一致的 projection formula。
+
+## Mesh Metrics
+
+Distance hint、Fit View 和 orthographic center/scale 不能从已投影 vertices 反推。`ViewportDrawCall.vertices` 只用于绘制和 screen-space hit-test；它们已经丢失或混入了 projection 语义。
+
+M1 需要在 draw-call metadata 中保留每个 visible mesh 的 world-space metrics。可以扩展 `ViewportMeshSpan`，也可以新增 companion struct，但必须提供：
+
+```text
+entity
+vertex_range
+index_range
+world_bounds_min
+world_bounds_max
+world_center
+```
+
+规则：
+
+- primitive 和 imported mesh 都在 transform 后、projection 前计算 world-space bounds。
+- selected distance hint 使用 selected visible mesh 的 `world_center`。
+- 没有 selected visible mesh 时，distance hint 使用所有 visible mesh bounds 的合并 center。
+- perspective Fit View 和 orthographic Fit View 都以 world-space bounds 为输入，再通过当前 projection basis 计算 camera move、ortho center 或 ortho scale。
+- screen-space hit-test 仍可使用 projected vertices 和 span ranges；不要把 hit-test 数据当成 distance/Fit 的真源。
+- 如果 draw-call 没有 world metrics，distance/Fit 返回短状态提示，不 panic。
 
 ## View State
 
@@ -178,11 +205,38 @@ ViewportViewState {
 - orthographic preset 生成 finite `ViewportView`。
 - orthographic view 使用 `Projection::Orthographic`。
 - orthographic preset 由 look direction + screen up 表生成。
-- Fit View 在 orthographic 下只调整 editor-only center/scale。
+- Fit View 在 orthographic 下只用 world-space mesh metrics 调整 editor-only center/scale。
 - view state 不写入 `.scene.ron`。
 - New/Open/reopen/project switch 后重置为默认 editor perspective。
 
 M1 不做复杂 orbit/pivot state。以后需要 Alt-orbit、camera bookmark 或更完整的正交 pan/zoom 时单独设计。
+
+## Reset Contract
+
+Editor-only viewport state reset 要落成一个明确入口，不分散 open/new/project code path。
+
+新增或等价实现：
+
+```text
+EditorApp::reset_viewport_state()
+```
+
+它负责：
+
+- `viewport_camera` / `ViewportViewState` 回到默认 perspective。
+- 清 orthographic preset、ortho center、ortho scale。
+- 清 transient overlay hover/active state。
+- 清 gizmo drag。
+- 退出 Pilot Camera。
+
+必须调用的路径：
+
+- `install_project_context(...)`：New Project 和 Open Project。
+- `replace_with_new_scene(...)`：New Scene。
+- `load_scene_from_relative_path(...)`：Open Scene 和 smoke reopen。
+- 任何后续新增的 scene/project switch helper。
+
+这些路径仍可继续清 history 和 edit sessions，但 viewport reset 不应只靠零散赋值。测试直接覆盖这些入口。
 
 ## Reference Overlay
 
@@ -216,7 +270,8 @@ Grid、axis 和 camera hint 使用 `egui::Painter` 绘制。它们不进入 `ren
 - Non-finite camera/view values：忽略该帧 view update，保持上一帧有效状态。
 - Pilot Camera active：orientation preset click 返回短状态提示，不修改 selected camera。
 - Orientation overlay click：先消费 pointer，不继续传给 gizmo 或 scene selection。
-- 旧 scene 或旧测试输入：不迁移；仓库内内容按新语义重写。
+- 旧 scene 或旧测试输入：不迁移；仓库内 scene/smoke/test fixture 按新语义重写。
+- 第三方 OBJ sample：不做轴向认定，不重写文件；只保证 loader 可读。
 
 这些都是用户操作状态，不应 panic。
 
@@ -230,8 +285,10 @@ Grid、axis 和 camera hint 使用 `egui::Painter` 绘制。它们不进入 `ren
 - `translation.y` 不再被当作 up axis。
 - shared projection helper 与 viewport draw-call 使用同一套 projection 结果。
 - perspective 和 orthographic projection 都能生成 finite draw-call。
+- orthographic projection 不使用 depth skew；改变 view-space depth 不改变 screen `x/y`。
 - cube/imported mesh span metadata 仍正确。
-- imported OBJ 顶点按 source coordinates 保留，render 侧按 `Z-up` world 解释，不做隐式 axis conversion。
+- visible mesh world metrics 覆盖 primitive 和 imported mesh。
+- imported OBJ 顶点按 source coordinates 保留，不做隐式 axis conversion。
 
 `editor::viewport` tests：
 
@@ -240,6 +297,8 @@ Grid、axis 和 camera hint 使用 `egui::Painter` 绘制。它们不进入 `ren
 - speed clamp、distance hint 和 non-finite guard 保留。
 - orientation cube hit-test 返回六个 preset。
 - 每个 preset 生成 finite orthographic `ViewportView`，并符合固定 look direction + screen-up 表。
+- perspective distance hint 使用 draw-call world metrics，不使用 projected vertices。
+- orthographic Fit View 使用 draw-call world metrics 调整 center/scale。
 - grid/axis helper 产出固定数量和颜色约定。
 - grid/axis helper 经 shared projection helper 投到 screen rect。
 - Move Z drag 改 `translation.z`，并使用上方向 screen mapping。
@@ -250,7 +309,7 @@ Grid、axis 和 camera hint 使用 `egui::Painter` 绘制。它们不进入 `ren
 - orientation preset 不置 dirty。
 - Pilot Camera active 时 orientation preset click 不修改 selected scene camera，也不改变 scene dirty state。
 - save/reopen 后 `.scene.ron` 不包含 grid、view preset、orientation cube 或 editor camera state。
-- New/Open/reopen/project switch 后 editor-only view state reset。
+- `install_project_context`、`replace_with_new_scene`、`load_scene_from_relative_path` 都通过同一个 reset helper 清 editor-only viewport state。
 - semantic smoke 覆盖 reference state reset 和 viewport draw path。
 
 验收命令沿用 README：
@@ -278,15 +337,17 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --
 ## 实施切片
 
 1. 从 `render` 提取 shared world-to-viewport projection helper，并用 tests 证明 helper 与 draw-call projection 一致。
-2. 收口 `Z-up` 坐标约定：更新 render projection、perspective editor camera basis、default scene、现有 viewport/gizmo tests。
-3. 重写仓库内旧轴向 `.scene.ron` 示例和测试输入，不做兼容迁移。
-4. 明确 imported OBJ 边界：保持 loader 原样读顶点，文档和 tests 声明 source coordinates 按 `Z-up` project world 解释。
-5. 扩展 editor-only view state，支持 perspective 和六个 orthographic preset；preset helper 使用固定 look direction + screen-up 表。
-6. 增加 camera speed/distance/ortho-scale hint helper。
-7. 增加 orientation cube layout、paint 和 hit-test，返回 `SetViewPreset` action；点击优先于 gizmo 和 scene selection。
-8. 增加 fixed `X-Y` grid、major axes 和 `Z` axis marker overlay，并通过 shared projection helper 绘制。
-9. 接入 `EditorApp` action handling，确保 preset click 不置 dirty，Pilot Camera active 时不改 selected camera，New/Open/reopen/project switch reset editor-only view state。
-10. 更新 README 和 architecture overview 中的当前实现、smoke 边界和 `Z-up` 约定。
-11. 运行最小自动验证和一次人工 viewport smoke。
+2. 拆分 perspective / orthographic projection path，确保 orthographic 不使用 depth skew。
+3. 为 visible mesh span 增加 world-space metrics，供 distance hint 和 Fit View 使用。
+4. 收口 `Z-up` 坐标约定：更新 render projection、perspective editor camera basis、default scene、现有 viewport/gizmo tests。
+5. 重写仓库内旧轴向 `.scene.ron` 示例和测试输入，不做兼容迁移。
+6. 明确 imported OBJ 边界：保持 loader 原样读顶点，不认定第三方 sample 轴向；scene/test fixture 按新 world 语义摆放。
+7. 扩展 editor-only view state，支持 perspective 和六个 orthographic preset；preset helper 使用固定 look direction + screen-up 表。
+8. 增加 camera speed/distance/ortho-scale hint helper。
+9. 增加 orientation cube layout、paint 和 hit-test，返回 `SetViewPreset` action；点击优先于 gizmo 和 scene selection。
+10. 增加 fixed `X-Y` grid、major axes 和 `Z` axis marker overlay，并通过 shared projection helper 绘制。
+11. 增加 `EditorApp::reset_viewport_state()` 或等价 helper，并接入 New/Open/reopen/project switch。
+12. 更新 README 和 architecture overview 中的当前实现、smoke 边界和 `Z-up` 约定。
+13. 运行最小自动验证和一次人工 viewport smoke。
 
 每个切片保留一个最小可失败测试。若后续要做 snapping、asset import axis option、camera bookmark、多 viewport、orbit/pivot 或完整 viewport toolbar，另起设计。
