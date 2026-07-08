@@ -357,11 +357,6 @@ impl EditorApp {
         let keyboard_shortcuts_allowed = Self::keyboard_shortcuts_allowed(ui.ctx());
         let fit_view_requested = self.fit_view_requested;
         self.fit_view_requested = false;
-        let view_mode_label = if self.pilot_camera {
-            viewport::PILOT_CAMERA_LABEL
-        } else {
-            viewport::EDITOR_CAMERA_LABEL
-        };
         let action = draw_viewport(
             ui,
             draw.as_ref(),
@@ -372,7 +367,6 @@ impl EditorApp {
             viewport::ViewportUiOptions {
                 keyboard_shortcuts_allowed,
                 fit_view_requested,
-                view_mode_label,
                 wgpu_probe,
             },
         );

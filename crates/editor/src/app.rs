@@ -308,10 +308,33 @@ impl EditorApp {
             ViewportAction::RestoreTransform { target, transform } => {
                 self.restore_viewport_transform(target, transform);
             }
+            ViewportAction::SetViewPreset(preset) => {
+                if self.pilot_camera {
+                    self.status = "Disable Pilot Camera to change viewport preset".to_owned();
+                } else {
+                    self.viewport_camera.set_preset(preset);
+                    self.status = self.viewport_camera.view_mode_label().to_owned();
+                }
+            }
+            ViewportAction::ReturnToPerspective => {
+                if self.pilot_camera {
+                    self.status = "Disable Pilot Camera to change viewport preset".to_owned();
+                } else {
+                    self.viewport_camera.return_to_perspective();
+                    self.status = "Perspective".to_owned();
+                }
+            }
             ViewportAction::Status(status) => {
                 self.status = status;
             }
         }
+    }
+
+    pub(crate) fn reset_viewport_state(&mut self) {
+        self.viewport_camera = ViewCamera::default();
+        self.transform_gizmo.clear_drag();
+        self.fit_view_requested = false;
+        self.pilot_camera = false;
     }
 
     pub(super) fn run_ui_action(&mut self, action: EditorUiAction) {

@@ -136,6 +136,54 @@ fn viewport_action_handler_supports_gizmo_preview_commit_and_undo() {
 }
 
 #[test]
+fn orientation_preset_does_not_dirty_scene() {
+    let mut app = super::EditorApp::default();
+    app.model.mark_saved();
+
+    app.handle_viewport_action(ViewportAction::SetViewPreset(crate::viewport::ViewPreset::Top));
+
+    assert!(!app.model.is_dirty());
+    assert!(app.status.contains("Top Orthographic"));
+}
+
+#[test]
+fn orientation_preset_is_ignored_while_piloting_camera() {
+    let mut app = super::EditorApp::default();
+    app.model.select(EntityId::new("camera"));
+    app.toggle_pilot_camera();
+    assert!(app.pilot_camera);
+    let before = app
+        .model
+        .world()
+        .entity("camera")
+        .and_then(|entity| entity.camera.clone())
+        .unwrap();
+
+    app.handle_viewport_action(ViewportAction::SetViewPreset(crate::viewport::ViewPreset::Top));
+
+    let after = app
+        .model
+        .world()
+        .entity("camera")
+        .and_then(|entity| entity.camera.clone())
+        .unwrap();
+    assert_eq!(after, before);
+    assert!(!app.model.is_dirty());
+    assert_eq!(app.status, "Disable Pilot Camera to change viewport preset");
+}
+
+#[test]
+fn scene_and_project_switch_reset_viewport_state() {
+    let mut app = super::EditorApp::default();
+    app.handle_viewport_action(ViewportAction::SetViewPreset(crate::viewport::ViewPreset::Top));
+    app.replace_with_new_scene();
+
+    assert_eq!(app.viewport_camera.view_mode_label(), "Perspective");
+    assert!(!app.pilot_camera);
+    assert_eq!(app.transform_gizmo.drag(), None);
+}
+
+#[test]
 fn rotate_viewport_transform_previews_then_commits_one_history_entry() {
     let mut app = super::EditorApp::default();
     let cube = app.model.create_cube();

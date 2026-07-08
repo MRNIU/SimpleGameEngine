@@ -235,8 +235,7 @@ impl EditorApp {
         self.model.reopen_scene_from_str(&input)?;
         self.model.clear_history();
         self.model.mark_saved();
-        self.transform_gizmo.clear_drag();
-        self.pilot_camera = false;
+        self.reset_viewport_state();
         self.clear_content_edit_sessions();
         self.current_path = Some(context.current_scene.clone());
         self.current_project = Some(context);
@@ -545,8 +544,7 @@ impl EditorApp {
     pub(super) fn replace_with_new_scene(&mut self) {
         self.model = EditorModel::default();
         self.model.clear_history();
-        self.transform_gizmo.clear_drag();
-        self.pilot_camera = false;
+        self.reset_viewport_state();
         self.clear_content_edit_sessions();
         self.current_path = None;
         self.pending_action = None;
@@ -567,8 +565,7 @@ impl EditorApp {
         let input = fs::read_to_string(project_root.join(relative_path))?;
         self.model.reopen_scene_from_str(&input)?;
         self.model.clear_history();
-        self.transform_gizmo.clear_drag();
-        self.pilot_camera = false;
+        self.reset_viewport_state();
         self.clear_content_edit_sessions();
         self.current_path = Some(relative_path.to_path_buf());
         if let Some(project) = &mut self.current_project {

@@ -627,7 +627,5 @@ fn viewport_right_button_navigation_does_not_capture_keyboard_focus() {
 fn viewport_source_draws_camera_mode_overlay() {
     let source = include_str!("../viewport.rs");
 
-    assert!(source.contains("view_mode_label"));
-    assert!(source.contains("Editor Camera"));
-    assert!(source.contains("Pilot Camera"));
+    assert!(source.contains("camera.hint_text"));
 }
