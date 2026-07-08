@@ -95,6 +95,14 @@ fn viewport_canvas_keeps_nonzero_paint_area() {
 }
 
 #[test]
+fn viewport_canvas_does_not_exceed_positive_available_space() {
+    assert_eq!(
+        super::viewport_canvas_size(egui::vec2(120.0, 90.0)),
+        egui::vec2(120.0, 90.0)
+    );
+}
+
+#[test]
 fn view_camera_clamps_pitch_and_speed() {
     let mut camera = ViewCamera::default();
 

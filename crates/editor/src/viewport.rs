@@ -205,8 +205,16 @@ pub(crate) fn draw_viewport(
 
 fn viewport_canvas_size(available: egui::Vec2) -> egui::Vec2 {
     egui::vec2(
-        available.x.max(VIEWPORT_MIN_SIZE.x),
-        available.y.max(VIEWPORT_MIN_SIZE.y),
+        if available.x > 0.0 {
+            available.x
+        } else {
+            VIEWPORT_MIN_SIZE.x
+        },
+        if available.y > 0.0 {
+            available.y
+        } else {
+            VIEWPORT_MIN_SIZE.y
+        },
     )
 }
 
