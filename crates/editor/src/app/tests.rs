@@ -1184,10 +1184,11 @@ fn plain_transform_shortcuts_skip_viewport_navigation_intent() {
 }
 
 #[test]
-fn pilot_camera_branch_does_not_pass_real_editor_camera_to_viewport() {
+fn pilot_camera_branch_passes_effective_view_and_hint_override() {
     let source = include_str!("panels.rs");
 
-    assert!(source.contains("let mut blocked_camera = self.viewport_camera"));
+    assert!(source.contains("view_override: piloted_view.as_ref()"));
+    assert!(source.contains("hint_text_override: pilot_hint.as_deref()"));
     assert!(source.contains("navigation_enabled: false"));
 }
 

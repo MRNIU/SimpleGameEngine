@@ -2,8 +2,8 @@
 
 use ecs::EntityId;
 use eframe::egui;
-use math::Transform;
-use render::{ViewportDrawCall, fit_viewport_draw_to_size};
+use math::{Transform, Vec3};
+use render::{ViewportDrawCall, ViewportView, fit_viewport_draw_to_size};
 
 mod camera;
 mod gizmo;
@@ -25,6 +25,8 @@ pub(crate) struct ViewportUiOptions<'a> {
     pub(crate) keyboard_shortcuts_allowed: bool,
     pub(crate) fit_view_requested: bool,
     pub(crate) navigation_enabled: bool,
+    pub(crate) view_override: Option<&'a ViewportView>,
+    pub(crate) hint_text_override: Option<&'a str>,
     pub(crate) wgpu_probe: Option<&'a ViewportWgpuProbe>,
 }
 
@@ -83,6 +85,8 @@ pub(crate) fn draw_viewport(
         keyboard_shortcuts_allowed,
         fit_view_requested,
         navigation_enabled,
+        view_override,
+        hint_text_override,
         wgpu_probe,
     } = options;
     ui.heading("Viewport");
@@ -250,14 +254,20 @@ pub(crate) fn draw_viewport(
     } else if let Some(draw) = fitted_draw.as_ref() {
         paint_fallback_viewport(rect, &painter, draw);
     }
-    let view = camera.to_viewport_view();
+    let view = view_override
+        .cloned()
+        .unwrap_or_else(|| camera.to_viewport_view());
     if let Some(projection) = render::ViewportProjection::from_view(&view) {
         paint_reference_lines(&painter, rect, &projection);
     }
+    let hint_text = hint_text_override.map_or_else(
+        || camera.hint_text(draw, selected),
+        std::borrow::ToOwned::to_owned,
+    );
     painter.text(
         rect.left_top() + egui::vec2(10.0, 8.0),
         egui::Align2::LEFT_TOP,
-        camera.hint_text(draw, selected),
+        hint_text,
         egui::FontId::proportional(13.0),
         egui::Color32::from_rgb(205, 214, 224),
     );
@@ -302,6 +312,54 @@ pub(crate) fn reference_lines() -> Vec<ReferenceLine> {
         width: 2.0,
     });
     lines
+}
+
+#[must_use]
+pub(crate) fn pilot_camera_hint_text(
+    view: &ViewportView,
+    draw: Option<&ViewportDrawCall>,
+    selected: Option<&EntityId>,
+) -> String {
+    let projection = match view.projection {
+        ecs::Projection::Perspective { fov_y_degrees } => {
+            format!("Perspective FOV {fov_y_degrees:.1}")
+        }
+        ecs::Projection::Orthographic { vertical_size } => {
+            format!("Orthographic Size {vertical_size:.2}")
+        }
+    };
+    let center = draw
+        .and_then(|draw| visible_mesh_center(draw, selected))
+        .unwrap_or(Vec3::ZERO);
+    let distance = center.distance(Vec3::from_array(view.transform.translation));
+    let mesh_count = draw.map_or(0, |draw| draw.mesh_spans.len());
+    format!("Pilot Camera  {projection}  Distance {distance:.2}  Meshes {mesh_count}")
+}
+
+fn visible_mesh_center(draw: &ViewportDrawCall, selected: Option<&EntityId>) -> Option<Vec3> {
+    if let Some(center) = selected
+        .and_then(|id| draw.mesh_spans.iter().find(|span| &span.entity == id))
+        .map(|span| Vec3::from_array(span.world_center))
+        .filter(|center| center.is_finite())
+    {
+        return Some(center);
+    }
+
+    let mut min = Vec3::splat(f32::INFINITY);
+    let mut max = Vec3::splat(f32::NEG_INFINITY);
+    let mut found = false;
+    for span in &draw.mesh_spans {
+        let span_min = Vec3::from_array(span.world_bounds_min);
+        let span_max = Vec3::from_array(span.world_bounds_max);
+        if !span_min.is_finite() || !span_max.is_finite() {
+            continue;
+        }
+        min = min.min(span_min);
+        max = max.max(span_max);
+        found = true;
+    }
+    let center = (min + max) * 0.5;
+    (found && center.is_finite()).then_some(center)
 }
 
 pub(crate) fn orientation_cube_layout(rect: egui::Rect) -> OrientationCubeLayout {

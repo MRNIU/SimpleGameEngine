@@ -352,6 +352,26 @@ fn camera_hint_uses_world_metrics_for_distance() {
 }
 
 #[test]
+fn pilot_camera_hint_uses_scene_view_data_not_editor_camera_speed() {
+    let draw = draw_with_two_mesh_spans();
+    let view = render::ViewportView::new(
+        EntityId::new("camera"),
+        Transform::from_translation([0.0, 0.0, 10.0]),
+        ecs::Projection::Perspective {
+            fov_y_degrees: 42.0,
+        },
+    );
+
+    let hint = super::pilot_camera_hint_text(&view, Some(&draw), Some(&EntityId::new("cube_1")));
+
+    assert!(hint.contains("Pilot Camera"));
+    assert!(hint.contains("Perspective FOV 42.0"));
+    assert!(hint.contains("Distance"));
+    assert!(hint.contains("Meshes 2"));
+    assert!(!hint.contains("Camera Speed"));
+}
+
+#[test]
 fn orthographic_fit_keeps_selected_mesh_from_filling_viewport() {
     let mut camera = ViewCamera::default();
     camera.set_preset(super::ViewPreset::Top);

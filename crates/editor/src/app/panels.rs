@@ -349,6 +349,9 @@ impl EditorApp {
             &self.imported_meshes,
         );
         let selected = self.model.selected().cloned();
+        let pilot_hint = piloted_view
+            .as_ref()
+            .map(|view| viewport::pilot_camera_hint_text(view, draw.as_ref(), selected.as_ref()));
         let selected_transform = selected
             .as_ref()
             .and_then(|id| self.model.world().entity(id.as_str()))
@@ -370,6 +373,8 @@ impl EditorApp {
                     keyboard_shortcuts_allowed,
                     fit_view_requested,
                     navigation_enabled: false,
+                    view_override: piloted_view.as_ref(),
+                    hint_text_override: pilot_hint.as_deref(),
                     wgpu_probe,
                 },
             )
@@ -385,6 +390,8 @@ impl EditorApp {
                     keyboard_shortcuts_allowed,
                     fit_view_requested,
                     navigation_enabled: true,
+                    view_override: None,
+                    hint_text_override: None,
                     wgpu_probe,
                 },
             )
