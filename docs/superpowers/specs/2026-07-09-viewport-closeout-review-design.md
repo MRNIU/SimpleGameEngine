@@ -56,7 +56,7 @@
 3. Move/Rotate/Scale gizmo 的 screen-axis 合同和当前测试、文档一致。
 4. selection、clear selection、camera navigation、gizmo drag 和 orientation overlay 的优先级没有互相抢输入。
 5. `.scene.ron` 不持久化 editor-only viewport state。
-6. README、architecture overview、active specs/plans 不再描述与当前代码相反的 viewport 合同。
+6. README、architecture overview 和 tracked specs 不再描述与当前代码相反的 viewport 合同。
 
 ## 当前真源
 
@@ -71,12 +71,13 @@
 - `crates/editor/src/viewport/gizmo.rs`
 - `crates/editor/src/app.rs`
 - `crates/editor/src/app/panels.rs`
+- `crates/editor/src/app/file_workflow.rs`
 - `crates/render/src/lib.rs`
 - `crates/editor/src/viewport/tests.rs`
 - `crates/editor/src/app/tests.rs`
 - `crates/render/src/tests.rs`
 
-旧 specs/plans 是 review 输入，不自动覆盖当前代码。发现旧文档和当前测试冲突时，先判断当前测试是否反映了后续已接受的修正；如果是，更新旧文档或新 closeout 说明，不回滚代码。
+旧 tracked specs 是 review 输入，不自动覆盖当前代码。`/docs/superpowers/plans/` 被 `.gitignore` 忽略，只能作为本地执行笔记辅助阅读，不能作为 repo truth surface 或必须修正的 Git 文档漂移对象。发现旧文档和当前测试冲突时，先判断当前测试是否反映了后续已接受的修正；如果是，更新 repo-visible 文档或新 closeout 说明，不回滚代码。
 
 ## Review Passes
 
@@ -126,6 +127,11 @@
 - `transform_for_gizmo_drag(...)`
 - `z_screen_axis()`
 - `PreviewTransform` / `CommitTransform` / `RestoreTransform`
+- `EditorApp::handle_viewport_action(...)`
+- `EditorApp::run_ui_action(...)`
+- `EditorUiAction::SetGizmoMode`
+- `EditorApp::handle_keyboard_shortcuts(...)`
+- `EditorApp::draw_top_toolbar(...)`
 - toolbar and shortcuts `Move (W)`, `Rotate (E)`, `Scale (R)`
 
 必须确认：
@@ -167,6 +173,7 @@
 检查范围：
 
 - `EditorApp::reset_viewport_state()`
+- `crates/editor/src/app/file_workflow.rs`
 - project install/open。
 - new/open/reopen scene。
 - smoke reopen path。
@@ -185,13 +192,14 @@
 
 - `README.md`
 - `docs/architecture/overview.md`
-- active viewport/gizmo specs and plans under `docs/superpowers/`
+- tracked viewport/gizmo specs under `docs/superpowers/specs/`
 
 必须确认：
 
 - 当前实现描述包含 Move/Rotate/Scale、Pilot effective view、reference aids、project workflow。
 - smoke 边界不夸大为 OS mouse automation、pixel proof 或跨平台 GPU proof。
-- 旧 plan/spec 中已经被后续提交改变的合同被标注或修正。
+- tracked specs 中已经被后续提交改变的合同被标注或修正。
+- ignored `/docs/superpowers/plans/` 不被当成 repo-visible truth surface；需要引用时只作为本地执行笔记。
 - Git-facing docs 不包含本地路径、container 名、Codex scratch 细节。
 
 ## Bug Classification
@@ -279,7 +287,7 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --
 - 已完成六个 review passes。
 - 每个 confirmed bug 都有测试或 smoke 证据。
 - 没有 confirmed bug 时，没有无意义代码 churn。
-- README/architecture/spec/plan 不再和当前 viewport 合同冲突。
+- README、architecture overview 和 tracked specs 不再和当前 viewport 合同冲突。
 - focused viewport/render tests 通过。
 - 如果有代码改动，workspace fmt/clippy/test 通过。
 
