@@ -158,13 +158,16 @@ impl ViewportProjection {
         if !world.is_finite() {
             return None;
         }
-        let view_position = self.view_rotation
-            * (world - self.camera_translation)
-            * VIEWPORT_WORLD_SCALE
-            * self.projection_scale;
+        let view_position =
+            self.view_rotation * (world - self.camera_translation) * VIEWPORT_WORLD_SCALE;
         let projected = match self.projection {
-            ProjectionKind::Perspective => project_perspective_point(view_position),
-            ProjectionKind::Orthographic => [view_position.x, view_position.y],
+            ProjectionKind::Perspective => {
+                project_perspective_point(view_position, self.projection_scale)
+            }
+            ProjectionKind::Orthographic => [
+                view_position.x * self.projection_scale,
+                view_position.y * self.projection_scale,
+            ],
         };
         projected
             .into_iter()
@@ -915,10 +918,11 @@ fn transform_local_point(mesh_rotation: Quat, translation: Vec3, point: [f32; 3]
     mesh_rotation * Vec3::from_array(point) + translation
 }
 
-fn project_perspective_point(point: Vec3) -> [f32; 2] {
+fn project_perspective_point(point: Vec3, projection_scale: f32) -> [f32; 2] {
+    let perspective_scale = projection_scale / (1.0 + point.z.max(0.0));
     [
-        point.x + point.z * VIEWPORT_DEPTH_SKEW[0],
-        point.y + point.z * VIEWPORT_DEPTH_SKEW[1],
+        (point.x + point.z * VIEWPORT_DEPTH_SKEW[0]) * perspective_scale,
+        (point.y + point.z * VIEWPORT_DEPTH_SKEW[1]) * perspective_scale,
     ]
 }
 

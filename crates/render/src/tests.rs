@@ -80,6 +80,18 @@ fn rounded_positions(draw: &super::ViewportDrawCall, span_index: usize) -> BTree
         .collect()
 }
 
+fn span_width(draw: &super::ViewportDrawCall, span_index: usize) -> f32 {
+    let span = &draw.mesh_spans[span_index];
+    let (min, max) = span
+        .vertex_range
+        .clone()
+        .map(|index| draw.vertices[index].position[0])
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), x| {
+            (min.min(x), max.max(x))
+        });
+    max - min
+}
+
 fn span_index_for(draw: &super::ViewportDrawCall, entity: &str) -> usize {
     draw.mesh_spans
         .iter()
@@ -281,6 +293,37 @@ fn viewport_view_projection_changes_projected_positions() {
     let narrow_draw = viewport_draw_call_with_view(&scene, None, &narrow).unwrap();
 
     assert_ne!(wide_draw.vertices, narrow_draw.vertices);
+}
+
+#[test]
+fn perspective_projection_scales_with_camera_distance() {
+    let mut world = world_with_camera();
+    add_cube(&mut world, "cube", [0.0, 0.0, 4.0]);
+    let scene = extract_render_scene(&world);
+    let far = ViewportView::new(
+        EntityId::new("far"),
+        Transform::identity(),
+        Projection::Perspective {
+            fov_y_degrees: 60.0,
+        },
+    );
+    let near = ViewportView::new(
+        EntityId::new("near"),
+        Transform::from_translation([0.0, 0.0, 2.0]),
+        Projection::Perspective {
+            fov_y_degrees: 60.0,
+        },
+    );
+
+    let far_draw = viewport_draw_call_with_view(&scene, None, &far).unwrap();
+    let near_draw = viewport_draw_call_with_view(&scene, None, &near).unwrap();
+    let far_width = span_width(&far_draw, 0);
+    let near_width = span_width(&near_draw, 0);
+
+    assert!(
+        near_width > far_width,
+        "near camera should enlarge projected span: near={near_width}, far={far_width}"
+    );
 }
 
 #[test]
