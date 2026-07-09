@@ -77,7 +77,7 @@
 
 ```text
 effective_view =
-  if Pilot Camera active and selected scene camera exists:
+  if Pilot Camera active:
     selected scene camera ViewportView
   else:
     editor viewport camera ViewportView
@@ -85,12 +85,14 @@ effective_view =
 
 规则：
 
+- Pilot 只能在当前 selection 是 scene camera 时进入。
+- Pilot active 时如果 selection 被清空、切到非 camera entity、camera component 消失或 scene/project 切换，`sync_pilot_camera_target()` 必须在 draw 前关闭 Pilot。
 - render draw call 使用 `effective_view`。
 - reference grid/axis overlay 使用 `effective_view`。
-- camera hint 使用 `effective_view` 对应的 mode/metrics。
+- camera hint 使用 `effective_view` 对应的数据源：普通 editor view 使用 `ViewCamera` 的 speed/distance/mode；Pilot view 使用 selected scene camera 的 projection、entity/name 和 draw metrics，不读取 editor `ViewCamera` 的 speed/distance 作为 Pilot hint。
 - Pilot active 时 navigation disabled，并返回 `Disable Pilot Camera to navigate editor view` 或等价短状态。
 - Pilot active 时不修改 editor camera、不修改 selected scene camera、不 dirty、不写 undo。
-- 没有 selected scene camera 时，Pilot 可以回落到 editor view，但不得产生半个 scene camera view、半个 editor overlay 的混合状态。
+- 不存在 `Pilot active + no selected scene camera` 的 fallback 半状态。
 
 ## Camera Contract
 
@@ -118,12 +120,17 @@ Perspective camera 使用 Z-up world semantics：
 
 | 输入 | 映射 |
 | --- | --- |
-| horizontal `RMB drag` | yaw |
-| vertical `RMB drag` | pitch |
-| horizontal `Alt+LMB drag` | orbit yaw |
-| vertical `Alt+LMB drag` | orbit pitch |
+| `RMB drag` right, `delta.x > 0` | yaw 增加，camera look right |
+| `RMB drag` left, `delta.x < 0` | yaw 减小，camera look left |
+| `RMB drag` up, `delta.y < 0` | pitch 增加，camera look up |
+| `RMB drag` down, `delta.y > 0` | pitch 减小，camera look down |
+| `Alt+LMB drag` right, `delta.x > 0` | orbit yaw 增加 |
+| `Alt+LMB drag` left, `delta.x < 0` | orbit yaw 减小 |
+| `Alt+LMB drag` up, `delta.y < 0` | orbit pitch 增加 |
+| `Alt+LMB drag` down, `delta.y > 0` | orbit pitch 减小 |
 | `Alt+MMB drag` | view-plane pan |
-| `Alt+RMB vertical drag` | dolly distance |
+| `Alt+RMB drag` up, `delta.y < 0` | dolly in，`orbit_distance` 减小 |
+| `Alt+RMB drag` down, `delta.y > 0` | dolly out，`orbit_distance` 增加 |
 
 规则：
 
