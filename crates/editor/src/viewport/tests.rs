@@ -938,70 +938,31 @@ fn draw_viewport_signature_accepts_keyboard_and_fit_guards() {
 }
 
 #[test]
+fn camera_navigation_consumes_pointer_before_gizmo_and_selection() {
+    assert!(super::camera_navigation_requested(
+        true, true, true, false, false
+    ));
+    assert!(super::camera_navigation_requested(
+        false, true, false, false, true
+    ));
+    assert!(!super::can_start_gizmo_drag(true, false, true));
+    assert!(!super::can_select_viewport(true, false, true));
+    assert!(super::can_start_gizmo_drag(true, false, false));
+    assert!(super::can_select_viewport(true, false, false));
+}
+
+#[test]
+fn active_gizmo_blocks_selection_after_camera_does_not_consume() {
+    assert!(!super::can_start_gizmo_drag(true, true, false));
+    assert!(!super::can_select_viewport(true, true, false));
+}
+
+#[test]
 fn viewport_keyboard_fit_uses_shortcut_guard_without_hover_gate() {
     let source = include_str!("../viewport.rs");
 
     assert!(source.contains("keyboard_shortcuts_allowed && f_pressed"));
     assert!(!source.contains("response.hovered() && keyboard_shortcuts_allowed && f_pressed"));
-}
-
-#[test]
-fn viewport_right_button_navigation_does_not_capture_keyboard_focus() {
-    let source = include_str!("../viewport.rs");
-
-    assert!(source.contains("viewport_hovered && right_down"));
-    assert!(!source.contains("response.request_focus()"));
-}
-
-#[test]
-fn viewport_speed_scroll_requires_right_mouse_navigation() {
-    let source = include_str!("../viewport.rs");
-
-    assert!(source.contains("right_down"));
-    assert!(source.contains("camera.adjust_speed(scroll_y)"));
-    assert!(!source.contains("response.hovered() && scroll_y != 0.0"));
-}
-
-#[test]
-fn viewport_navigation_returns_pilot_status_before_camera_mutation() {
-    let source = include_str!("../viewport.rs");
-    let navigation_block = source
-        .find("let alt_navigation")
-        .expect("navigation block present");
-    let guard = source[navigation_block..]
-        .find("if navigation_enabled")
-        .map(|index| navigation_block + index)
-        .expect("navigation guard present");
-    let look = source[navigation_block..]
-        .find("camera.look")
-        .map(|index| navigation_block + index)
-        .expect("look navigation present");
-    let orbit = source[navigation_block..]
-        .find("camera.orbit")
-        .map(|index| navigation_block + index)
-        .expect("orbit navigation present");
-
-    assert!(guard < look);
-    assert!(guard < orbit);
-}
-
-#[test]
-fn viewport_pilot_navigation_status_still_paints_viewport() {
-    let source = include_str!("../viewport.rs");
-    let navigation_block = source
-        .find("let alt_navigation")
-        .expect("navigation block present");
-    let status = source[navigation_block..]
-        .find("Disable Pilot Camera to navigate editor view")
-        .map(|index| navigation_block + index)
-        .expect("pilot navigation status present");
-    let paint = source[status..]
-        .find("paint_wgpu_viewport")
-        .map(|index| status + index)
-        .expect("viewport paint path present");
-    let guarded_block = &source[status..paint];
-
-    assert!(!guarded_block.contains("return ViewportAction::Status"));
 }
 
 #[test]

@@ -72,6 +72,37 @@ pub(crate) enum ViewportAction {
     Status(String),
 }
 
+#[must_use]
+pub(crate) const fn camera_navigation_requested(
+    alt_down: bool,
+    viewport_hovered: bool,
+    primary_down: bool,
+    middle_down: bool,
+    right_down: bool,
+) -> bool {
+    let any_navigation_button = primary_down || middle_down || right_down;
+    let camera_button_allowed = alt_down || right_down;
+    viewport_hovered && any_navigation_button && camera_button_allowed
+}
+
+#[must_use]
+pub(crate) const fn can_start_gizmo_drag(
+    primary_pressed: bool,
+    drag_active: bool,
+    pointer_consumed_by_camera: bool,
+) -> bool {
+    primary_pressed && !drag_active && !pointer_consumed_by_camera
+}
+
+#[must_use]
+pub(crate) const fn can_select_viewport(
+    primary_clicked: bool,
+    pointer_consumed_by_gizmo: bool,
+    pointer_consumed_by_camera: bool,
+) -> bool {
+    primary_clicked && !pointer_consumed_by_gizmo && !pointer_consumed_by_camera
+}
+
 pub(crate) fn draw_viewport(
     ui: &mut egui::Ui,
     draw: Option<&ViewportDrawCall>,
@@ -188,10 +219,14 @@ pub(crate) fn draw_viewport(
     }
 
     let viewport_hovered = response.hovered();
-    let alt_navigation =
-        alt_down && viewport_hovered && (primary_down || middle_down || right_down);
-    let right_navigation = !alt_down && viewport_hovered && right_down;
-    if alt_navigation || right_navigation {
+    let camera_navigation = camera_navigation_requested(
+        alt_down,
+        viewport_hovered,
+        primary_down,
+        middle_down,
+        right_down,
+    );
+    if camera_navigation {
         pointer_consumed_by_camera = true;
         if navigation_enabled {
             camera.begin_navigation(draw, selected);
@@ -231,20 +266,23 @@ pub(crate) fn draw_viewport(
         }
     }
 
-    if primary_pressed
-        && gizmo.drag().is_none()
-        && !pointer_consumed_by_camera
-        && let Some(drag) =
-            gizmo_drag_from_press_origin(&handles, press_origin, selected, selected_transform)
+    if can_start_gizmo_drag(
+        primary_pressed,
+        gizmo.drag().is_some(),
+        pointer_consumed_by_camera,
+    ) && let Some(drag) =
+        gizmo_drag_from_press_origin(&handles, press_origin, selected, selected_transform)
     {
         pointer_consumed_by_gizmo = true;
         gizmo.start_drag(drag);
     }
 
-    if response.clicked_by(egui::PointerButton::Primary)
-        && !pointer_consumed_by_gizmo
-        && !pointer_consumed_by_camera
-        && let (Some(draw), Some(pointer)) = (fitted_draw.as_ref(), response.interact_pointer_pos())
+    if can_select_viewport(
+        response.clicked_by(egui::PointerButton::Primary),
+        pointer_consumed_by_gizmo,
+        pointer_consumed_by_camera,
+    ) && let (Some(draw), Some(pointer)) =
+        (fitted_draw.as_ref(), response.interact_pointer_pos())
     {
         action = hit_test_viewport_draw(draw, rect, pointer);
     }

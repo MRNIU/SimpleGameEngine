@@ -446,8 +446,13 @@ impl EditorApp {
             self.run_ui_action(EditorUiAction::DuplicateSelection);
         }
 
-        if Self::keyboard_shortcuts_allowed(context) {
-            if !Self::viewport_navigation_intent(context) {
+        let keyboard_shortcuts_allowed = Self::keyboard_shortcuts_allowed(context);
+        let viewport_navigation_intent = Self::viewport_navigation_intent(context);
+        if keyboard_shortcuts_allowed {
+            if Self::plain_transform_shortcuts_allowed(
+                keyboard_shortcuts_allowed,
+                viewport_navigation_intent,
+            ) {
                 if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::W))
                 {
                     self.run_ui_action(EditorUiAction::SetGizmoMode(GizmoMode::Move));
@@ -470,6 +475,13 @@ impl EditorApp {
                 self.run_ui_action(EditorUiAction::DeleteSelection);
             }
         }
+    }
+
+    fn plain_transform_shortcuts_allowed(
+        keyboard_shortcuts_allowed: bool,
+        viewport_navigation_intent: bool,
+    ) -> bool {
+        keyboard_shortcuts_allowed && !viewport_navigation_intent
     }
 
     fn viewport_navigation_intent(context: &egui::Context) -> bool {

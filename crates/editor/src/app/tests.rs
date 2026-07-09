@@ -1173,14 +1173,16 @@ fn keyboard_shortcuts_switch_transform_modes_with_w_e_and_r() {
 }
 
 #[test]
-fn plain_transform_shortcuts_skip_viewport_navigation_intent() {
-    let source = include_str!("../app.rs");
-    let shortcut_source = &source[source
-        .find("fn handle_keyboard_shortcuts")
-        .expect("shortcut helper present")..];
-
-    assert!(source.contains("fn viewport_navigation_intent"));
-    assert!(shortcut_source.contains("!Self::viewport_navigation_intent(context)"));
+fn plain_transform_shortcuts_are_blocked_during_viewport_navigation() {
+    assert!(super::EditorApp::plain_transform_shortcuts_allowed(
+        true, false
+    ));
+    assert!(!super::EditorApp::plain_transform_shortcuts_allowed(
+        true, true
+    ));
+    assert!(!super::EditorApp::plain_transform_shortcuts_allowed(
+        false, false
+    ));
 }
 
 #[test]
