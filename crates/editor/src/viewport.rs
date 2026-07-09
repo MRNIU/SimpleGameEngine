@@ -24,6 +24,7 @@ const VIEWPORT_MIN_SIZE: egui::Vec2 = egui::vec2(240.0, 180.0);
 pub(crate) struct ViewportUiOptions<'a> {
     pub(crate) keyboard_shortcuts_allowed: bool,
     pub(crate) fit_view_requested: bool,
+    pub(crate) navigation_enabled: bool,
     pub(crate) wgpu_probe: Option<&'a ViewportWgpuProbe>,
 }
 
@@ -81,6 +82,7 @@ pub(crate) fn draw_viewport(
     let ViewportUiOptions {
         keyboard_shortcuts_allowed,
         fit_view_requested,
+        navigation_enabled,
         wgpu_probe,
     } = options;
     ui.heading("Viewport");
@@ -89,28 +91,8 @@ pub(crate) fn draw_viewport(
         egui::Sense::click_and_drag(),
     );
     let mut action = ViewportAction::None;
-    let right_down = ui.input(|input| input.pointer.secondary_down());
     let pointer_delta = ui.input(|input| input.pointer.delta());
-    if response.dragged_by(egui::PointerButton::Secondary) && right_down {
-        camera.look(pointer_delta);
-    }
     let scroll_y = ui.input(|input| input.smooth_scroll_delta.y);
-    if response.hovered() && scroll_y != 0.0 {
-        camera.adjust_speed(scroll_y);
-    }
-    if right_down && response.hovered() {
-        ui.ctx().request_repaint();
-        camera.move_local(
-            ViewMoveInput {
-                forward: ui.input(|input| input.key_down(egui::Key::W)),
-                backward: ui.input(|input| input.key_down(egui::Key::S)),
-                left: ui.input(|input| input.key_down(egui::Key::A)),
-                right: ui.input(|input| input.key_down(egui::Key::D)),
-            },
-            ui.input(|input| input.stable_dt),
-        );
-    }
-
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(18, 24, 29));
     let fitted_draw =
@@ -119,11 +101,12 @@ pub(crate) fn draw_viewport(
     let keyboard_fit_requested = keyboard_shortcuts_allowed && f_pressed;
     let fit_requested = fit_view_requested || keyboard_fit_requested;
     if fit_requested {
-        match draw {
-            Some(draw) if camera.fit_draw(draw, selected) => {
-                ui.ctx().request_repaint();
-            }
-            Some(_) | None => action = ViewportAction::Status("No visible mesh to fit".to_owned()),
+        if navigation_enabled {
+            camera.frame_visible(draw, selected);
+            ui.ctx().request_repaint();
+        } else {
+            action =
+                ViewportAction::Status("Disable Pilot Camera to navigate editor view".to_owned());
         }
     }
     let handles = fitted_draw.as_ref().map_or_else(Vec::new, |draw| {
@@ -137,9 +120,13 @@ pub(crate) fn draw_viewport(
     gizmo.sync_active_from_drag();
     let primary_down = ui.input(|input| input.pointer.primary_down());
     let primary_pressed = ui.input(|input| input.pointer.primary_pressed());
+    let middle_down = ui.input(|input| input.pointer.middle_down());
+    let right_down = ui.input(|input| input.pointer.secondary_down());
+    let alt_down = ui.input(|input| input.modifiers.alt);
     let press_origin = ui.input(|input| input.pointer.press_origin());
     let esc_pressed = ui.input(|input| input.key_pressed(egui::Key::Escape));
     let mut pointer_consumed_by_gizmo = false;
+    let mut pointer_consumed_by_camera = false;
     let orientation_layout = orientation_cube_layout(rect);
 
     if esc_pressed && let Some(drag) = gizmo.drag().cloned() {
@@ -196,8 +183,53 @@ pub(crate) fn draw_viewport(
         }
     }
 
+    let viewport_hovered = response.hovered();
+    let alt_navigation =
+        alt_down && viewport_hovered && (primary_down || middle_down || right_down);
+    let right_navigation = !alt_down && viewport_hovered && right_down;
+    if alt_navigation || right_navigation {
+        pointer_consumed_by_camera = true;
+        if navigation_enabled {
+            camera.begin_navigation(draw, selected);
+            ui.ctx().request_repaint();
+            if alt_down && primary_down {
+                if response.dragged_by(egui::PointerButton::Primary) {
+                    camera.orbit(pointer_delta);
+                }
+            } else if alt_down && middle_down {
+                if response.dragged_by(egui::PointerButton::Middle) {
+                    camera.pan(pointer_delta);
+                }
+            } else if alt_down && right_down {
+                if response.dragged_by(egui::PointerButton::Secondary) {
+                    camera.dolly(pointer_delta.y);
+                }
+            } else if right_down {
+                if response.dragged_by(egui::PointerButton::Secondary) {
+                    camera.look(pointer_delta);
+                }
+                if scroll_y != 0.0 {
+                    camera.adjust_speed(scroll_y);
+                }
+                camera.move_local(
+                    ViewMoveInput {
+                        forward: ui.input(|input| input.key_down(egui::Key::W)),
+                        backward: ui.input(|input| input.key_down(egui::Key::S)),
+                        left: ui.input(|input| input.key_down(egui::Key::A)),
+                        right: ui.input(|input| input.key_down(egui::Key::D)),
+                    },
+                    ui.input(|input| input.stable_dt),
+                );
+            }
+        } else {
+            action =
+                ViewportAction::Status("Disable Pilot Camera to navigate editor view".to_owned());
+        }
+    }
+
     if primary_pressed
         && gizmo.drag().is_none()
+        && !pointer_consumed_by_camera
         && let Some(drag) =
             gizmo_drag_from_press_origin(&handles, press_origin, selected, selected_transform)
     {
@@ -207,6 +239,7 @@ pub(crate) fn draw_viewport(
 
     if response.clicked_by(egui::PointerButton::Primary)
         && !pointer_consumed_by_gizmo
+        && !pointer_consumed_by_camera
         && let (Some(draw), Some(pointer)) = (fitted_draw.as_ref(), response.interact_pointer_pos())
     {
         action = hit_test_viewport_draw(draw, rect, pointer);

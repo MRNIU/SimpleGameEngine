@@ -195,7 +195,7 @@ pub(crate) fn transform_for_gizmo_drag(
             start.translation[0] += delta.dot(egui::Vec2::X) * GIZMO_WORLD_UNITS_PER_PIXEL;
         }
         GizmoHandle::MoveY => {
-            start.translation[1] += delta.dot(-egui::Vec2::Y) * GIZMO_WORLD_UNITS_PER_PIXEL;
+            start.translation[1] += delta.dot(egui::Vec2::Y) * GIZMO_WORLD_UNITS_PER_PIXEL;
         }
         GizmoHandle::MoveZ => {
             start.translation[2] += delta.dot(z_screen_axis()) * GIZMO_WORLD_UNITS_PER_PIXEL;
@@ -310,8 +310,8 @@ fn move_gizmo_handles(center: egui::Pos2) -> Vec<GizmoHandleRect> {
         ),
         GizmoHandleRect::new(
             GizmoHandle::MoveY,
-            center - egui::Vec2::Y * GIZMO_HANDLE_LENGTH,
-            -egui::Vec2::Y,
+            center + egui::Vec2::Y * GIZMO_HANDLE_LENGTH,
+            egui::Vec2::Y,
             GIZMO_MOVE_HIT_SIZE,
         ),
         GizmoHandleRect::new(

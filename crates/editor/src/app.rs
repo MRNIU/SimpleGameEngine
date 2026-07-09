@@ -447,14 +447,19 @@ impl EditorApp {
         }
 
         if Self::keyboard_shortcuts_allowed(context) {
-            if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::W)) {
-                self.run_ui_action(EditorUiAction::SetGizmoMode(GizmoMode::Move));
-            }
-            if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::E)) {
-                self.run_ui_action(EditorUiAction::SetGizmoMode(GizmoMode::Rotate));
-            }
-            if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::R)) {
-                self.run_ui_action(EditorUiAction::SetGizmoMode(GizmoMode::Scale));
+            if !Self::viewport_navigation_intent(context) {
+                if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::W))
+                {
+                    self.run_ui_action(EditorUiAction::SetGizmoMode(GizmoMode::Move));
+                }
+                if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::E))
+                {
+                    self.run_ui_action(EditorUiAction::SetGizmoMode(GizmoMode::Rotate));
+                }
+                if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::R))
+                {
+                    self.run_ui_action(EditorUiAction::SetGizmoMode(GizmoMode::Scale));
+                }
             }
             if context
                 .input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Delete))
@@ -465,6 +470,16 @@ impl EditorApp {
                 self.run_ui_action(EditorUiAction::DeleteSelection);
             }
         }
+    }
+
+    fn viewport_navigation_intent(context: &egui::Context) -> bool {
+        context.input(|input| {
+            input.pointer.secondary_down()
+                || (input.modifiers.alt
+                    && (input.pointer.primary_down()
+                        || input.pointer.middle_down()
+                        || input.pointer.secondary_down()))
+        })
     }
 
     fn begin_name_edit(&mut self, target: EntityId, before: String) {

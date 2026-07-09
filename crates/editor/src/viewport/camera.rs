@@ -3,13 +3,22 @@
 use ecs::{EntityId, Projection};
 use eframe::egui;
 use math::{Quat, Transform, Vec3};
-use render::{ViewportDrawCall, ViewportProjection, ViewportView};
+use render::{ViewportDrawCall, ViewportView};
 
 const EDITOR_VIEW_ENTITY: &str = "editor_view";
 const LOOK_SENSITIVITY: f32 = 0.01;
+const ORBIT_SENSITIVITY: f32 = 0.01;
+const PAN_SENSITIVITY: f32 = 0.0025;
+const DOLLY_SENSITIVITY: f32 = 0.02;
 const MOVE_SCALE: f32 = 4.0;
 const SPEED_SCROLL_SCALE: f32 = 0.05;
-const FIT_SCREEN_TO_WORLD_SCALE: f32 = 1.0 / 0.12;
+const DEFAULT_ORBIT_DISTANCE: f32 = 8.0;
+const DEFAULT_FOV_Y_DEGREES: f32 = 60.0;
+const MIN_FOV_Y_DEGREES: f32 = 10.0;
+const MAX_FOV_Y_DEGREES: f32 = 120.0;
+const FRAME_MARGIN: f32 = 1.35;
+// ponytail: mirrors render's fixed viewport projection; replace with a render-provided matrix if it stops being fixed.
+const VIEWPORT_DEPTH_SKEW: [f32; 2] = [0.35, 0.2];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ViewCamera {
@@ -17,6 +26,9 @@ pub(crate) struct ViewCamera {
     yaw: f32,
     pitch: f32,
     speed: f32,
+    orbit_pivot: [f32; 3],
+    orbit_distance: f32,
+    fov_y_degrees: f32,
     mode: ViewMode,
     ortho_center: [f32; 3],
     ortho_scale: f32,
@@ -51,6 +63,7 @@ impl ViewCamera {
     pub(crate) const MAX_SPEED: f32 = 20.0;
     pub(crate) const MIN_PITCH: f32 = -1.45;
     pub(crate) const MAX_PITCH: f32 = 1.45;
+    pub(crate) const MIN_ORBIT_DISTANCE: f32 = 0.25;
 
     #[cfg(test)]
     #[must_use]
@@ -64,13 +77,27 @@ impl ViewCamera {
         self.speed
     }
 
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) const fn orbit_pivot(self) -> [f32; 3] {
+        self.orbit_pivot
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) const fn orbit_distance(self) -> f32 {
+        self.orbit_distance
+    }
+
     pub(crate) fn look(&mut self, delta: egui::Vec2) {
         if !delta.x.is_finite() || !delta.y.is_finite() {
             return;
         }
-        self.yaw -= delta.x * LOOK_SENSITIVITY;
+        self.return_to_perspective();
+        self.yaw -= delta.y * LOOK_SENSITIVITY;
         self.pitch =
-            (self.pitch - delta.y * LOOK_SENSITIVITY).clamp(Self::MIN_PITCH, Self::MAX_PITCH);
+            (self.pitch - delta.x * LOOK_SENSITIVITY).clamp(Self::MIN_PITCH, Self::MAX_PITCH);
+        self.sync_pivot_from_position();
     }
 
     pub(crate) fn adjust_speed(&mut self, scroll_y: f32) {
@@ -85,6 +112,7 @@ impl ViewCamera {
         if !dt.is_finite() || dt <= 0.0 {
             return;
         }
+        self.return_to_perspective();
         let forward = self.forward();
         let right = self.right();
         let mut direction = Vec3::ZERO;
@@ -103,9 +131,16 @@ impl ViewCamera {
         if direction.length_squared() <= f32::EPSILON {
             return;
         }
-        let moved =
-            Vec3::from_array(self.position) + direction.normalize() * self.speed * dt * MOVE_SCALE;
+        let movement = direction.normalize() * self.speed * dt * MOVE_SCALE;
+        let moved = Vec3::from_array(self.position) + movement;
+        if !moved.is_finite() {
+            return;
+        }
         self.position = moved.to_array();
+        let pivot = Vec3::from_array(self.orbit_pivot) + movement;
+        if pivot.is_finite() {
+            self.orbit_pivot = pivot.to_array();
+        }
     }
 
     #[must_use]
@@ -119,7 +154,7 @@ impl ViewCamera {
                     scale: [1.0, 1.0, 1.0],
                 },
                 Projection::Perspective {
-                    fov_y_degrees: 60.0,
+                    fov_y_degrees: self.fov_y_degrees,
                 },
             ),
             ViewMode::Orthographic(preset) => ViewportView::new(
@@ -136,38 +171,90 @@ impl ViewCamera {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn fit_draw(
         &mut self,
         draw: &ViewportDrawCall,
         selected: Option<&EntityId>,
     ) -> bool {
-        let Some((min, max, center)) = visible_bounds(draw, selected) else {
-            return false;
-        };
+        self.frame_visible(Some(draw), selected)
+    }
+
+    pub(crate) fn frame_visible(
+        &mut self,
+        draw: Option<&ViewportDrawCall>,
+        selected: Option<&EntityId>,
+    ) -> bool {
+        let (min, max, center) = draw
+            .and_then(|draw| visible_bounds(draw, selected))
+            .unwrap_or((Vec3::ZERO, Vec3::ZERO, Vec3::ZERO));
+        let distance = frame_distance(min, max);
+        self.orbit_pivot = center.to_array();
+        self.orbit_distance = distance;
+        self.fov_y_degrees = DEFAULT_FOV_Y_DEGREES;
+        self.update_position_from_pivot();
         match self.mode {
-            ViewMode::Perspective => {
-                let Some(projected) = ViewportProjection::from_view(&self.to_viewport_view())
-                    .and_then(|projection| projection.project_world_point(center.to_array()))
-                else {
-                    return false;
-                };
-                let offset = self.rotation()
-                    * Vec3::new(
-                        projected[0] * FIT_SCREEN_TO_WORLD_SCALE,
-                        projected[1] * FIT_SCREEN_TO_WORLD_SCALE,
-                        0.0,
-                    );
-                if !offset.is_finite() {
-                    return false;
-                }
-                self.position = (Vec3::from_array(self.position) + offset).to_array();
-            }
+            ViewMode::Perspective => {}
             ViewMode::Orthographic(_) => {
                 self.ortho_center = center.to_array();
-                self.ortho_scale = (max - min).max_element().max(0.5);
+                self.ortho_scale = (max - min).max_element().max(2.0);
             }
         }
         true
+    }
+
+    pub(crate) fn begin_navigation(
+        &mut self,
+        draw: Option<&ViewportDrawCall>,
+        selected: Option<&EntityId>,
+    ) {
+        if matches!(self.mode, ViewMode::Orthographic(_)) {
+            self.mode = ViewMode::Perspective;
+            self.frame_visible(draw, selected);
+        } else {
+            self.return_to_perspective();
+        }
+    }
+
+    pub(crate) fn orbit(&mut self, delta: egui::Vec2) {
+        if !delta.x.is_finite() || !delta.y.is_finite() {
+            return;
+        }
+        self.return_to_perspective();
+        self.yaw -= delta.y * ORBIT_SENSITIVITY;
+        self.pitch =
+            (self.pitch - delta.x * ORBIT_SENSITIVITY).clamp(Self::MIN_PITCH, Self::MAX_PITCH);
+        self.update_position_from_pivot();
+    }
+
+    pub(crate) fn pan(&mut self, delta: egui::Vec2) {
+        if !delta.x.is_finite() || !delta.y.is_finite() {
+            return;
+        }
+        self.return_to_perspective();
+        let scale = (self.orbit_distance * PAN_SENSITIVITY).clamp(0.0025, 0.2);
+        let movement = (-self.right() * delta.x + self.up() * delta.y) * scale;
+        if !movement.is_finite() {
+            return;
+        }
+        self.position = (Vec3::from_array(self.position) + movement).to_array();
+        self.orbit_pivot = (Vec3::from_array(self.orbit_pivot) + movement).to_array();
+    }
+
+    pub(crate) fn dolly(&mut self, delta_y: f32) {
+        if !delta_y.is_finite() {
+            return;
+        }
+        self.return_to_perspective();
+        let next = self.orbit_distance * (1.0 + delta_y * DOLLY_SENSITIVITY);
+        if !next.is_finite() {
+            return;
+        }
+        let fov_factor = (1.0 + delta_y * DOLLY_SENSITIVITY).max(0.05);
+        self.fov_y_degrees =
+            (self.fov_y_degrees * fov_factor).clamp(MIN_FOV_Y_DEGREES, MAX_FOV_Y_DEGREES);
+        self.orbit_distance = next.clamp(Self::MIN_ORBIT_DISTANCE, 10_000.0);
+        self.update_position_from_pivot();
     }
 
     pub(crate) fn set_preset(&mut self, preset: ViewPreset) {
@@ -204,7 +291,7 @@ impl ViewCamera {
                     .unwrap_or(Vec3::ZERO)
                     .distance(Vec3::from_array(self.position));
                 format!(
-                    "Perspective  Speed {:.2}  Distance {:.2}",
+                    "Perspective  Camera Speed {:.2}  Distance {:.2}",
                     self.speed, distance
                 )
             }
@@ -225,11 +312,35 @@ impl ViewCamera {
     }
 
     fn forward(self) -> Vec3 {
-        self.rotation() * Vec3::X
+        self.rotation() * Vec3::Y
     }
 
     fn right(self) -> Vec3 {
+        self.rotation() * Vec3::X
+    }
+
+    fn up(self) -> Vec3 {
         self.rotation() * Vec3::Y
+    }
+
+    fn update_position_from_pivot(&mut self) {
+        let position = Vec3::from_array(self.orbit_pivot) - self.centered_pivot_offset();
+        if position.is_finite() {
+            self.position = position.to_array();
+        }
+    }
+
+    fn sync_pivot_from_position(&mut self) {
+        let pivot = Vec3::from_array(self.position) + self.centered_pivot_offset();
+        if pivot.is_finite() {
+            self.orbit_pivot = pivot.to_array();
+        }
+    }
+
+    fn centered_pivot_offset(self) -> Vec3 {
+        let [skew_x, skew_y] = VIEWPORT_DEPTH_SKEW;
+        let local_z = self.orbit_distance / (1.0 + skew_x * skew_x + skew_y * skew_y).sqrt();
+        self.rotation() * Vec3::new(-skew_x * local_z, -skew_y * local_z, local_z)
     }
 }
 
@@ -240,6 +351,9 @@ impl Default for ViewCamera {
             yaw: std::f32::consts::FRAC_PI_4,
             pitch: -0.45,
             speed: 1.0,
+            orbit_pivot: [0.0, 0.0, 0.0],
+            orbit_distance: DEFAULT_ORBIT_DISTANCE,
+            fov_y_degrees: DEFAULT_FOV_Y_DEGREES,
             mode: ViewMode::Perspective,
             ortho_center: [0.0, 0.0, 0.0],
             ortho_scale: 5.0,
@@ -274,8 +388,9 @@ fn visible_bounds(
         let min = Vec3::from_array(span.world_bounds_min);
         let max = Vec3::from_array(span.world_bounds_max);
         let center = Vec3::from_array(span.world_center);
-        return (min.is_finite() && max.is_finite() && center.is_finite())
-            .then_some((min, max, center));
+        if min.is_finite() && max.is_finite() && center.is_finite() {
+            return Some((min, max, center));
+        }
     }
 
     let mut min = Vec3::splat(f32::INFINITY);
@@ -293,4 +408,14 @@ fn visible_bounds(
     }
     let center = (min + max) * 0.5;
     (found && center.is_finite()).then_some((min, max, center))
+}
+
+fn frame_distance(min: Vec3, max: Vec3) -> f32 {
+    let extent = max - min;
+    let radius = (extent.length() * 0.5).max(extent.max_element() * 0.5);
+    if !radius.is_finite() || radius <= f32::EPSILON {
+        return DEFAULT_ORBIT_DISTANCE;
+    }
+    (radius / (30.0_f32.to_radians()).tan() * FRAME_MARGIN)
+        .clamp(ViewCamera::MIN_ORBIT_DISTANCE, 10_000.0)
 }

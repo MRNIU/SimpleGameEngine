@@ -1173,6 +1173,25 @@ fn keyboard_shortcuts_switch_transform_modes_with_w_e_and_r() {
 }
 
 #[test]
+fn plain_transform_shortcuts_skip_viewport_navigation_intent() {
+    let source = include_str!("../app.rs");
+    let shortcut_source = &source[source
+        .find("fn handle_keyboard_shortcuts")
+        .expect("shortcut helper present")..];
+
+    assert!(source.contains("fn viewport_navigation_intent"));
+    assert!(shortcut_source.contains("!Self::viewport_navigation_intent(context)"));
+}
+
+#[test]
+fn pilot_camera_branch_does_not_pass_real_editor_camera_to_viewport() {
+    let source = include_str!("panels.rs");
+
+    assert!(source.contains("let mut blocked_camera = self.viewport_camera"));
+    assert!(source.contains("navigation_enabled: false"));
+}
+
+#[test]
 fn imported_mesh_size_display_uses_local_and_scaled_extents() {
     let mesh = asset::ImportedMesh {
         vertices: vec![

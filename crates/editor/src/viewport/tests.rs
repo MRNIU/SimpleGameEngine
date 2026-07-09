@@ -149,6 +149,78 @@ fn view_camera_movement_changes_editor_only_view() {
     assert_eq!(after.entity, EntityId::new("editor_view"));
 }
 
+fn projected_origin_delta_after_move(input: ViewMoveInput) -> egui::Vec2 {
+    let mut camera = ViewCamera::default();
+    let before_view = camera.to_viewport_view();
+    let before = ViewportProjection::from_view(&before_view)
+        .unwrap()
+        .project_world_point([0.0, 0.0, 0.0])
+        .unwrap();
+
+    camera.move_local(input, 1.0);
+    let after_view = camera.to_viewport_view();
+    let after = ViewportProjection::from_view(&after_view)
+        .unwrap()
+        .project_world_point([0.0, 0.0, 0.0])
+        .unwrap();
+
+    egui::vec2(after[0] - before[0], after[1] - before[1])
+}
+
+#[test]
+fn fly_navigation_maps_wasd_to_viewport_axes() {
+    let right = projected_origin_delta_after_move(ViewMoveInput {
+        right: true,
+        ..ViewMoveInput::default()
+    });
+    let forward = projected_origin_delta_after_move(ViewMoveInput {
+        forward: true,
+        ..ViewMoveInput::default()
+    });
+
+    assert!(
+        right.x.abs() > right.y.abs() * 2.0,
+        "D should move mostly along the screen horizontal axis, got {right:?}"
+    );
+    assert!(
+        forward.y.abs() > forward.x.abs() * 2.0,
+        "W should move mostly along the screen vertical axis, got {forward:?}"
+    );
+}
+
+fn projected_origin_delta_after_look(delta: egui::Vec2) -> egui::Vec2 {
+    let mut camera = ViewCamera::default();
+    let before_view = camera.to_viewport_view();
+    let before = ViewportProjection::from_view(&before_view)
+        .unwrap()
+        .project_world_point([0.0, 0.0, 0.0])
+        .unwrap();
+
+    camera.look(delta);
+    let after_view = camera.to_viewport_view();
+    let after = ViewportProjection::from_view(&after_view)
+        .unwrap()
+        .project_world_point([0.0, 0.0, 0.0])
+        .unwrap();
+
+    egui::vec2(after[0] - before[0], after[1] - before[1])
+}
+
+#[test]
+fn right_mouse_look_maps_pointer_axes_to_screen_axes() {
+    let horizontal = projected_origin_delta_after_look(egui::vec2(40.0, 0.0));
+    let vertical = projected_origin_delta_after_look(egui::vec2(0.0, 40.0));
+
+    assert!(
+        horizontal.x.abs() > horizontal.y.abs() * 2.0,
+        "horizontal RMB drag should mostly move the view horizontally, got {horizontal:?}"
+    );
+    assert!(
+        vertical.y.abs() > vertical.x.abs() * 2.0,
+        "vertical RMB drag should mostly move the view vertically, got {vertical:?}"
+    );
+}
+
 #[test]
 fn view_camera_default_basis_is_z_up() {
     let camera = ViewCamera::default();
@@ -187,6 +259,26 @@ fn orthographic_presets_are_finite_and_named() {
 }
 
 #[test]
+fn right_mouse_navigation_from_orthographic_returns_to_perspective() {
+    let mut camera = ViewCamera::default();
+    camera.set_preset(super::ViewPreset::Top);
+    let before = camera.to_viewport_view();
+
+    camera.look(egui::vec2(20.0, 0.0));
+    camera.move_local(
+        ViewMoveInput {
+            forward: true,
+            ..ViewMoveInput::default()
+        },
+        1.0,
+    );
+    let after = camera.to_viewport_view();
+
+    assert_eq!(camera.view_mode_label(), "Perspective");
+    assert_ne!(before.transform.translation, after.transform.translation);
+}
+
+#[test]
 fn camera_hint_uses_world_metrics_for_distance() {
     let mut draw = draw_with_two_mesh_spans();
     draw.mesh_spans[0].world_center = [0.0, 0.0, 0.0];
@@ -195,9 +287,115 @@ fn camera_hint_uses_world_metrics_for_distance() {
 
     let hint = camera.hint_text(Some(&draw), Some(&EntityId::new("cube_1")));
 
-    assert!(hint.contains("Speed"));
+    assert!(hint.contains("Camera Speed"));
     assert!(hint.contains("Distance"));
     assert!(hint.contains("9.43"));
+}
+
+#[test]
+fn orthographic_fit_keeps_selected_mesh_from_filling_viewport() {
+    let mut camera = ViewCamera::default();
+    camera.set_preset(super::ViewPreset::Top);
+    let mut draw = draw_with_two_mesh_spans();
+    draw.mesh_spans[1].world_bounds_min = [0.0, 0.0, 0.0];
+    draw.mesh_spans[1].world_bounds_max = [1.0, 1.0, 1.0];
+    draw.mesh_spans[1].world_center = [0.5, 0.5, 0.5];
+
+    assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
+    let view = camera.to_viewport_view();
+    let ecs::Projection::Orthographic { vertical_size } = view.projection else {
+        panic!("expected orthographic projection");
+    };
+
+    assert!(vertical_size >= 2.0);
+}
+
+#[test]
+fn frame_selected_mesh_updates_perspective_pivot_and_distance() {
+    let draw = draw_with_two_mesh_spans();
+    let mut camera = ViewCamera::default();
+
+    assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
+    let view = camera.to_viewport_view();
+    let pivot = Vec3::from_array(camera.orbit_pivot());
+    let position = Vec3::from_array(view.transform.translation);
+
+    assert_eq!(camera.orbit_pivot(), [0.6, 0.0, 0.0]);
+    assert!(camera.orbit_distance().is_finite());
+    assert!(camera.orbit_distance() >= ViewCamera::MIN_ORBIT_DISTANCE);
+    assert!((pivot.distance(position) - camera.orbit_distance()).abs() < 0.000_1);
+}
+
+#[test]
+fn frame_empty_scene_uses_origin_and_default_distance() {
+    let mut draw = draw_with_two_mesh_spans();
+    draw.mesh_spans.clear();
+    let mut camera = ViewCamera::default();
+
+    assert!(camera.fit_draw(&draw, Some(&EntityId::new("missing"))));
+
+    assert_eq!(camera.orbit_pivot(), [0.0, 0.0, 0.0]);
+    assert!(camera.orbit_distance().is_finite());
+    assert!(camera.orbit_distance() >= ViewCamera::MIN_ORBIT_DISTANCE);
+}
+
+fn projected_span_width(camera: ViewCamera, draw: &ViewportDrawCall, entity: &EntityId) -> f32 {
+    let projection = ViewportProjection::from_view(&camera.to_viewport_view()).unwrap();
+    let span = draw
+        .mesh_spans
+        .iter()
+        .find(|span| &span.entity == entity)
+        .unwrap();
+    let min = projection
+        .project_world_point(span.world_bounds_min)
+        .unwrap();
+    let max = projection
+        .project_world_point(span.world_bounds_max)
+        .unwrap();
+
+    (max[0] - min[0]).abs()
+}
+
+#[test]
+fn dolly_changes_visible_projection_scale() {
+    let draw = draw_with_two_mesh_spans();
+    let entity = EntityId::new("cube_1");
+    let mut camera = ViewCamera::default();
+    assert!(camera.fit_draw(&draw, Some(&entity)));
+    let before_width = projected_span_width(camera, &draw, &entity);
+
+    camera.dolly(-20.0);
+    let after_width = projected_span_width(camera, &draw, &entity);
+
+    assert!(
+        after_width > before_width * 1.1,
+        "dolly in should visibly enlarge the selected span: before={before_width}, after={after_width}"
+    );
+}
+
+#[test]
+fn orbit_pan_and_dolly_keep_pivot_contract() {
+    let draw = draw_with_two_mesh_spans();
+    let mut camera = ViewCamera::default();
+    assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
+    let pivot = camera.orbit_pivot();
+    let position = camera.to_viewport_view().transform.translation;
+
+    camera.orbit(egui::vec2(80.0, -20.0));
+    let orbit_position = camera.to_viewport_view().transform.translation;
+    assert_eq!(camera.orbit_pivot(), pivot);
+    assert_ne!(orbit_position, position);
+
+    camera.pan(egui::vec2(12.0, -6.0));
+    let panned_pivot = camera.orbit_pivot();
+    let panned_position = camera.to_viewport_view().transform.translation;
+    assert_ne!(panned_pivot, pivot);
+    assert_ne!(panned_position, orbit_position);
+
+    let before_dolly_distance = camera.orbit_distance();
+    camera.dolly(-20.0);
+    assert!(camera.orbit_distance() < before_dolly_distance);
+    assert!(camera.orbit_distance() >= ViewCamera::MIN_ORBIT_DISTANCE);
 }
 
 #[test]
@@ -334,6 +532,20 @@ fn gizmo_layout_uses_fitted_draw_and_selected_span() {
 }
 
 #[test]
+fn move_gizmo_layout_keeps_three_selectable_axes() {
+    let draw = draw_with_two_mesh_spans();
+    let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
+
+    let handles = super::gizmo_layout(&draw, rect, Some(&EntityId::new("cube_1")), GizmoMode::Move);
+    let axes = handles
+        .iter()
+        .map(|handle| format!("{:.1},{:.1}", handle.axis.x, handle.axis.y))
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert_eq!(axes.len(), 3);
+}
+
+#[test]
 fn gizmo_hit_test_prefers_nearest_handle() {
     let handles = vec![
         GizmoHandleRect::new(
@@ -373,7 +585,7 @@ fn move_gizmo_drag_changes_only_selected_axis() {
         GizmoHandle::MoveY,
         start,
         start_pointer,
-        egui::pos2(10.0, -40.0),
+        egui::pos2(10.0, 60.0),
     );
     let moved_z = super::transform_for_gizmo_drag(
         GizmoHandle::MoveZ,
@@ -661,6 +873,7 @@ fn draw_viewport_signature_accepts_keyboard_and_fit_guards() {
 
     assert!(source.contains("keyboard_shortcuts_allowed: bool"));
     assert!(source.contains("fit_view_requested: bool"));
+    assert!(source.contains("navigation_enabled: bool"));
     assert!(source.contains("let fit_requested = fit_view_requested || keyboard_fit_requested"));
 }
 
@@ -676,8 +889,59 @@ fn viewport_keyboard_fit_uses_shortcut_guard_without_hover_gate() {
 fn viewport_right_button_navigation_does_not_capture_keyboard_focus() {
     let source = include_str!("../viewport.rs");
 
-    assert!(source.contains("right_down && response.hovered()"));
+    assert!(source.contains("viewport_hovered && right_down"));
     assert!(!source.contains("response.request_focus()"));
+}
+
+#[test]
+fn viewport_speed_scroll_requires_right_mouse_navigation() {
+    let source = include_str!("../viewport.rs");
+
+    assert!(source.contains("right_down"));
+    assert!(source.contains("camera.adjust_speed(scroll_y)"));
+    assert!(!source.contains("response.hovered() && scroll_y != 0.0"));
+}
+
+#[test]
+fn viewport_navigation_returns_pilot_status_before_camera_mutation() {
+    let source = include_str!("../viewport.rs");
+    let navigation_block = source
+        .find("let alt_navigation")
+        .expect("navigation block present");
+    let guard = source[navigation_block..]
+        .find("if navigation_enabled")
+        .map(|index| navigation_block + index)
+        .expect("navigation guard present");
+    let look = source[navigation_block..]
+        .find("camera.look")
+        .map(|index| navigation_block + index)
+        .expect("look navigation present");
+    let orbit = source[navigation_block..]
+        .find("camera.orbit")
+        .map(|index| navigation_block + index)
+        .expect("orbit navigation present");
+
+    assert!(guard < look);
+    assert!(guard < orbit);
+}
+
+#[test]
+fn viewport_pilot_navigation_status_still_paints_viewport() {
+    let source = include_str!("../viewport.rs");
+    let navigation_block = source
+        .find("let alt_navigation")
+        .expect("navigation block present");
+    let status = source[navigation_block..]
+        .find("Disable Pilot Camera to navigate editor view")
+        .map(|index| navigation_block + index)
+        .expect("pilot navigation status present");
+    let paint = source[status..]
+        .find("paint_wgpu_viewport")
+        .map(|index| status + index)
+        .expect("viewport paint path present");
+    let guarded_block = &source[status..paint];
+
+    assert!(!guarded_block.contains("return ViewportAction::Status"));
 }
 
 #[test]

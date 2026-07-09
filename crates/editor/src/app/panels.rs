@@ -357,19 +357,38 @@ impl EditorApp {
         let keyboard_shortcuts_allowed = Self::keyboard_shortcuts_allowed(ui.ctx());
         let fit_view_requested = self.fit_view_requested;
         self.fit_view_requested = false;
-        let action = draw_viewport(
-            ui,
-            draw.as_ref(),
-            selected.as_ref(),
-            selected_transform,
-            &mut self.viewport_camera,
-            &mut self.transform_gizmo,
-            viewport::ViewportUiOptions {
-                keyboard_shortcuts_allowed,
-                fit_view_requested,
-                wgpu_probe,
-            },
-        );
+        let action = if self.pilot_camera {
+            let mut blocked_camera = self.viewport_camera;
+            draw_viewport(
+                ui,
+                draw.as_ref(),
+                selected.as_ref(),
+                selected_transform,
+                &mut blocked_camera,
+                &mut self.transform_gizmo,
+                viewport::ViewportUiOptions {
+                    keyboard_shortcuts_allowed,
+                    fit_view_requested,
+                    navigation_enabled: false,
+                    wgpu_probe,
+                },
+            )
+        } else {
+            draw_viewport(
+                ui,
+                draw.as_ref(),
+                selected.as_ref(),
+                selected_transform,
+                &mut self.viewport_camera,
+                &mut self.transform_gizmo,
+                viewport::ViewportUiOptions {
+                    keyboard_shortcuts_allowed,
+                    fit_view_requested,
+                    navigation_enabled: true,
+                    wgpu_probe,
+                },
+            )
+        };
         self.handle_viewport_action(action);
     }
 
