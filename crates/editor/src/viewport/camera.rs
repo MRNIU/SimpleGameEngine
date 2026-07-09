@@ -2,7 +2,7 @@
 
 use ecs::{EntityId, Projection};
 use eframe::egui;
-use math::{Quat, Transform, Vec3};
+use math::{Mat3, Quat, Transform, Vec3};
 use render::{ViewportDrawCall, ViewportView};
 
 const EDITOR_VIEW_ENTITY: &str = "editor_view";
@@ -14,8 +14,6 @@ const MOVE_SCALE: f32 = 4.0;
 const SPEED_SCROLL_SCALE: f32 = 0.05;
 const DEFAULT_ORBIT_DISTANCE: f32 = 8.0;
 const DEFAULT_FOV_Y_DEGREES: f32 = 60.0;
-const MIN_FOV_Y_DEGREES: f32 = 10.0;
-const MAX_FOV_Y_DEGREES: f32 = 120.0;
 const FRAME_MARGIN: f32 = 1.35;
 // ponytail: mirrors render's fixed viewport projection; replace with a render-provided matrix if it stops being fixed.
 const VIEWPORT_DEPTH_SKEW: [f32; 2] = [0.35, 0.2];
@@ -73,6 +71,12 @@ impl ViewCamera {
 
     #[cfg(test)]
     #[must_use]
+    pub(crate) const fn yaw(self) -> f32 {
+        self.yaw
+    }
+
+    #[cfg(test)]
+    #[must_use]
     pub(crate) const fn speed(self) -> f32 {
         self.speed
     }
@@ -89,14 +93,30 @@ impl ViewCamera {
         self.orbit_distance
     }
 
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) const fn fov_y_degrees(self) -> f32 {
+        self.fov_y_degrees
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn basis(self) -> ([f32; 3], [f32; 3], [f32; 3]) {
+        (
+            self.forward().to_array(),
+            self.right().to_array(),
+            self.up().to_array(),
+        )
+    }
+
     pub(crate) fn look(&mut self, delta: egui::Vec2) {
         if !delta.x.is_finite() || !delta.y.is_finite() {
             return;
         }
         self.return_to_perspective();
-        self.yaw -= delta.y * LOOK_SENSITIVITY;
+        self.yaw += delta.x * LOOK_SENSITIVITY;
         self.pitch =
-            (self.pitch - delta.x * LOOK_SENSITIVITY).clamp(Self::MIN_PITCH, Self::MAX_PITCH);
+            (self.pitch - delta.y * LOOK_SENSITIVITY).clamp(Self::MIN_PITCH, Self::MAX_PITCH);
         self.sync_pivot_from_position();
     }
 
@@ -221,9 +241,9 @@ impl ViewCamera {
             return;
         }
         self.return_to_perspective();
-        self.yaw -= delta.y * ORBIT_SENSITIVITY;
+        self.yaw += delta.x * ORBIT_SENSITIVITY;
         self.pitch =
-            (self.pitch - delta.x * ORBIT_SENSITIVITY).clamp(Self::MIN_PITCH, Self::MAX_PITCH);
+            (self.pitch - delta.y * ORBIT_SENSITIVITY).clamp(Self::MIN_PITCH, Self::MAX_PITCH);
         self.update_position_from_pivot();
     }
 
@@ -250,9 +270,6 @@ impl ViewCamera {
         if !next.is_finite() {
             return;
         }
-        let fov_factor = (1.0 + delta_y * DOLLY_SENSITIVITY).max(0.05);
-        self.fov_y_degrees =
-            (self.fov_y_degrees * fov_factor).clamp(MIN_FOV_Y_DEGREES, MAX_FOV_Y_DEGREES);
         self.orbit_distance = next.clamp(Self::MIN_ORBIT_DISTANCE, 10_000.0);
         self.update_position_from_pivot();
     }
@@ -306,21 +323,25 @@ impl ViewCamera {
     }
 
     fn rotation(self) -> Quat {
-        let yaw = Quat::from_rotation_z(self.yaw);
-        let right = yaw * Vec3::Y;
-        Quat::from_axis_angle(right, self.pitch) * yaw
+        let forward = self.forward();
+        let right = self.right();
+        let up = self.up();
+        Quat::from_mat3(&Mat3::from_cols(right, up, forward))
     }
 
     fn forward(self) -> Vec3 {
-        self.rotation() * Vec3::Y
+        let yaw = Quat::from_rotation_z(self.yaw);
+        let flat_forward = yaw * Vec3::X;
+        let flat_right = yaw * Vec3::Y;
+        (Quat::from_axis_angle(flat_right, -self.pitch) * flat_forward).normalize_or_zero()
     }
 
     fn right(self) -> Vec3 {
-        self.rotation() * Vec3::X
+        (Quat::from_rotation_z(self.yaw) * Vec3::Y).normalize_or_zero()
     }
 
     fn up(self) -> Vec3 {
-        self.rotation() * Vec3::Y
+        self.forward().cross(self.right()).normalize_or_zero()
     }
 
     fn update_position_from_pivot(&mut self) {

@@ -149,42 +149,40 @@ fn view_camera_movement_changes_editor_only_view() {
     assert_eq!(after.entity, EntityId::new("editor_view"));
 }
 
-fn projected_origin_delta_after_move(input: ViewMoveInput) -> egui::Vec2 {
+fn translation_delta_after_move(input: ViewMoveInput) -> Vec3 {
     let mut camera = ViewCamera::default();
-    let before_view = camera.to_viewport_view();
-    let before = ViewportProjection::from_view(&before_view)
-        .unwrap()
-        .project_world_point([0.0, 0.0, 0.0])
-        .unwrap();
+    let before = Vec3::from_array(camera.to_viewport_view().transform.translation);
 
     camera.move_local(input, 1.0);
-    let after_view = camera.to_viewport_view();
-    let after = ViewportProjection::from_view(&after_view)
-        .unwrap()
-        .project_world_point([0.0, 0.0, 0.0])
-        .unwrap();
+    let after = Vec3::from_array(camera.to_viewport_view().transform.translation);
 
-    egui::vec2(after[0] - before[0], after[1] - before[1])
+    after - before
 }
 
 #[test]
 fn fly_navigation_maps_wasd_to_viewport_axes() {
-    let right = projected_origin_delta_after_move(ViewMoveInput {
+    let camera = ViewCamera::default();
+    let (forward, right, _) = camera.basis();
+    let forward = Vec3::from_array(forward);
+    let right = Vec3::from_array(right);
+    let right_movement = translation_delta_after_move(ViewMoveInput {
         right: true,
         ..ViewMoveInput::default()
     });
-    let forward = projected_origin_delta_after_move(ViewMoveInput {
+    let forward_movement = translation_delta_after_move(ViewMoveInput {
         forward: true,
         ..ViewMoveInput::default()
     });
 
+    assert_vec3_finite(right_movement);
+    assert_vec3_finite(forward_movement);
     assert!(
-        right.x.abs() > right.y.abs() * 2.0,
-        "D should move mostly along the screen horizontal axis, got {right:?}"
+        right_movement.normalize().dot(right.normalize()) > 0.99,
+        "D should move along the viewport right axis, got {right_movement:?}"
     );
     assert!(
-        forward.y.abs() > forward.x.abs() * 2.0,
-        "W should move mostly along the screen vertical axis, got {forward:?}"
+        forward_movement.normalize().dot(forward.normalize()) > 0.99,
+        "W should move along the viewport forward axis, got {forward_movement:?}"
     );
 }
 
@@ -206,6 +204,21 @@ fn projected_origin_delta_after_look(delta: egui::Vec2) -> egui::Vec2 {
     egui::vec2(after[0] - before[0], after[1] - before[1])
 }
 
+fn vec3_from_array(value: [f32; 3]) -> Vec3 {
+    Vec3::from_array(value)
+}
+
+fn assert_vec3_finite(value: Vec3) {
+    assert!(value.is_finite(), "vector must be finite: {value:?}");
+}
+
+fn assert_not_collinear(left: Vec3, right: Vec3) {
+    assert!(
+        left.normalize().cross(right.normalize()).length() > 0.000_1,
+        "vectors must not be collinear: left={left:?}, right={right:?}"
+    );
+}
+
 #[test]
 fn right_mouse_look_maps_pointer_axes_to_screen_axes() {
     let horizontal = projected_origin_delta_after_look(egui::vec2(40.0, 0.0));
@@ -222,20 +235,66 @@ fn right_mouse_look_maps_pointer_axes_to_screen_axes() {
 }
 
 #[test]
-fn view_camera_default_basis_is_z_up() {
+fn look_and_orbit_pointer_axes_have_fixed_signs() {
+    let mut look = ViewCamera::default();
+    let yaw = look.yaw();
+    let pitch = look.pitch();
+
+    look.look(egui::vec2(25.0, 0.0));
+    assert!(look.yaw() > yaw, "drag right should increase yaw");
+    assert_eq!(look.pitch(), pitch);
+
+    let yaw = look.yaw();
+    look.look(egui::vec2(-25.0, 0.0));
+    assert!(look.yaw() < yaw, "drag left should decrease yaw");
+
+    let pitch = look.pitch();
+    look.look(egui::vec2(0.0, -25.0));
+    assert!(look.pitch() > pitch, "drag up should increase pitch");
+
+    let pitch = look.pitch();
+    look.look(egui::vec2(0.0, 25.0));
+    assert!(look.pitch() < pitch, "drag down should decrease pitch");
+
+    let mut orbit = ViewCamera::default();
+    let draw = draw_with_two_mesh_spans();
+    assert!(orbit.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
+    let pivot = orbit.orbit_pivot();
+    let yaw = orbit.yaw();
+    let pitch = orbit.pitch();
+
+    orbit.orbit(egui::vec2(25.0, -25.0));
+    assert!(orbit.yaw() > yaw);
+    assert!(orbit.pitch() > pitch);
+    assert_eq!(orbit.orbit_pivot(), pivot);
+}
+
+#[test]
+fn view_camera_basis_is_z_up_and_non_degenerate() {
     let camera = ViewCamera::default();
-    let view = camera.to_viewport_view();
-    let projection = ViewportProjection::from_view(&view).unwrap();
+    let (forward, right, up) = camera.basis();
+    let forward = vec3_from_array(forward);
+    let right = vec3_from_array(right);
+    let up = vec3_from_array(up);
 
-    let origin = projection.project_world_point([0.0, 0.0, 0.0]).unwrap();
-    let up = projection.project_world_point([0.0, 0.0, 1.0]).unwrap();
-    let right = projection.project_world_point([0.0, 1.0, 0.0]).unwrap();
-
+    assert_vec3_finite(forward);
+    assert_vec3_finite(right);
+    assert_vec3_finite(up);
+    assert_not_collinear(forward, right);
+    assert_not_collinear(forward, up);
+    assert_not_collinear(right, up);
     assert!(
-        up[1] > origin[1],
-        "Z should map upward in normalized viewport"
+        forward.dot(Vec3::X) > 0.0,
+        "default forward should face world +X: {forward:?}"
     );
-    assert!(right[0] > origin[0], "Y should map screen-right");
+    assert!(
+        right.dot(Vec3::Y) > 0.0,
+        "default right should face world +Y: {right:?}"
+    );
+    assert!(
+        up.dot(Vec3::Z) > 0.0,
+        "default up should face world +Z: {up:?}"
+    );
 }
 
 #[test]
@@ -339,38 +398,19 @@ fn frame_empty_scene_uses_origin_and_default_distance() {
     assert!(camera.orbit_distance() >= ViewCamera::MIN_ORBIT_DISTANCE);
 }
 
-fn projected_span_width(camera: ViewCamera, draw: &ViewportDrawCall, entity: &EntityId) -> f32 {
-    let projection = ViewportProjection::from_view(&camera.to_viewport_view()).unwrap();
-    let span = draw
-        .mesh_spans
-        .iter()
-        .find(|span| &span.entity == entity)
-        .unwrap();
-    let min = projection
-        .project_world_point(span.world_bounds_min)
-        .unwrap();
-    let max = projection
-        .project_world_point(span.world_bounds_max)
-        .unwrap();
-
-    (max[0] - min[0]).abs()
-}
-
 #[test]
-fn dolly_changes_visible_projection_scale() {
+fn dolly_changes_distance_without_changing_fov() {
     let draw = draw_with_two_mesh_spans();
     let entity = EntityId::new("cube_1");
     let mut camera = ViewCamera::default();
     assert!(camera.fit_draw(&draw, Some(&entity)));
-    let before_width = projected_span_width(camera, &draw, &entity);
+    let before_distance = camera.orbit_distance();
+    let before_fov = camera.fov_y_degrees();
 
     camera.dolly(-20.0);
-    let after_width = projected_span_width(camera, &draw, &entity);
 
-    assert!(
-        after_width > before_width * 1.1,
-        "dolly in should visibly enlarge the selected span: before={before_width}, after={after_width}"
-    );
+    assert!(camera.orbit_distance() < before_distance);
+    assert_eq!(camera.fov_y_degrees(), before_fov);
 }
 
 #[test]
