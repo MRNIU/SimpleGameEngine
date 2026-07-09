@@ -68,7 +68,7 @@ M1 只迁移 camera/navigation 操作手感。Outliner/Details、Z-up reference 
 | --- | --- |
 | `editor::viewport::camera` | editor-only camera state、UE-like camera 操作、frame/orbit/pan/dolly/fly |
 | `editor::viewport` | 将 egui pointer/key input 翻译成 camera 操作和 `ViewportAction::Status` |
-| `editor::app` | Pilot guard、reset viewport state、把 selected/draw-call world metrics 传给 viewport |
+| `editor::app` | Pilot guard、plain shortcut ordering、reset viewport state、把 selected/draw-call world metrics 传给 viewport |
 | `render` | 继续提供 `ViewportView`、`ViewportProjection`、`ViewportDrawCall.mesh_spans` world metrics |
 | `EditorModel` | 继续管理 ECS、selection、dirty、undo/redo；不持有 viewport camera |
 | `scene` | 继续只保存 ECS 可保存子集；不保存 viewport state |
@@ -81,6 +81,7 @@ M1 只迁移 camera/navigation 操作手感。Outliner/Details、Z-up reference 
 - navigation 不保存到 `.scene.ron`。
 - `render` 不拥有 editor input state。
 - `EditorModel` 不知道 camera speed、orbit pivot、orbit distance 或 input mode。
+- Pilot guard 必须在任何 `ViewCamera` mutation 之前生效；不能先把 `&mut ViewCamera` 交给 viewport 改完，再由 app 层只处理返回状态。
 
 ## View Camera
 
@@ -140,8 +141,9 @@ M1 不保留当前 perspective fit 的 projected-offset 近似。Frame 操作必
 - `Alt + LMB/MMB/RMB` 命中 mesh/gizmo 时仍优先作为 camera navigation。
 - `RMB` 不改变 selection。
 - `F` 只在 keyboard shortcut guard 允许时触发；文本或数值输入 active 时不 frame。
-- `RMB + W/A/S/D` 继续允许，因为 viewport 不 request keyboard focus。
-- Pilot active 时，camera navigation 不修改 editor camera，并返回 `Disable Pilot Camera to navigate editor view` 或等价短状态。
+- `RMB + W/A/S/D` 不得被 app-level `W/E/R` transform tool shortcut 抢先消费。当前 app 在 viewport UI 前处理全局快捷键，M1 必须调整 ordering 或 guard：plain `W/E/R` 只在没有 viewport RMB/Alt navigation intent 时切换 gizmo mode。
+- `RMB + wheel` 只在 RMB 按住且 pointer hover viewport 时调整 speed；hover wheel 不再单独调速。
+- Pilot active 时，camera navigation 不修改 editor camera，并返回 `Disable Pilot Camera to navigate editor view` 或等价短状态。该 guard 必须在 viewport 调用 `camera.look`、`camera.move_local`、orbit、pan、dolly 或 frame 之前生效。
 
 ## Frame、Orbit、Pan、Dolly
 
@@ -149,7 +151,7 @@ Frame 输入：
 
 - selected visible mesh 存在时，使用该 span 的 `world_bounds_min/max/center`。
 - selected 不可见或无 selection 时，使用所有 visible mesh bounds。
-- 没有 visible mesh 时使用 world origin 和默认距离。
+- 没有 visible mesh 或 draw-call 缺失时使用 world origin 和默认距离。
 - 新 position、pivot、distance 必须 finite。
 
 Orbit 输入：
@@ -198,7 +200,7 @@ Pilot Camera active 时：
 
 | 场景 | 行为 |
 | --- | --- |
-| draw-call 缺失 | frame 使用 world origin 或返回短状态 |
+| draw-call 缺失 | frame 使用 world origin 和默认距离，可显示短状态但仍保持 finite camera |
 | viewport rect invalid | 忽略 camera input |
 | pointer delta non-finite | 忽略该帧 |
 | bounds non-finite | 跳过该 span；全部无效时使用 origin |
@@ -226,9 +228,11 @@ Pilot Camera active 时：
 - `editor::viewport` tests：
   - Alt navigation 消费 pointer，不触发 selection/gizmo。
   - orientation cube 优先于 navigation/selection。
-  - Pilot active 时返回 status，不改 editor camera。
+  - Pilot active 时返回 status，不改 editor camera；测试必须覆盖 viewport 入口拿到 mutable camera 时也不会发生 mutation。
   - `F` 受 keyboard shortcut guard 控制。
 - `editor::app` tests：
+  - app-level plain `W/E/R` shortcut 不会在 `RMB + W/A/S/D` viewport fly 前抢先切换 transform tool。
+  - command shortcuts 和 text-input guard 仍保持原有语义。
   - New/Open/reopen/project switch 后 reset viewport state。
   - navigation 不 dirty、不进 undo。
 - editor smoke：
@@ -262,7 +266,9 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --
 后续 implementation plan 应按以下边界展开：
 
 1. 重写 `ViewCamera` state 和 frame/orbit/pan/dolly/fly helper。
-2. 接入 viewport input 消费和优先级规则。
-3. 处理 orthographic navigation 回 Perspective 和 Pilot guard。
-4. 更新 app reset/navigation dirty tests。
-5. 扩展 semantic smoke summary。
+2. 先调整 app-level input ordering，让 plain `W/E/R` 不抢 viewport RMB fly。
+3. 接入 viewport input 消费和优先级规则。
+4. 在 viewport mutation 前接入 Pilot guard。
+5. 处理 orthographic navigation 回 Perspective。
+6. 更新 app reset/navigation dirty tests。
+7. 扩展 semantic smoke summary。
