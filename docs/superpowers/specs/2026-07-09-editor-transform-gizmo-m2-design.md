@@ -116,7 +116,7 @@ Rotate mode layout：
 - `RotateX`：红色 handle，center 为 `center + Vec2::X * GIZMO_HANDLE_LENGTH`，axis 为 `Vec2::X`。
 - `RotateY`：绿色 handle，center 为 `center - Vec2::Y * GIZMO_HANDLE_LENGTH`，axis 为 `-Vec2::Y`。
 - `RotateZ`：蓝色 handle，center 为 `center + z_screen_axis() * GIZMO_HANDLE_LENGTH`，axis 为 `z_screen_axis()`。
-- `z_screen_axis()` 继续使用现有 normalized `(Vec2::X - Vec2::Y)`，不新增第二套 screen axis 定义。
+- `z_screen_axis()` 使用当前 viewport reference-aids 后的 screen-up `-Vec2::Y` 合同，不再使用旧的斜向深度提示。
 - rotate hit rect 使用和 move handle 相同的 hit size，除非实现时已有常量名需要复用。
 - 首版不做真实 3D circle/ring。可以用三条短弧、短线或带方形命中点的简化 overlay。
 - 命中规则继续走 `GizmoHandleRect`，并沿用“更近 handle center 优先”的规则。
@@ -134,7 +134,7 @@ Rotate drag 使用最小 screen-space 映射：
 - 正方向测试期望固定：
   - `RotateX` 从 `(10, 10)` 拖到 `(60, 10)`，angle 为 `+0.5` rad。
   - `RotateY` 从 `(10, 10)` 拖到 `(10, -40)`，angle 为 `+0.5` rad。
-  - `RotateZ` 从 `(10, 10)` 拖到 `(60, -40)`，angle 为 `+0.7071068` rad。
+  - `RotateZ` 从 `(10, 10)` 拖到 `(60, -40)`，angle 为 `+0.5` rad。
 - 上述反方向拖拽产生同幅度负 angle。
 - 生成 `delta_rotation * start_rotation` 后写回 `Transform.rotation`。
 - 只修改 `rotation`，不修改 `translation` 或 `scale`。
