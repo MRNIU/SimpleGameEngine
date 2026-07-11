@@ -28,7 +28,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 - `runtime` 可以按显式 project root 加载 scene + manifest + imported OBJ，并生成 viewport draw call。
 - 当前发布版 `eframe/egui-wgpu 0.35.0` 仍依赖 `wgpu 29`；workspace 统一到 `wgpu 29.0.4`，避免 editor/render 跨版本共享 GPU 类型。
 
-目标架构规格见下列文档。目标方向已批准但尚未实现；本节以上的 workspace 和功能描述仍是当前代码真源：
+已批准目标架构见下列文档。目标架构尚未实现；本节以上的 workspace 和功能描述仍是当前代码真源：
 
 - `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`
 

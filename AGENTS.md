@@ -79,4 +79,4 @@
 - 示例 project 真源：`examples/editor_smoke/`。
 - 已通过证据：人工 host-native editor smoke 已确认真实窗口像素输出、两次 `New Cube`、手动移动第二个 cube、保存并重新打开 `.scene.ron`
 - 已完成收口：editor 已按现有 `model` / `app` / `viewport` 边界拆薄，文件 IO 留在 `editor::app`，`crates/editor/src/lib.rs` 只保留模块入口和 re-export
-- 下一个里程碑：书面复核目标架构规格后，先为 Core Kernel（Reflect、typed ECS、最小 InputFrame、EngineApp、headless game plugin）编写独立 implementation plan；不直接创建完整目标 crate 空壳或进入最终 demo
+- 下一个里程碑：目标架构规格已批准；先为 Core Kernel（Reflect、typed ECS、最小 InputFrame、EngineApp、headless game plugin）编写独立 implementation plan，不直接创建完整目标 crate 空壳或进入最终 demo

@@ -2,7 +2,7 @@
 
 日期：2026-07-11
 
-状态：目标方向已批准，等待书面规格复核。
+状态：已批准，作为 SimpleGameEngine 的目标架构真源。
 
 本文件取代 `2026-07-06-rust-engine-architecture-design.md` 作为 SimpleGameEngine 的目标架构真源。旧文档只保留 Rust reset 与 editor-first 历史背景。
 
