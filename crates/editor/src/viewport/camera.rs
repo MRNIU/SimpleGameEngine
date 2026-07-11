@@ -5,6 +5,8 @@ use eframe::egui;
 use math::{Mat3, Quat, Transform, Vec3};
 use render::{ViewportDrawCall, ViewportView};
 
+use super::grid::{GridPlane, GridState, grid_plane_for_preset};
+
 const EDITOR_VIEW_ENTITY: &str = "editor_view";
 const LOOK_SENSITIVITY: f32 = 0.01;
 const ORBIT_SENSITIVITY: f32 = 0.01;
@@ -28,6 +30,7 @@ pub(crate) struct ViewCamera {
     mode: ViewMode,
     ortho_center: [f32; 3],
     ortho_scale: f32,
+    grid: GridState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,6 +279,23 @@ impl ViewCamera {
         self.mode = ViewMode::Orthographic(preset);
     }
 
+    #[must_use]
+    pub(crate) const fn grid_plane(self) -> GridPlane {
+        match self.mode {
+            ViewMode::Perspective => GridPlane::XY,
+            ViewMode::Orthographic(preset) => grid_plane_for_preset(preset),
+        }
+    }
+
+    #[must_use]
+    pub(crate) const fn grid_minor_step(self) -> f32 {
+        self.grid.minor_step
+    }
+
+    pub(crate) fn set_grid_minor_step(&mut self, minor_step: f32) {
+        self.grid.minor_step = minor_step;
+    }
+
     pub(crate) fn return_to_perspective(&mut self) {
         self.mode = ViewMode::Perspective;
     }
@@ -374,6 +394,7 @@ impl Default for ViewCamera {
             mode: ViewMode::Perspective,
             ortho_center: [0.0, 0.0, 0.0],
             ortho_scale: 5.0,
+            grid: GridState::DEFAULT,
         }
     }
 }

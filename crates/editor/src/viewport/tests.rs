@@ -12,6 +12,8 @@ use render::{
     ViewportVertex, ViewportView,
 };
 
+use super::grid::{GridPlane, adaptive_grid_lines, grid_plane_for_preset, grid_step_for_spacing};
+
 fn test_projection() -> ViewportProjection {
     let view = ViewportView::new(
         EntityId::new("test_camera"),
@@ -26,6 +28,38 @@ fn test_projection() -> ViewportProjection {
         ViewportClipPlanes::DEFAULT,
     )
     .unwrap()
+}
+
+#[test]
+fn adaptive_grid_uses_decimal_steps_and_hysteresis() {
+    assert_eq!(grid_step_for_spacing(15.0, 1.0), 10.0);
+    assert_eq!(grid_step_for_spacing(20.0, 10.0), 10.0);
+    assert_eq!(grid_step_for_spacing(180.0, 10.0), 1.0);
+}
+
+#[test]
+fn perspective_grid_lines_are_projectable_after_clipping() {
+    let projection = test_projection();
+    let frame = adaptive_grid_lines(&projection, GridPlane::XY, 1.0).unwrap();
+
+    assert!(frame.lines.len() <= 512);
+    assert!(frame.lines.iter().all(|line| {
+        projection
+            .project_world_segment(line.start, line.end)
+            .is_some()
+    }));
+}
+
+#[test]
+fn orthographic_side_view_selects_matching_grid_plane() {
+    assert_eq!(
+        grid_plane_for_preset(super::ViewPreset::Front),
+        GridPlane::YZ
+    );
+    assert_eq!(
+        grid_plane_for_preset(super::ViewPreset::Right),
+        GridPlane::XZ
+    );
 }
 
 fn draw_with_two_mesh_spans() -> ViewportDrawCall {
@@ -594,7 +628,8 @@ fn hit_test_selects_nearest_world_triangle() {
 
 #[test]
 fn reference_grid_uses_xy_plane_and_z_axis_marker() {
-    let lines = super::reference_lines();
+    let frame = adaptive_grid_lines(&test_projection(), GridPlane::XY, 1.0).unwrap();
+    let lines = frame.lines;
 
     assert!(lines.iter().any(|line| {
         line.start[2] == 0.0

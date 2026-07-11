@@ -78,6 +78,7 @@ pub struct ViewportProjectionMatrix {
     inverse_view_projection: Mat4,
     camera_position: Vec3,
     perspective: bool,
+    size: ViewportSize,
 }
 
 impl ViewportProjectionMatrix {
@@ -113,12 +114,18 @@ impl ViewportProjectionMatrix {
             inverse_view_projection,
             camera_position,
             perspective,
+            size,
         })
     }
 
     #[must_use]
     pub fn view_projection_array(self) -> [f32; 16] {
         self.view_projection.to_cols_array()
+    }
+
+    #[must_use]
+    pub const fn viewport_size(self) -> ViewportSize {
+        self.size
     }
 
     #[must_use]

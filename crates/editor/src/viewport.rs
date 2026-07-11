@@ -9,6 +9,7 @@ use render::{
 
 mod camera;
 mod gizmo;
+mod grid;
 mod wgpu_bridge;
 
 pub(crate) use camera::{ViewCamera, ViewMoveInput, ViewPreset};
@@ -303,8 +304,12 @@ pub(crate) fn draw_viewport(
     } else if let Some((draw, projection)) = draw.zip(projection.as_ref()) {
         paint_fallback_viewport(rect, &painter, draw, projection);
     }
-    if let Some(projection) = projection.as_ref() {
-        paint_reference_lines(&painter, rect, projection);
+    if let Some(projection) = projection.as_ref()
+        && let Some(frame) =
+            grid::adaptive_grid_lines(projection, camera.grid_plane(), camera.grid_minor_step())
+    {
+        camera.set_grid_minor_step(frame.minor_step);
+        paint_reference_lines(&painter, rect, projection, &frame.lines);
     }
     let hint_text = hint_text_override.map_or_else(
         || camera.hint_text(draw, selected),
@@ -320,44 +325,6 @@ pub(crate) fn draw_viewport(
     paint_orientation_cube(&painter, &orientation_layout);
     paint_gizmo_handles(&painter, &handles, gizmo.hovered(), gizmo.active());
     action
-}
-
-pub(crate) fn reference_lines() -> Vec<ReferenceLine> {
-    let mut lines = Vec::new();
-    for i in -10..=10 {
-        let value = i as f32;
-        lines.push(ReferenceLine {
-            start: [-10.0, value, 0.0],
-            end: [10.0, value, 0.0],
-            color: egui::Color32::from_rgb(65, 72, 78),
-            width: 1.0,
-        });
-        lines.push(ReferenceLine {
-            start: [value, -10.0, 0.0],
-            end: [value, 10.0, 0.0],
-            color: egui::Color32::from_rgb(65, 72, 78),
-            width: 1.0,
-        });
-    }
-    lines.push(ReferenceLine {
-        start: [-10.0, 0.0, 0.0],
-        end: [10.0, 0.0, 0.0],
-        color: egui::Color32::from_rgb(160, 60, 60),
-        width: 2.0,
-    });
-    lines.push(ReferenceLine {
-        start: [0.0, -10.0, 0.0],
-        end: [0.0, 10.0, 0.0],
-        color: egui::Color32::from_rgb(60, 150, 80),
-        width: 2.0,
-    });
-    lines.push(ReferenceLine {
-        start: [0.0, 0.0, 0.0],
-        end: [0.0, 0.0, 3.0],
-        color: egui::Color32::from_rgb(80, 130, 240),
-        width: 2.0,
-    });
-    lines
 }
 
 #[must_use]
@@ -503,8 +470,9 @@ fn paint_reference_lines(
     painter: &egui::Painter,
     rect: egui::Rect,
     projection: &render::ViewportProjection,
+    lines: &[ReferenceLine],
 ) {
-    for line in reference_lines() {
+    for line in lines {
         let Some([start, end]) = projection.project_world_segment(line.start, line.end) else {
             continue;
         };
