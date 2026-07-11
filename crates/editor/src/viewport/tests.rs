@@ -12,7 +12,10 @@ use render::{
     ViewportVertex, ViewportView,
 };
 
-use super::grid::{GridPlane, adaptive_grid_lines, grid_plane_for_preset, grid_step_for_spacing};
+use super::grid::{
+    GridPlane, adaptive_grid_lines, grid_plane_for_preset, grid_step_for_spacing,
+    perspective_grid_plane,
+};
 
 fn test_projection() -> ViewportProjection {
     let view = ViewportView::new(
@@ -150,6 +153,21 @@ fn perspective_grid_survives_when_one_plane_axis_is_behind_camera() {
 }
 
 #[test]
+fn perspective_grid_plane_is_camera_centered_and_height_scaled() {
+    let grid = perspective_grid_plane([12.0, -8.0, 20.0], GridPlane::XY, 1.0).unwrap();
+
+    assert_eq!(grid.vertices.len(), 6);
+    assert_eq!(grid.axis_u, [1.0, 0.0, 0.0]);
+    assert_eq!(grid.axis_v, [0.0, 1.0, 0.0]);
+    assert_eq!(grid.camera_position, [12.0, -8.0, 20.0]);
+    assert_eq!(grid.radius, 2_000.0);
+    let center = grid.vertices.iter().fold(Vec3::ZERO, |sum, vertex| {
+        sum + Vec3::from_array(vertex.position)
+    }) / grid.vertices.len() as f32;
+    assert!((center - Vec3::new(12.0, -8.0, 0.0)).length() < 0.001);
+}
+
+#[test]
 fn tilted_perspective_grid_reaches_visible_viewport_edges() {
     let projection = editor_projection_for_size(384.0, 448.0);
     let frame = adaptive_grid_lines(&projection, GridPlane::XY, 1.0).unwrap();
@@ -176,22 +194,6 @@ fn tilted_perspective_grid_reaches_visible_viewport_edges() {
         "default perspective needs a complete minor grid, got {} lines",
         line_count
     );
-}
-
-#[test]
-fn perspective_grid_does_not_end_inside_visible_ground() {
-    let projection = editor_projection_for_size(768.0, 914.0);
-    let frame = adaptive_grid_lines(&projection, GridPlane::XY, 1.0).unwrap();
-    let interior_endpoints = frame
-        .lines
-        .iter()
-        .filter(|line| line.start[2] == 0.0 && line.end[2] == 0.0)
-        .filter_map(|line| projection.project_world_segment(line.start, line.end))
-        .flatten()
-        .filter(|point| point[0].abs() < 0.95 && point[1].abs() < 0.95 && point[1] < 0.5)
-        .count();
-
-    assert_eq!(interior_endpoints, 0);
 }
 
 #[test]

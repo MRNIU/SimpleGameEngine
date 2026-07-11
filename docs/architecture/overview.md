@@ -42,7 +42,7 @@ CI gate 只包含：
 
 当前 editor 二进制使用 `eframe::Renderer::Wgpu`。editor 通过 `egui_wgpu::CallbackTrait` 把 viewport paint callback 交给 `render::ViewportRenderer::prepare` 和 `render::ViewportRenderer::paint`。
 
-`editor` 拥有 editor-only `Z-up` viewport input/camera、自适应 `XY` / `XZ` / `YZ` world grid 生成、XYZ axis、orientation cube、camera hint 和 transform gizmo state。`render` 接收 `ViewportView`、world-space mesh draw-call vertices 和 editor 生成的 grid line vertices，统一生成 view-projection matrix、homogeneous clipping、world ray，并通过同一个 offscreen color + `Depth32Float` depth pass 渲染后 composite 到 egui；selection、grid、gizmo 和 fallback 共用同一个 projection 合同。
+`editor` 拥有 editor-only `Z-up` viewport input/camera、自适应 `XY` / `XZ` / `YZ` world grid 生成、XYZ axis、orientation cube、camera hint 和 transform gizmo state。Perspective grid 使用随相机移动并按离平面高度扩展的 world-plane geometry，在 WGPU fragment shader 中生成 minor/major/axis lines、抗锯齿和边缘/低视角 fade；Orthographic grid 保留按可见范围生成的 LineList。`render` 接收 `ViewportView`、world-space mesh draw-call vertices 和对应 grid 数据，统一生成 view-projection matrix、homogeneous clipping、world ray，并通过同一个 offscreen color + `Depth32Float` depth pass 渲染后 composite 到 egui；selection、grid、gizmo 和 fallback 共用同一个 projection 合同。
 
 当前 crates.io 最新发布版 `eframe/egui-wgpu 0.35.0` 依赖 `wgpu 29`，而 `wgpu` 最新独立发布版是 `30.0.0`。跨版本 `wgpu` 类型不能共享，所以 workspace 统一到 `wgpu 29.0.4`，让 editor 和 `render` 使用同一套 `wgpu::Device`、`wgpu::RenderPass` 和 `wgpu::TextureFormat` 类型。
 

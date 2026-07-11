@@ -2,6 +2,8 @@
 
 日期：2026-07-11
 
+> 2026-07-11 grid closeout correction：根据 `FEditorCommonDrawHelper` 的公开 API 和可访问实现交叉核对，Perspective 改为 camera-centered world-plane material grid；Orthographic 继续使用独立的自适应 line grid。本文后续对应章节已同步该边界。
+
 ## 结论
 
 下一步把 editor viewport 的可观察行为对齐 Unreal Engine 5.8 Level Editor 默认 viewport。
@@ -188,13 +190,11 @@ grid 仍是 editor overlay，不进入 ECS 或 scene。
 Perspective grid：
 
 - 位于 world `X-Y` plane，`Z = 0`。
-- 根据 camera 与地面交点、camera height、FOV 和 viewport bounds 计算当前可见 world extent。
-- base step 使用 `10^n` 十进制层级，使相邻 minor line 的 screen spacing 保持在 `[16, 160)` logical points。
-- 每十条 minor line 画一条 major line；world X/Y axes 使用现有红/绿主轴色。
-- zoom 跨层级时只在相邻十进制层级间切换，并在阈值上下保留 `10%` hysteresis，避免每帧抖动。
-- line segment 在 CPU 上对 near plane 和可见 extent 裁剪，再投影到 egui painter。
-- 每个 axis family 最多生成 `256` 条线；超过时提升 step，不截断 world origin 附近的一侧。
-- camera ray 与 ground plane 平行或交点无效时，只绘制可安全计算的 axes/nearby grid，不 panic。
+- WGPU 路径绘制以 camera 在 grid plane 上的投影为中心的 world-plane geometry；半径随 camera 离平面高度扩大，由标准 frustum clipping 截断。
+- fragment shader 按 world coordinates 生成 `10^n` minor/major lines、X/Y axis color、屏幕导数抗锯齿、边缘 fade 和低视角 fade。
+- zoom 跨层级时只在相邻十进制层级间切换，并保留 hysteresis，避免每帧抖动。
+- grid 与 scene mesh 使用同一 depth attachment；grid 不是 egui 前景覆盖物。
+- 无 WGPU fallback 继续使用 CPU 可见范围线段，不把线段按任意倍率外推。
 
 Orthographic grid：
 

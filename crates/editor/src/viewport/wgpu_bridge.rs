@@ -6,7 +6,10 @@ use std::sync::{
 };
 
 use eframe::{egui, egui_wgpu, wgpu};
-use render::{ViewportDrawCall, ViewportRenderFrame, ViewportRenderer, ViewportVertex};
+use render::{
+    ViewportDrawCall, ViewportPerspectiveGrid, ViewportRenderFrame, ViewportRenderer,
+    ViewportVertex,
+};
 
 use super::ReferenceLine;
 
@@ -65,6 +68,7 @@ impl ViewportGpuResources {
 struct ViewportWgpuCallback {
     draw: Option<ViewportDrawCall>,
     grid_vertices: Vec<ViewportVertex>,
+    perspective_grid: Option<ViewportPerspectiveGrid>,
     view_projection: [f32; 16],
     logical_size: [f32; 2],
     probe: ViewportWgpuProbe,
@@ -92,6 +96,7 @@ impl egui_wgpu::CallbackTrait for ViewportWgpuCallback {
                 ViewportRenderFrame {
                     draw: self.draw.as_ref(),
                     grid_vertices: &self.grid_vertices,
+                    perspective_grid: self.perspective_grid.as_ref(),
                     view_projection: self.view_projection,
                     target_size,
                 },
@@ -134,6 +139,7 @@ pub(crate) fn paint_wgpu_viewport(
     rect: egui::Rect,
     draw: Option<&ViewportDrawCall>,
     grid_lines: &[ReferenceLine],
+    perspective_grid: Option<ViewportPerspectiveGrid>,
     projection: &render::ViewportProjection,
     probe: &ViewportWgpuProbe,
 ) {
@@ -142,6 +148,7 @@ pub(crate) fn paint_wgpu_viewport(
         ViewportWgpuCallback {
             draw: draw.cloned(),
             grid_vertices: grid_vertices(grid_lines),
+            perspective_grid,
             view_projection: projection.view_projection_array(),
             logical_size: [rect.width(), rect.height()],
             probe: probe.clone(),

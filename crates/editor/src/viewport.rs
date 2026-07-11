@@ -1,6 +1,6 @@
 // Copyright The SimpleGameEngine Contributors
 
-use ecs::EntityId;
+use ecs::{EntityId, Projection};
 use eframe::egui;
 use math::{Transform, Vec3};
 use render::{
@@ -366,7 +366,25 @@ pub(crate) fn draw_viewport(
         .as_ref()
         .map_or(&[] as &[ReferenceLine], |frame| frame.lines.as_slice());
     if let (Some(projection), Some(probe)) = (projection.as_ref(), wgpu_probe) {
-        paint_wgpu_viewport(&painter, rect, draw, grid_lines, projection, probe);
+        let perspective_grid = view
+            .as_ref()
+            .filter(|view| matches!(view.projection, Projection::Perspective { .. }))
+            .and_then(|view| {
+                grid::perspective_grid_plane(
+                    view.transform.translation,
+                    camera.grid_plane(),
+                    camera.grid_minor_step(),
+                )
+            });
+        paint_wgpu_viewport(
+            &painter,
+            rect,
+            draw,
+            grid_lines,
+            perspective_grid,
+            projection,
+            probe,
+        );
     } else if let Some(projection) = projection.as_ref() {
         paint_reference_lines(&painter, rect, projection, grid_lines);
         if let Some(draw) = draw {

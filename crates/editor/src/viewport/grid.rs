@@ -9,6 +9,8 @@ use super::{ReferenceLine, ViewPreset};
 const MIN_MINOR_SPACING: f32 = 4.0;
 const MAX_MINOR_SPACING: f32 = 160.0;
 const MAX_LINES_PER_AXIS: usize = 256;
+const PERSPECTIVE_GRID_BASE_RADIUS: f32 = 1_000.0;
+const PERSPECTIVE_GRID_HEIGHT_SCALE: f32 = 100.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GridPlane {
@@ -125,6 +127,41 @@ pub(crate) fn adaptive_grid_lines(
     })
 }
 
+#[must_use]
+pub(crate) fn perspective_grid_plane(
+    camera_position: [f32; 3],
+    plane: GridPlane,
+    minor_step: f32,
+) -> Option<render::ViewportPerspectiveGrid> {
+    let camera_position = Vec3::from_array(camera_position);
+    let (axis_u, axis_v, normal) = plane_basis(plane);
+    if !camera_position.is_finite() || !minor_step.is_finite() || minor_step <= 0.0 {
+        return None;
+    }
+    let center = camera_position - normal * camera_position.dot(normal);
+    let radius = PERSPECTIVE_GRID_BASE_RADIUS
+        .max(camera_position.dot(normal).abs() * PERSPECTIVE_GRID_HEIGHT_SCALE);
+    let corner = |u: f32, v: f32| render::ViewportVertex {
+        position: (center + axis_u * radius * u + axis_v * radius * v).to_array(),
+        color: [1.0; 4],
+    };
+    Some(render::ViewportPerspectiveGrid {
+        vertices: vec![
+            corner(-1.0, -1.0),
+            corner(1.0, -1.0),
+            corner(1.0, 1.0),
+            corner(-1.0, -1.0),
+            corner(1.0, 1.0),
+            corner(-1.0, 1.0),
+        ],
+        axis_u: axis_u.to_array(),
+        axis_v: axis_v.to_array(),
+        camera_position: camera_position.to_array(),
+        minor_step,
+        radius,
+    })
+}
+
 fn append_axis_lines(
     lines: &mut Vec<ReferenceLine>,
     projection: &ViewportProjection,
@@ -134,18 +171,14 @@ fn append_axis_lines(
     step: f32,
 ) {
     let (min_u, max_u, min_v, max_v) = extent;
-    let segment_min_u = min_u - (max_u - min_u) * 16.0;
-    let segment_max_u = max_u + (max_u - min_u) * 16.0;
-    let segment_min_v = min_v - (max_v - min_v) * 16.0;
-    let segment_max_v = max_v + (max_v - min_v) * 16.0;
     for index in 0..line_count(min_u, max_u, step) {
         let coordinate = min_u + index as f32 * step;
         push_projectable(
             lines,
             projection,
             grid_line(
-                u * coordinate + v * segment_min_v,
-                u * coordinate + v * segment_max_v,
+                u * coordinate + v * min_v,
+                u * coordinate + v * max_v,
                 v,
                 coordinate,
                 step,
@@ -158,8 +191,8 @@ fn append_axis_lines(
             lines,
             projection,
             grid_line(
-                v * coordinate + u * segment_min_u,
-                v * coordinate + u * segment_max_u,
+                v * coordinate + u * min_u,
+                v * coordinate + u * max_u,
                 u,
                 coordinate,
                 step,

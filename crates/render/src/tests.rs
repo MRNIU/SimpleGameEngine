@@ -197,8 +197,12 @@ fn viewport_pipeline_declares_depth_testing() {
     let info = viewport_pipeline_info(wgpu::TextureFormat::Rgba8UnormSrgb);
 
     assert_eq!(info.depth_format, Some(wgpu::TextureFormat::Depth32Float));
-    assert_eq!(info.grid_topology, wgpu::PrimitiveTopology::LineList);
+    assert_eq!(info.grid_topology, wgpu::PrimitiveTopology::TriangleList);
     assert!(info.grid_depth_write);
+    assert!(info.shader_source.contains("fn vs_grid_plane"));
+    assert!(info.shader_source.contains("fn fs_grid_plane"));
+    assert!(info.shader_source.contains("fwidth"));
+    assert!(info.shader_source.contains("grid_camera_radius"));
 }
 
 fn add_light(world: &mut World, id: &str, color: [f32; 3], intensity: f32) {
