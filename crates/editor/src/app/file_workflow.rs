@@ -11,7 +11,10 @@ use math::Transform;
 
 use crate::{
     model::{EditorModel, PrimitiveKind},
-    viewport::{GizmoDrag, GizmoHandle, ViewPreset, ViewportAction, transform_for_gizmo_drag},
+    viewport::{
+        GizmoDrag, GizmoHandle, GridPlane, ViewPreset, ViewportAction, adaptive_grid_lines,
+        transform_for_gizmo_drag,
+    },
 };
 
 use super::{EditorApp, PendingFileAction, project};
@@ -307,7 +310,55 @@ impl EditorApp {
             "smoke imported viewport span missing"
         );
 
-        Ok(super::EditorAppSmokeReport { semantic, app })
+        let viewport_size = render::ViewportSize::new(1200.0, 700.0)
+            .ok_or_else(|| anyhow::anyhow!("smoke viewport size is invalid"))?;
+        let viewport_view = self.viewport_camera.to_viewport_view(viewport_size);
+        let viewport_projection = render::ViewportProjection::from_view(
+            &viewport_view,
+            viewport_size,
+            render::ViewportClipPlanes::DEFAULT,
+        )
+        .ok_or_else(|| anyhow::anyhow!("smoke viewport projection is invalid"))?;
+        let viewport_projection_ok = viewport_projection
+            .view_projection_array()
+            .into_iter()
+            .all(f32::is_finite);
+        let viewport_grid_ok = adaptive_grid_lines(
+            &viewport_projection,
+            GridPlane::XY,
+            self.viewport_camera.grid_minor_step(),
+        )
+        .is_some_and(|frame| {
+            !frame.lines.is_empty()
+                && frame.lines.len() <= 512
+                && frame.lines.iter().all(|line| {
+                    viewport_projection
+                        .project_world_segment(line.start, line.end)
+                        .is_some()
+                })
+        });
+        let viewport_camera_reset_ok = self.viewport_camera.view_mode_label() == "Perspective"
+            && self.viewport_camera.horizontal_fov_degrees() == 90.0
+            && self.viewport_camera.speed_level() == 4
+            && self.viewport_camera.speed_scalar() == 1.0;
+        let viewport_wgpu_depth_ok =
+            render::viewport_pipeline_info(eframe::wgpu::TextureFormat::Rgba8UnormSrgb)
+                .depth_format
+                .is_some();
+
+        anyhow::ensure!(viewport_projection_ok, "smoke viewport projection failed");
+        anyhow::ensure!(viewport_grid_ok, "smoke adaptive grid failed");
+        anyhow::ensure!(viewport_camera_reset_ok, "smoke viewport reset failed");
+        anyhow::ensure!(viewport_wgpu_depth_ok, "smoke viewport depth is disabled");
+
+        Ok(super::EditorAppSmokeReport {
+            semantic,
+            app,
+            viewport_projection_ok,
+            viewport_grid_ok,
+            viewport_camera_reset_ok,
+            viewport_wgpu_depth_ok,
+        })
     }
 
     fn run_semantic_smoke_actions(&mut self) -> anyhow::Result<SemanticSmokeState> {
@@ -1016,6 +1067,10 @@ mod tests {
         assert!(report.app.imported_mesh_count >= 1);
         assert!(report.app.imported_asset_reopened);
         assert!(report.app.imported_viewport_span);
+        assert!(report.viewport_projection_ok);
+        assert!(report.viewport_grid_ok);
+        assert!(report.viewport_camera_reset_ok);
+        assert!(report.viewport_wgpu_depth_ok);
         assert_eq!(
             app.current_path,
             Some(PathBuf::from("scenes/main.scene.ron"))

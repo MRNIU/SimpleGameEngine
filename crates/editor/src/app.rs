@@ -45,6 +45,10 @@ pub(crate) struct EditorAppSmokeChecks {
 pub(crate) struct EditorAppSmokeReport {
     pub(crate) semantic: EditorSmokeReport,
     pub(crate) app: EditorAppSmokeChecks,
+    pub(crate) viewport_projection_ok: bool,
+    pub(crate) viewport_grid_ok: bool,
+    pub(crate) viewport_camera_reset_ok: bool,
+    pub(crate) viewport_wgpu_depth_ok: bool,
 }
 
 impl EditorLaunchOptions {
@@ -787,7 +791,7 @@ impl eframe::App for EditorApp {
                     .as_ref()
                     .expect("smoke report is set before viewport completion");
                 println!(
-                    "editor smoke ok: meshes={}, camera={}, light={}, viewport_indices={}, transform_undo_redo={}, content_reopen={}, history_cleared={}, gizmo_drag_cleared={}, pilot_camera_cleared={}, viewport_state_reset={}, assets={}, imported_meshes={}, imported_asset_reopened={}, imported_viewport_span={}, viewport_prepare={}, viewport_paint={}",
+                    "editor smoke ok: meshes={}, camera={}, light={}, viewport_indices={}, transform_undo_redo={}, content_reopen={}, history_cleared={}, gizmo_drag_cleared={}, pilot_camera_cleared={}, viewport_state_reset={}, assets={}, imported_meshes={}, imported_asset_reopened={}, imported_viewport_span={}, viewport_projection_ok={}, viewport_grid_ok={}, viewport_camera_reset_ok={}, viewport_wgpu_depth_ok={}, viewport_prepare={}, viewport_paint={}",
                     report.semantic.mesh_count,
                     report.semantic.has_camera,
                     report.semantic.has_light,
@@ -802,6 +806,10 @@ impl eframe::App for EditorApp {
                     report.app.imported_mesh_count,
                     report.app.imported_asset_reopened,
                     report.app.imported_viewport_span,
+                    report.viewport_projection_ok,
+                    report.viewport_grid_ok,
+                    report.viewport_camera_reset_ok,
+                    report.viewport_wgpu_depth_ok,
                     viewport_report.prepare_count,
                     viewport_report.paint_count
                 );

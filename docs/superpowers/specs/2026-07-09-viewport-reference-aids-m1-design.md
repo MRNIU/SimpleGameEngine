@@ -2,6 +2,8 @@
 
 日期：2026-07-09
 
+> 2026-07-11：本文的固定网格与旧投影描述已由 [UE 5.8 Viewport Parity Design](2026-07-11-ue58-viewport-parity-design.md) 取代；正文保留为历史决策记录。
+
 ## 结论
 
 下一步做 `Viewport Reference Aids M1`：把 editor viewport 从“能显示和操作 mesh”推进到“有稳定空间参照的 UE5/Unity-like 编辑器工作台”。

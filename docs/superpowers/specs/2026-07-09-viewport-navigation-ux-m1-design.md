@@ -2,6 +2,8 @@
 
 日期：2026-07-09
 
+> 2026-07-11：本文的导航输入、连续速度和正交模式切换合同已由 [UE 5.8 Viewport Parity Design](2026-07-11-ue58-viewport-parity-design.md) 取代；正文保留为历史决策记录。
+
 ## 结论
 
 下一步做 `Viewport Navigation UX M1`：把 editor viewport 的 camera/navigation 操作收束成 UE Level Editor 风格的日常导航体验。

@@ -19,7 +19,8 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 - Cargo workspace 包含 `app`、`ecs`、`math`、`asset`、`scene`、`render`、`window`、`input`、`editor`、`runtime`。
 - `asset` 负责 `assets/asset_manifest.ron`、稳定 UUID、OBJ loader、导入目标路径和 imported CPU mesh 数据；`ecs` 保存 entity/component 真源，`scene` 负责 `.scene.ron` roundtrip，`render` 从 ECS 抽取 viewport 数据并保留 `wgpu` viewport pipeline 边界。
 - `editor` 使用 `eframe::Renderer::Wgpu`，提供 Unreal-like 左 Hierarchy / 中央 Viewport / 右 Inspector 布局，顶部菜单栏、分组 toolbar、底部状态栏、固定快捷键、material color、light 参数、camera projection 的即时 Inspector 编辑，以及 editor-only `Pilot Camera` 预览开关。
-- `editor` viewport 使用 `Z-up` editor camera、固定 `X-Y` grid、XYZ axis、orientation cube、camera speed/distance hint 和 Move/Rotate/Scale gizmo。
+- `editor` viewport 使用 `Z-up` editor camera、自适应十进制 world grid、XYZ axis、orientation cube、camera speed/FOV/distance hint 和 Move/Rotate/Scale gizmo。Perspective 默认水平 FOV 为 `90°`，按实际 viewport aspect 换算垂直 FOV，并使用标准 near/far clipping；Orthographic preset 使用对应的 `XY` / `XZ` / `YZ` 网格平面。
+- viewport 导航对齐 UE Level Editor 默认语义：`RMB` look、`RMB + WASD/QE` fly、`RMB + wheel` 切换 1–8 档速度、普通 wheel 前后移动、`MMB` 或 `LMB + RMB` pan、`Alt + LMB/MMB/RMB` orbit/track/dolly、`F` frame。toolbar 可调整速度档位和 `0.1..10.0` 倍率；正交 RMB pan 和 wheel/`LMB + RMB` zoom 不切回 Perspective，Pilot Camera 时禁用 editor camera 修改。
 - `editor` 启动时没有隐式用户 project。用户可以创建 project，或通过 `Open Project...` 选择已有 `project.sge.ron`；project-scoped scene 保存和 OBJ 导入在 project 打开前禁用。
 - 用户 project 在自身根目录下使用 `scenes/main.scene.ron`、`assets/asset_manifest.ron` 和 `assets/imported/`。仓库根 `assets/` 只保存 engine-owned primitive/default material 资源；OBJ loader sample inputs 位于 `examples/editor_smoke/assets/obj/`。
 - 默认 runtime/editor sample project 位于 `examples/editor_smoke/`。
@@ -98,14 +99,14 @@ cargo run -p runtime -- examples/editor_smoke/scenes/main.scene.ron examples/edi
 # 运行 editor；host-native 是 opt-in，GUI smoke 不属于默认 Dev Container gate
 cargo run -p editor
 
-# 虚拟 X editor smoke；通过退出码和 summary log 验证临时 project、文件工作流 save/open、OBJ import、manifest/cache、Move/Rotate/Scale gizmo semantic preview/commit/Undo/Redo、material/light/camera 内容编辑、editor-only state 清理、viewport reference state reset 和 ViewportRenderer prepare/paint
+# 虚拟 X editor smoke；通过退出码和 summary log 验证临时 project、文件工作流 save/open、OBJ import、manifest/cache、Move/Rotate/Scale gizmo semantic preview/commit/Undo/Redo、material/light/camera 内容编辑、editor-only state 清理、非方形 viewport projection、自适应 grid、camera reset、depth pipeline 和 ViewportRenderer prepare/paint
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron'
 
 # host-native 自动 smoke；opt-in，只使用已存在的宿主 Rust 环境
 cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron
 ```
 
-虚拟 X 和 host-native `--smoke` 会在 smoke 输出 seed 目录下创建临时 project，并证明 editor 文件工作流 save/open 闭环、内部 OBJ import、manifest/cache、`asset:<uuid>` reopen、imported mesh viewport span、Move/Rotate/Scale gizmo semantic preview/commit/Undo/Redo、material/light/camera 参数 smoke、editor-only history/gizmo/Pilot 清理、viewport reference state reset，以及真实 `ViewportRenderer` prepare/paint 触达；它们仍不等于人工确认真实窗口像素、真实 OS 鼠标坐标自动化、真实系统文件对话框或跨平台 GPU 兼容性证明。
+虚拟 X 和 host-native `--smoke` 会在 smoke 输出 seed 目录下创建临时 project，并证明 editor 文件工作流 save/open 闭环、内部 OBJ import、manifest/cache、`asset:<uuid>` reopen、imported mesh viewport span、Move/Rotate/Scale gizmo semantic preview/commit/Undo/Redo、material/light/camera 参数 smoke、editor-only history/gizmo/Pilot 清理、非方形 viewport projection、自适应 grid、camera reset、depth pipeline，以及真实 `ViewportRenderer` prepare/paint 触达；它们仍不等于人工确认真实窗口像素、真实 OS 鼠标坐标自动化、真实系统文件对话框或跨平台 GPU 兼容性证明。
 
 ## 代码结构
 

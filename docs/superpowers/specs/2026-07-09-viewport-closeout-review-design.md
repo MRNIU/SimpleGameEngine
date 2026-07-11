@@ -2,6 +2,8 @@
 
 日期：2026-07-09
 
+> 2026-07-11：本文审阅时的 viewport 基线已由 [UE 5.8 Viewport Parity Design](2026-07-11-ue58-viewport-parity-design.md) 取代；正文保留为历史决策记录。
+
 ## 结论
 
 下一步做 `Viewport Closeout Review`：不新增 viewport 功能，先对当前 viewport 主线做一次可执行的查漏补缺。
