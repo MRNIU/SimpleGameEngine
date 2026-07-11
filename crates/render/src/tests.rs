@@ -1,9 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    ViewportClipPlanes, ViewportProjection, ViewportProjectionMatrix, ViewportSize, ViewportView,
-    extract_render_scene, fit_viewport_draw_to_size, viewport_draw_call,
-    viewport_draw_call_with_selection, viewport_draw_call_with_view,
+    ViewportClipPlanes, ViewportProjection, ViewportSize, ViewportView, extract_render_scene,
+    viewport_draw_call, viewport_draw_call_with_selection, viewport_draw_call_with_view,
     viewport_draw_call_with_view_and_meshes, viewport_pipeline_info, viewport_vertex_buffer_layout,
     viewport_vertex_bytes,
 };
@@ -39,7 +38,7 @@ fn world_with_camera_transform(transform: Transform) -> World {
     world
 }
 
-fn matrix_projection() -> ViewportProjectionMatrix {
+fn matrix_projection() -> ViewportProjection {
     let view = ViewportView::new(
         EntityId::new("matrix_camera"),
         Transform::identity(),
@@ -47,7 +46,7 @@ fn matrix_projection() -> ViewportProjectionMatrix {
             fov_y_degrees: 90.0,
         },
     );
-    ViewportProjectionMatrix::from_view(
+    ViewportProjection::from_view(
         &view,
         ViewportSize::new(1600.0, 900.0).unwrap(),
         ViewportClipPlanes::DEFAULT,
@@ -78,7 +77,11 @@ fn viewport_projection_matrix_rejects_points_outside_depth_range() {
 
     assert!(projection.project_world_point([0.0, 0.0, -1.0]).is_none());
     assert!(projection.project_world_point([0.0, 0.0, 0.05]).is_none());
-    assert!(projection.project_world_point([0.0, 0.0, 20_000.0]).is_none());
+    assert!(
+        projection
+            .project_world_point([0.0, 0.0, 20_000.0])
+            .is_none()
+    );
 }
 
 #[test]
@@ -152,23 +155,48 @@ fn rounded_positions(draw: &super::ViewportDrawCall, span_index: usize) -> BTree
         .collect()
 }
 
-fn span_width(draw: &super::ViewportDrawCall, span_index: usize) -> f32 {
-    let span = &draw.mesh_spans[span_index];
-    let (min, max) = span
-        .vertex_range
-        .clone()
-        .map(|index| draw.vertices[index].position[0])
-        .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), x| {
-            (min.min(x), max.max(x))
-        });
-    max - min
-}
-
 fn span_index_for(draw: &super::ViewportDrawCall, entity: &str) -> usize {
     draw.mesh_spans
         .iter()
         .position(|span| span.entity == EntityId::new(entity))
         .unwrap()
+}
+
+#[test]
+fn viewport_draw_call_keeps_world_positions() {
+    let mut world = world_with_camera();
+    add_cube(&mut world, "world_cube", [0.0, 0.0, 4.0]);
+    let scene = extract_render_scene(&world);
+    let view = ViewportView::new(
+        EntityId::new("editor_view"),
+        Transform::identity(),
+        Projection::Perspective {
+            fov_y_degrees: 90.0,
+        },
+    );
+    let draw = viewport_draw_call_with_view(&scene, None, &view).unwrap();
+    let span = &draw.mesh_spans[0];
+
+    assert!(span.vertex_range.clone().all(|index| {
+        let position = draw.vertices[index].position;
+        position[2] > 3.0 && position[2] < 5.0
+    }));
+}
+
+#[test]
+fn viewport_shader_uses_view_projection_and_composite_passes() {
+    let info = viewport_pipeline_info(wgpu::TextureFormat::Rgba8UnormSrgb);
+
+    assert!(info.shader_source.contains("view_projection"));
+    assert!(info.shader_source.contains("vs_mesh"));
+    assert!(info.shader_source.contains("vs_composite"));
+}
+
+#[test]
+fn viewport_pipeline_declares_depth_testing() {
+    let info = viewport_pipeline_info(wgpu::TextureFormat::Rgba8UnormSrgb);
+
+    assert_eq!(info.depth_format, Some(wgpu::TextureFormat::Depth32Float));
 }
 
 fn add_light(world: &mut World, id: &str, color: [f32; 3], intensity: f32) {
@@ -343,9 +371,6 @@ fn viewport_draw_call_makes_first_light_color_visibly_affect_cube_color() {
 
 #[test]
 fn viewport_view_projection_changes_projected_positions() {
-    let mut world = world_with_camera();
-    add_cube(&mut world, "cube", [1.0, 0.0, 0.0]);
-    let scene = extract_render_scene(&world);
     let wide = ViewportView::new(
         EntityId::new("wide"),
         Transform::identity(),
@@ -361,17 +386,18 @@ fn viewport_view_projection_changes_projected_positions() {
         },
     );
 
-    let wide_draw = viewport_draw_call_with_view(&scene, None, &wide).unwrap();
-    let narrow_draw = viewport_draw_call_with_view(&scene, None, &narrow).unwrap();
+    let size = ViewportSize::new(1600.0, 900.0).unwrap();
+    let wide = ViewportProjection::from_view(&wide, size, ViewportClipPlanes::DEFAULT).unwrap();
+    let narrow = ViewportProjection::from_view(&narrow, size, ViewportClipPlanes::DEFAULT).unwrap();
 
-    assert_ne!(wide_draw.vertices, narrow_draw.vertices);
+    assert_ne!(
+        wide.project_world_point([1.0, 0.0, 4.0]),
+        narrow.project_world_point([1.0, 0.0, 4.0])
+    );
 }
 
 #[test]
 fn perspective_projection_scales_with_camera_distance() {
-    let mut world = world_with_camera();
-    add_cube(&mut world, "cube", [0.0, 0.0, 4.0]);
-    let scene = extract_render_scene(&world);
     let far = ViewportView::new(
         EntityId::new("far"),
         Transform::identity(),
@@ -387,10 +413,16 @@ fn perspective_projection_scales_with_camera_distance() {
         },
     );
 
-    let far_draw = viewport_draw_call_with_view(&scene, None, &far).unwrap();
-    let near_draw = viewport_draw_call_with_view(&scene, None, &near).unwrap();
-    let far_width = span_width(&far_draw, 0);
-    let near_width = span_width(&near_draw, 0);
+    let size = ViewportSize::new(1600.0, 900.0).unwrap();
+    let projected_width = |view: &ViewportView| {
+        let projection =
+            ViewportProjection::from_view(view, size, ViewportClipPlanes::DEFAULT).unwrap();
+        let left = projection.project_world_point([-0.28, 0.0, 4.0]).unwrap();
+        let right = projection.project_world_point([0.28, 0.0, 4.0]).unwrap();
+        right[0] - left[0]
+    };
+    let far_width = projected_width(&far);
+    let near_width = projected_width(&near);
 
     assert!(
         near_width > far_width,
@@ -405,18 +437,23 @@ fn orthographic_projection_does_not_skew_screen_xy_by_depth() {
         Transform::identity(),
         Projection::Orthographic { vertical_size: 5.0 },
     );
-    let projection = ViewportProjection::from_view(&view).unwrap();
+    let projection = ViewportProjection::from_view(
+        &view,
+        ViewportSize::new(1600.0, 900.0).unwrap(),
+        ViewportClipPlanes::DEFAULT,
+    )
+    .unwrap();
 
-    let near = projection.project_world_point([1.0, 2.0, 0.0]).unwrap();
+    let near = projection.project_world_point([1.0, 2.0, 1.0]).unwrap();
     let far = projection.project_world_point([1.0, 2.0, 10.0]).unwrap();
 
     assert_eq!(near, far);
 }
 
 #[test]
-fn viewport_projection_matches_draw_call_vertices_for_cube_center() {
+fn viewport_projection_projects_draw_call_world_center() {
     let mut world = world_with_camera();
-    add_cube(&mut world, "cube", [2.0, 0.0, 0.0]);
+    add_cube(&mut world, "cube", [2.0, 0.0, 4.0]);
     let scene = extract_render_scene(&world);
     let view = ViewportView::new(
         EntityId::new("editor_view"),
@@ -427,15 +464,18 @@ fn viewport_projection_matches_draw_call_vertices_for_cube_center() {
     );
 
     let draw = viewport_draw_call_with_view(&scene, Some(&EntityId::new("cube")), &view).unwrap();
-    let projection = ViewportProjection::from_view(&view).unwrap();
+    let projection = ViewportProjection::from_view(
+        &view,
+        ViewportSize::new(1600.0, 900.0).unwrap(),
+        ViewportClipPlanes::DEFAULT,
+    )
+    .unwrap();
     let projected = projection
         .project_world_point(draw.mesh_spans[0].world_center)
         .unwrap();
 
-    assert!(draw.vertices.iter().any(|vertex| {
-        (vertex.position[0] - projected[0]).abs() < 0.5
-            && (vertex.position[1] - projected[1]).abs() < 0.5
-    }));
+    assert!(projected.into_iter().all(f32::is_finite));
+    assert_eq!(draw.mesh_spans[0].world_center, [2.0, 0.0, 4.0]);
 }
 
 #[test]
@@ -602,16 +642,34 @@ fn viewport_draw_call_applies_camera_translation_and_rotation() {
     });
     add_cube(&mut moved_camera, "cube", [1.0, 0.0, 0.0]);
 
-    let default_draw = viewport_draw_call(&extract_render_scene(&default_camera)).unwrap();
-    let moved_draw = viewport_draw_call(&extract_render_scene(&moved_camera)).unwrap();
+    let default_view = ViewportView::from_camera(
+        extract_render_scene(&default_camera)
+            .active_camera
+            .as_ref()
+            .unwrap(),
+    );
+    let moved_view = ViewportView::from_camera(
+        extract_render_scene(&moved_camera)
+            .active_camera
+            .as_ref()
+            .unwrap(),
+    );
+    let size = ViewportSize::new(1600.0, 900.0).unwrap();
+    let default_projection =
+        ViewportProjection::from_view(&default_view, size, ViewportClipPlanes::DEFAULT).unwrap();
+    let moved_projection =
+        ViewportProjection::from_view(&moved_view, size, ViewportClipPlanes::DEFAULT).unwrap();
 
-    assert_ne!(default_draw.vertices, moved_draw.vertices);
+    assert_ne!(
+        default_projection.project_world_point([1.0, 0.0, 4.0]),
+        moved_projection.project_world_point([1.0, 0.0, 4.0])
+    );
 }
 
 #[test]
 fn viewport_draw_call_with_view_uses_explicit_view() {
     let mut world = world_with_camera_transform(Transform::identity());
-    add_cube(&mut world, "cube", [1.0, 0.0, 0.0]);
+    add_cube(&mut world, "cube", [1.0, 0.0, 4.0]);
     let scene = extract_render_scene(&world);
     let scene_camera_draw = viewport_draw_call(&scene).unwrap();
     let editor_view = ViewportView::new(
@@ -632,9 +690,19 @@ fn viewport_draw_call_with_view_uses_explicit_view() {
     );
 
     let editor_draw = viewport_draw_call_with_view(&scene, None, &editor_view).unwrap();
+    let scene_view = ViewportView::from_camera(scene.active_camera.as_ref().unwrap());
+    let size = ViewportSize::new(1600.0, 900.0).unwrap();
+    let scene_projection =
+        ViewportProjection::from_view(&scene_view, size, ViewportClipPlanes::DEFAULT).unwrap();
+    let editor_projection =
+        ViewportProjection::from_view(&editor_view, size, ViewportClipPlanes::DEFAULT).unwrap();
 
     assert_eq!(editor_draw.camera_entity, EntityId::new("editor_view"));
-    assert_ne!(scene_camera_draw.vertices, editor_draw.vertices);
+    assert_eq!(scene_camera_draw.vertices, editor_draw.vertices);
+    assert_ne!(
+        scene_projection.project_world_point([1.0, 0.0, 4.0]),
+        editor_projection.project_world_point([1.0, 0.0, 4.0])
+    );
 }
 
 #[test]
@@ -917,20 +985,6 @@ fn viewport_draw_call_shades_cube_faces_distinctly() {
         .collect::<std::collections::BTreeSet<_>>();
 
     assert!(distinct_colors.len() >= 6);
-}
-
-#[test]
-fn viewport_draw_can_be_fit_to_tall_viewport_without_stretching_pixels() {
-    let mut world = world_with_camera();
-    add_cube(&mut world, "cube", [0.0, 0.0, 0.0]);
-    let draw = viewport_draw_call(&extract_render_scene(&world)).unwrap();
-
-    let fitted = fit_viewport_draw_to_size(&draw, [300.0, 600.0]);
-    let x_span = fitted.vertices[1].position[0] - fitted.vertices[0].position[0];
-    let y_span = fitted.vertices[2].position[1] - fitted.vertices[1].position[1];
-
-    assert_eq!(x_span, 0.56);
-    assert_eq!(y_span, 0.28);
 }
 
 #[test]

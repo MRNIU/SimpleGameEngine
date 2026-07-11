@@ -62,6 +62,8 @@ impl ViewportGpuResources {
 #[derive(Clone)]
 struct ViewportWgpuCallback {
     draw: ViewportDrawCall,
+    view_projection: [f32; 16],
+    logical_size: [f32; 2],
     probe: ViewportWgpuProbe,
 }
 
@@ -69,13 +71,25 @@ impl egui_wgpu::CallbackTrait for ViewportWgpuCallback {
     fn prepare(
         &self,
         device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-        _screen_descriptor: &egui_wgpu::ScreenDescriptor,
-        _egui_encoder: &mut wgpu::CommandEncoder,
+        queue: &wgpu::Queue,
+        screen_descriptor: &egui_wgpu::ScreenDescriptor,
+        egui_encoder: &mut wgpu::CommandEncoder,
         callback_resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
         if let Some(resources) = callback_resources.get_mut::<ViewportGpuResources>() {
-            resources.renderer.prepare(device, Some(&self.draw));
+            let pixels_per_point = screen_descriptor.pixels_per_point;
+            let target_size = [
+                (self.logical_size[0] * pixels_per_point).round().max(1.0) as u32,
+                (self.logical_size[1] * pixels_per_point).round().max(1.0) as u32,
+            ];
+            resources.renderer.prepare(
+                device,
+                queue,
+                egui_encoder,
+                Some(&self.draw),
+                self.view_projection,
+                target_size,
+            );
             self.probe.mark_prepared();
         }
         Vec::new()
@@ -113,12 +127,15 @@ pub(crate) fn paint_wgpu_viewport(
     painter: &egui::Painter,
     rect: egui::Rect,
     draw: &ViewportDrawCall,
+    projection: &render::ViewportProjection,
     probe: &ViewportWgpuProbe,
 ) {
     painter.add(egui_wgpu::Callback::new_paint_callback(
         rect,
         ViewportWgpuCallback {
             draw: draw.clone(),
+            view_projection: projection.view_projection_array(),
+            logical_size: [rect.width(), rect.height()],
             probe: probe.clone(),
         },
     ));

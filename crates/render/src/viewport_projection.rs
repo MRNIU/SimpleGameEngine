@@ -92,13 +92,12 @@ impl ViewportProjectionMatrix {
         if !camera_position.is_finite() || !camera_rotation.is_finite() {
             return None;
         }
-        let view_matrix = Mat4::from_quat(camera_rotation.inverse())
-            * Mat4::from_translation(-camera_position);
+        let view_matrix =
+            Mat4::from_quat(camera_rotation.inverse()) * Mat4::from_translation(-camera_position);
         let (projection_matrix, perspective) = match view.projection {
-            Projection::Perspective { fov_y_degrees } => (
-                perspective_matrix(fov_y_degrees, size, clip_planes)?,
-                true,
-            ),
+            Projection::Perspective { fov_y_degrees } => {
+                (perspective_matrix(fov_y_degrees, size, clip_planes)?, true)
+            }
             Projection::Orthographic { vertical_size } => (
                 orthographic_matrix(vertical_size, size, clip_planes)?,
                 false,
@@ -137,11 +136,7 @@ impl ViewportProjectionMatrix {
     }
 
     #[must_use]
-    pub fn project_world_segment(
-        self,
-        start: [f32; 3],
-        end: [f32; 3],
-    ) -> Option<[[f32; 2]; 2]> {
+    pub fn project_world_segment(self, start: [f32; 3], end: [f32; 3]) -> Option<[[f32; 2]; 2]> {
         let start = Vec3::from_array(start);
         let end = Vec3::from_array(end);
         if !start.is_finite() || !end.is_finite() {

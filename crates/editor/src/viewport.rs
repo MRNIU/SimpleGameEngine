@@ -3,7 +3,9 @@
 use ecs::EntityId;
 use eframe::egui;
 use math::{Transform, Vec3};
-use render::{ViewportDrawCall, ViewportView, fit_viewport_draw_to_size};
+use render::{
+    ViewportClipPlanes, ViewportDrawCall, ViewportProjection, ViewportSize, ViewportView,
+};
 
 mod camera;
 mod gizmo;
@@ -130,8 +132,11 @@ pub(crate) fn draw_viewport(
     let scroll_y = ui.input(|input| input.smooth_scroll_delta.y);
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(18, 24, 29));
-    let fitted_draw =
-        draw.map(|draw| fit_viewport_draw_to_size(draw, [rect.width(), rect.height()]));
+    let view = view_override
+        .cloned()
+        .unwrap_or_else(|| camera.to_viewport_view());
+    let projection = ViewportSize::new(rect.width(), rect.height())
+        .and_then(|size| ViewportProjection::from_view(&view, size, ViewportClipPlanes::DEFAULT));
     let f_pressed = ui.input(|input| input.key_pressed(egui::Key::F));
     let keyboard_fit_requested = keyboard_shortcuts_allowed && f_pressed;
     let fit_requested = fit_view_requested || keyboard_fit_requested;
@@ -144,9 +149,11 @@ pub(crate) fn draw_viewport(
                 ViewportAction::Status("Disable Pilot Camera to navigate editor view".to_owned());
         }
     }
-    let handles = fitted_draw.as_ref().map_or_else(Vec::new, |draw| {
-        gizmo_layout(draw, rect, selected, gizmo.mode)
-    });
+    let handles = draw
+        .zip(projection.as_ref())
+        .map_or_else(Vec::new, |(draw, projection)| {
+            gizmo_layout(draw, projection, rect, selected, gizmo.mode)
+        });
     gizmo.set_hovered(
         response
             .hover_pos()
@@ -281,22 +288,23 @@ pub(crate) fn draw_viewport(
         response.clicked_by(egui::PointerButton::Primary),
         pointer_consumed_by_gizmo,
         pointer_consumed_by_camera,
-    ) && let (Some(draw), Some(pointer)) =
-        (fitted_draw.as_ref(), response.interact_pointer_pos())
+    ) && let (Some(draw), Some(projection), Some(pointer)) =
+        (draw, projection.as_ref(), response.interact_pointer_pos())
     {
-        action = hit_test_viewport_draw(draw, rect, pointer);
+        action = hit_test_viewport_draw(draw, projection, rect, pointer);
     }
 
-    if let Some((draw, probe)) = fitted_draw.as_ref().zip(wgpu_probe) {
-        paint_wgpu_viewport(&painter, rect, draw, probe);
-    } else if let Some(draw) = fitted_draw.as_ref() {
-        paint_fallback_viewport(rect, &painter, draw);
+    if let Some((draw, projection, probe)) = draw
+        .zip(projection.as_ref())
+        .zip(wgpu_probe)
+        .map(|((draw, projection), probe)| (draw, projection, probe))
+    {
+        paint_wgpu_viewport(&painter, rect, draw, projection, probe);
+    } else if let Some((draw, projection)) = draw.zip(projection.as_ref()) {
+        paint_fallback_viewport(rect, &painter, draw, projection);
     }
-    let view = view_override
-        .cloned()
-        .unwrap_or_else(|| camera.to_viewport_view());
-    if let Some(projection) = render::ViewportProjection::from_view(&view) {
-        paint_reference_lines(&painter, rect, &projection);
+    if let Some(projection) = projection.as_ref() {
+        paint_reference_lines(&painter, rect, projection);
     }
     let hint_text = hint_text_override.map_or_else(
         || camera.hint_text(draw, selected),
@@ -458,29 +466,30 @@ fn viewport_canvas_size(available: egui::Vec2) -> egui::Vec2 {
     )
 }
 
-fn paint_fallback_viewport(rect: egui::Rect, painter: &egui::Painter, draw: &ViewportDrawCall) {
-    let min_x = draw
+fn paint_fallback_viewport(
+    rect: egui::Rect,
+    painter: &egui::Painter,
+    draw: &ViewportDrawCall,
+    projection: &ViewportProjection,
+) {
+    let mut projected = draw
         .vertices
         .iter()
-        .map(|vertex| vertex.position[0])
-        .fold(f32::INFINITY, f32::min);
-    let max_x = draw
-        .vertices
-        .iter()
-        .map(|vertex| vertex.position[0])
-        .fold(f32::NEG_INFINITY, f32::max);
-    let min_y = draw
-        .vertices
-        .iter()
-        .map(|vertex| vertex.position[1])
-        .fold(f32::INFINITY, f32::min);
-    let max_y = draw
-        .vertices
-        .iter()
-        .map(|vertex| vertex.position[1])
-        .fold(f32::NEG_INFINITY, f32::max);
-    let to_screen = |x: f32, y: f32| rect.center() + egui::vec2(x * 86.0, -y * 86.0);
-    let cube = egui::Rect::from_two_pos(to_screen(min_x, min_y), to_screen(max_x, max_y));
+        .filter_map(|vertex| projection.project_world_point(vertex.position));
+    let Some(first) = projected.next() else {
+        return;
+    };
+    let (mut min, mut max) = (first, first);
+    for point in projected {
+        min[0] = min[0].min(point[0]);
+        min[1] = min[1].min(point[1]);
+        max[0] = max[0].max(point[0]);
+        max[1] = max[1].max(point[1]);
+    }
+    let cube = egui::Rect::from_two_pos(
+        screen_position_for_vertex(rect, [min[0], min[1], 0.0]),
+        screen_position_for_vertex(rect, [max[0], max[1], 0.0]),
+    );
     painter.rect_filled(cube, 2.0, egui::Color32::from_rgb(77, 163, 255));
     painter.rect_stroke(
         cube,
@@ -496,10 +505,7 @@ fn paint_reference_lines(
     projection: &render::ViewportProjection,
 ) {
     for line in reference_lines() {
-        let Some(start) = projection.project_world_point(line.start) else {
-            continue;
-        };
-        let Some(end) = projection.project_world_point(line.end) else {
+        let Some([start, end]) = projection.project_world_segment(line.start, line.end) else {
             continue;
         };
         painter.line_segment(
@@ -554,32 +560,37 @@ pub(crate) fn screen_position_for_vertex(rect: egui::Rect, position: [f32; 3]) -
 #[must_use]
 pub(crate) fn hit_test_viewport_draw(
     draw: &ViewportDrawCall,
+    projection: &ViewportProjection,
     rect: egui::Rect,
     pointer: egui::Pos2,
 ) -> ViewportAction {
     if !rect.is_positive() {
         return ViewportAction::None;
     }
+    let pointer_ndc = [
+        (pointer.x - rect.left()) / rect.width() * 2.0 - 1.0,
+        1.0 - (pointer.y - rect.top()) / rect.height() * 2.0,
+    ];
+    let Some(ray) = projection.screen_ray(pointer_ndc) else {
+        return ViewportAction::None;
+    };
     let mut best: Option<(f32, EntityId)> = None;
     for span in &draw.mesh_spans {
-        let mut min = egui::pos2(f32::INFINITY, f32::INFINITY);
-        let mut max = egui::pos2(f32::NEG_INFINITY, f32::NEG_INFINITY);
-        for index in span.vertex_range.clone() {
-            let Some(vertex) = draw.vertices.get(index) else {
+        let Some(indices) = draw.indices.get(span.index_range.clone()) else {
+            continue;
+        };
+        for triangle in indices.chunks_exact(3) {
+            let (Some(a), Some(b), Some(c)) = (
+                draw.vertices.get(usize::from(triangle[0])),
+                draw.vertices.get(usize::from(triangle[1])),
+                draw.vertices.get(usize::from(triangle[2])),
+            ) else {
                 continue;
             };
-            let screen = screen_position_for_vertex(rect, vertex.position);
-            min.x = min.x.min(screen.x);
-            min.y = min.y.min(screen.y);
-            max.x = max.x.max(screen.x);
-            max.y = max.y.max(screen.y);
-        }
-        let bounds = egui::Rect::from_min_max(min, max);
-        if bounds.contains(pointer) {
-            let distance = pointer.distance_sq(bounds.center());
-            if best
-                .as_ref()
-                .is_none_or(|(best_distance, _)| distance < *best_distance)
+            if let Some(distance) = ray_triangle_distance(ray, [a.position, b.position, c.position])
+                && best
+                    .as_ref()
+                    .is_none_or(|(best_distance, _)| distance < *best_distance)
             {
                 best = Some((distance, span.entity.clone()));
             }
@@ -588,6 +599,32 @@ pub(crate) fn hit_test_viewport_draw(
     best.map_or(ViewportAction::ClearSelection, |(_, entity)| {
         ViewportAction::Select(entity)
     })
+}
+
+fn ray_triangle_distance(ray: render::WorldRay, triangle: [[f32; 3]; 3]) -> Option<f32> {
+    let origin = Vec3::from_array(ray.origin);
+    let direction = Vec3::from_array(ray.direction);
+    let a = Vec3::from_array(triangle[0]);
+    let edge_ab = Vec3::from_array(triangle[1]) - a;
+    let edge_ac = Vec3::from_array(triangle[2]) - a;
+    let p = direction.cross(edge_ac);
+    let determinant = edge_ab.dot(p);
+    if determinant.abs() <= f32::EPSILON {
+        return None;
+    }
+    let inverse = determinant.recip();
+    let offset = origin - a;
+    let u = offset.dot(p) * inverse;
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    let q = offset.cross(edge_ab);
+    let v = direction.dot(q) * inverse;
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    let distance = edge_ac.dot(q) * inverse;
+    (distance.is_finite() && distance > 0.0).then_some(distance)
 }
 
 #[cfg(test)]

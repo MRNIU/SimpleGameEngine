@@ -3,7 +3,7 @@
 use ecs::EntityId;
 use eframe::egui;
 use math::{Quat, Transform, Vec3};
-use render::ViewportDrawCall;
+use render::{ViewportDrawCall, ViewportProjection};
 
 use super::screen_position_for_vertex;
 
@@ -118,6 +118,7 @@ impl GizmoHandleRect {
 #[must_use]
 pub(crate) fn gizmo_layout(
     draw: &ViewportDrawCall,
+    projection: &ViewportProjection,
     rect: egui::Rect,
     selected: Option<&EntityId>,
     mode: GizmoMode,
@@ -128,7 +129,7 @@ pub(crate) fn gizmo_layout(
     let Some(span) = draw.mesh_spans.iter().find(|span| &span.entity == selected) else {
         return Vec::new();
     };
-    let Some(bounds) = span_screen_bounds(draw, span, rect) else {
+    let Some(bounds) = span_screen_bounds(draw, span, projection, rect) else {
         return Vec::new();
     };
 
@@ -349,6 +350,7 @@ fn rotate_gizmo_handles(center: egui::Pos2) -> Vec<GizmoHandleRect> {
 fn span_screen_bounds(
     draw: &ViewportDrawCall,
     span: &render::ViewportMeshSpan,
+    projection: &ViewportProjection,
     rect: egui::Rect,
 ) -> Option<egui::Rect> {
     let mut min = egui::pos2(f32::INFINITY, f32::INFINITY);
@@ -358,7 +360,10 @@ fn span_screen_bounds(
         let Some(vertex) = draw.vertices.get(index) else {
             continue;
         };
-        let screen = screen_position_for_vertex(rect, vertex.position);
+        let Some(projected) = projection.project_world_point(vertex.position) else {
+            continue;
+        };
+        let screen = screen_position_for_vertex(rect, [projected[0], projected[1], 0.0]);
         min.x = min.x.min(screen.x);
         min.y = min.y.min(screen.y);
         max.x = max.x.max(screen.x);

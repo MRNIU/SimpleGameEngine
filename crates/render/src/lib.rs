@@ -11,9 +11,9 @@ use wgpu::util::DeviceExt;
 mod viewport_projection;
 
 pub use viewport_projection::{
-    DEFAULT_FAR_PLANE, DEFAULT_NEAR_PLANE, ViewportClipPlanes, ViewportSize, WorldRay,
+    DEFAULT_FAR_PLANE, DEFAULT_NEAR_PLANE, ViewportClipPlanes,
+    ViewportProjectionMatrix as ViewportProjection, ViewportSize, WorldRay,
 };
-pub(crate) use viewport_projection::ViewportProjectionMatrix;
 
 pub const VIEWPORT_SHADER: &str = include_str!("viewport.wgsl");
 const VIEWPORT_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] = [
@@ -30,8 +30,8 @@ const VIEWPORT_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] = [
 ];
 const CUBE_COLOR: [f32; 4] = [0.3, 0.64, 1.0, 1.0];
 const SELECTED_CUBE_COLOR: [f32; 4] = [1.0, 0.78, 0.25, 1.0];
-const VIEWPORT_WORLD_SCALE: f32 = 0.12;
-const VIEWPORT_DEPTH_SKEW: [f32; 2] = [0.35, 0.2];
+const VIEWPORT_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+const VIEWPORT_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderScene {
@@ -68,6 +68,7 @@ pub struct ViewportPipelineInfo {
     pub color_format: wgpu::TextureFormat,
     pub primitive_topology: wgpu::PrimitiveTopology,
     pub shader_source: &'static str,
+    pub depth_format: Option<wgpu::TextureFormat>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -124,76 +125,31 @@ pub struct ViewportVertex {
     pub color: [f32; 4],
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ViewportProjection {
-    view_rotation: Quat,
-    camera_translation: Vec3,
-    projection_scale: f32,
-    projection: ProjectionKind,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProjectionKind {
-    Perspective,
-    Orthographic,
-}
-
-impl ViewportProjection {
-    #[must_use]
-    pub fn from_view(view: &ViewportView) -> Option<Self> {
-        let view_rotation =
-            Quat::from_array(normalized_quaternion(view.transform.rotation)).inverse();
-        let camera_translation = Vec3::from_array(view.transform.translation);
-        let projection_scale = projection_scale(&view.projection);
-        if !camera_translation.is_finite() || !projection_scale.is_finite() {
-            return None;
-        }
-        Some(Self {
-            view_rotation,
-            camera_translation,
-            projection_scale,
-            projection: match view.projection {
-                Projection::Perspective { .. } => ProjectionKind::Perspective,
-                Projection::Orthographic { .. } => ProjectionKind::Orthographic,
-            },
-        })
-    }
-
-    #[must_use]
-    pub fn project_world_point(&self, world: [f32; 3]) -> Option<[f32; 2]> {
-        let world = Vec3::from_array(world);
-        if !world.is_finite() {
-            return None;
-        }
-        let view_position =
-            self.view_rotation * (world - self.camera_translation) * VIEWPORT_WORLD_SCALE;
-        let projected = match self.projection {
-            ProjectionKind::Perspective => {
-                project_perspective_point(view_position, self.projection_scale)
-            }
-            ProjectionKind::Orthographic => [
-                view_position.x * self.projection_scale,
-                view_position.y * self.projection_scale,
-            ],
-        };
-        projected
-            .into_iter()
-            .all(f32::is_finite)
-            .then_some(projected)
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 struct ViewportProjectionContext {
-    projection: ViewportProjection,
     light_multiplier: [f32; 3],
 }
 
 pub struct ViewportRenderer {
-    pipeline: wgpu::RenderPipeline,
+    mesh_pipeline: wgpu::RenderPipeline,
+    composite_pipeline: wgpu::RenderPipeline,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
+    composite_bind_group_layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    targets: Option<ViewportTargets>,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     index_count: u32,
+}
+
+struct ViewportTargets {
+    size: [u32; 2],
+    _color: wgpu::Texture,
+    color_view: wgpu::TextureView,
+    _depth: wgpu::Texture,
+    depth_view: wgpu::TextureView,
+    composite_bind_group: wgpu::BindGroup,
 }
 
 impl ViewportRenderer {
@@ -203,27 +159,89 @@ impl ViewportRenderer {
             label: Some("sge_viewport_shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(VIEWPORT_SHADER)),
         });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("sge_viewport_pipeline_layout"),
-            bind_group_layouts: &[],
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("sge_viewport_camera_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+        let composite_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("sge_viewport_composite_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+        let mesh_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("sge_viewport_mesh_pipeline_layout"),
+            bind_group_layouts: &[Some(&camera_bind_group_layout)],
             immediate_size: 0,
         });
+        let composite_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("sge_viewport_composite_pipeline_layout"),
+                bind_group_layouts: &[Some(&composite_bind_group_layout)],
+                immediate_size: 0,
+            });
+        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("sge_viewport_camera_uniform"),
+            size: 64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sge_viewport_camera_bind_group"),
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("sge_viewport_sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
         let vertex_layout = viewport_vertex_buffer_layout();
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("sge_viewport_pipeline"),
-            layout: Some(&pipeline_layout),
+        let mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sge_viewport_mesh_pipeline"),
+            layout: Some(&mesh_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: Some("vs_main"),
+                entry_point: Some("vs_mesh"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[vertex_layout],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: Some("fs_main"),
+                entry_point: Some("fs_mesh"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
+                    format: VIEWPORT_COLOR_FORMAT,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -232,6 +250,37 @@ impl ViewportRenderer {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: VIEWPORT_DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+        let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sge_viewport_composite_pipeline"),
+            layout: Some(&composite_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_composite"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_composite"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: color_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview_mask: None,
@@ -239,7 +288,13 @@ impl ViewportRenderer {
         });
 
         Self {
-            pipeline,
+            mesh_pipeline,
+            composite_pipeline,
+            camera_buffer,
+            camera_bind_group,
+            composite_bind_group_layout,
+            sampler,
+            targets: None,
             vertex_buffer: empty_buffer(
                 device,
                 wgpu::BufferUsages::VERTEX,
@@ -250,11 +305,23 @@ impl ViewportRenderer {
         }
     }
 
-    pub fn prepare(&mut self, device: &wgpu::Device, draw: Option<&ViewportDrawCall>) {
+    pub fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        draw: Option<&ViewportDrawCall>,
+        view_projection: [f32; 16],
+        target_size: [u32; 2],
+    ) {
         let Some(draw) = draw else {
             self.index_count = 0;
             return;
         };
+        if target_size.contains(&0) {
+            self.index_count = 0;
+            return;
+        }
 
         self.vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("sge_viewport_vertices"),
@@ -267,16 +334,128 @@ impl ViewportRenderer {
             usage: wgpu::BufferUsages::INDEX,
         });
         self.index_count = draw.index_count as u32;
+        queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            &view_projection
+                .into_iter()
+                .flat_map(f32::to_ne_bytes)
+                .collect::<Vec<_>>(),
+        );
+        if self
+            .targets
+            .as_ref()
+            .is_none_or(|targets| targets.size != target_size)
+        {
+            self.targets = Some(create_viewport_targets(
+                device,
+                target_size,
+                &self.composite_bind_group_layout,
+                &self.sampler,
+            ));
+        }
+        let Some(targets) = self.targets.as_ref() else {
+            return;
+        };
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("sge_viewport_offscreen_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &targets.color_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 18.0 / 255.0,
+                        g: 24.0 / 255.0,
+                        b: 29.0 / 255.0,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &targets.depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            occlusion_query_set: None,
+            timestamp_writes: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.mesh_pipeline);
+        pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        pass.draw_indexed(0..self.index_count, 0, 0..1);
     }
 
     pub fn paint(&self, render_pass: &mut wgpu::RenderPass<'_>) {
-        if self.index_count == 0 {
+        let Some(targets) = self.targets.as_ref() else {
             return;
-        }
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..self.index_count, 0, 0..1);
+        };
+        render_pass.set_pipeline(&self.composite_pipeline);
+        render_pass.set_bind_group(0, &targets.composite_bind_group, &[]);
+        render_pass.draw(0..3, 0..1);
+    }
+}
+
+fn create_viewport_targets(
+    device: &wgpu::Device,
+    size: [u32; 2],
+    composite_layout: &wgpu::BindGroupLayout,
+    sampler: &wgpu::Sampler,
+) -> ViewportTargets {
+    let extent = wgpu::Extent3d {
+        width: size[0],
+        height: size[1],
+        depth_or_array_layers: 1,
+    };
+    let color = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("sge_viewport_color"),
+        size: extent,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: VIEWPORT_COLOR_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let color_view = color.create_view(&wgpu::TextureViewDescriptor::default());
+    let depth = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("sge_viewport_depth"),
+        size: extent,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: VIEWPORT_DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
+    let composite_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("sge_viewport_composite_bind_group"),
+        layout: composite_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&color_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    });
+    ViewportTargets {
+        size,
+        _color: color,
+        color_view,
+        _depth: depth,
+        depth_view,
+        composite_bind_group,
     }
 }
 
@@ -350,6 +529,7 @@ pub const fn viewport_pipeline_info(color_format: wgpu::TextureFormat) -> Viewpo
         color_format,
         primitive_topology: wgpu::PrimitiveTopology::TriangleList,
         shader_source: VIEWPORT_SHADER,
+        depth_format: Some(VIEWPORT_DEPTH_FORMAT),
     }
 }
 
@@ -397,12 +577,8 @@ pub fn viewport_draw_call_with_view_and_meshes(
     let mut indices = Vec::new();
     let mut mesh_spans = Vec::new();
     let size = 0.28;
-    let projection = ViewportProjection::from_view(view)?;
     let light_multiplier = light_multiplier(scene);
-    let projection_context = ViewportProjectionContext {
-        projection,
-        light_multiplier,
-    };
+    let projection_context = ViewportProjectionContext { light_multiplier };
     let mut has_imported_mesh = false;
     let mut has_non_cube_primitive = false;
 
@@ -417,46 +593,18 @@ pub fn viewport_draw_call_with_view_and_meshes(
         };
 
         let (world_bounds_min, world_bounds_max, world_center) = match mesh.mesh_asset.as_str() {
-            "primitive:cube" => push_cube_mesh(
-                &mut vertices,
-                &mut indices,
-                mesh,
-                projection_context,
-                color,
-                size,
-            )?,
+            "primitive:cube" => push_cube_mesh(&mut vertices, &mut indices, mesh, color, size)?,
             "primitive:sphere" => {
                 has_non_cube_primitive = true;
-                push_sphere_mesh(
-                    &mut vertices,
-                    &mut indices,
-                    mesh,
-                    projection_context,
-                    color,
-                    size,
-                )?
+                push_sphere_mesh(&mut vertices, &mut indices, mesh, color, size)?
             }
             "primitive:cone" => {
                 has_non_cube_primitive = true;
-                push_cone_mesh(
-                    &mut vertices,
-                    &mut indices,
-                    mesh,
-                    projection_context,
-                    color,
-                    size,
-                )?
+                push_cone_mesh(&mut vertices, &mut indices, mesh, color, size)?
             }
             "primitive:cylinder" => {
                 has_non_cube_primitive = true;
-                push_cylinder_mesh(
-                    &mut vertices,
-                    &mut indices,
-                    mesh,
-                    projection_context,
-                    color,
-                    size,
-                )?
+                push_cylinder_mesh(&mut vertices, &mut indices, mesh, color, size)?
             }
             asset if asset.starts_with("primitive:") => continue,
             _ => continue,
@@ -516,59 +664,50 @@ fn push_cube_mesh(
     vertices: &mut Vec<ViewportVertex>,
     indices: &mut Vec<u16>,
     mesh: &MeshDraw,
-    projection_context: ViewportProjectionContext,
     color: [f32; 4],
     size: f32,
 ) -> Option<([f32; 3], [f32; 3], [f32; 3])> {
     let world_points = transformed_cube_world_points(&mesh.transform, size);
-    let display_points =
-        transformed_cube_world_points(&mesh.transform, size / VIEWPORT_WORLD_SCALE);
 
     push_cube_face(
         vertices,
         indices,
-        projection_context.projection,
-        &display_points,
+        &world_points,
         [0, 1, 2, 3],
         shade_color(color, 0.38),
     )?;
     push_cube_face(
         vertices,
         indices,
-        projection_context.projection,
-        &display_points,
+        &world_points,
         [0, 4, 7, 3],
         shade_color(color, 0.46),
     )?;
     push_cube_face(
         vertices,
         indices,
-        projection_context.projection,
-        &display_points,
+        &world_points,
         [0, 1, 5, 4],
         shade_color(color, 0.54),
     )?;
     push_cube_face(
         vertices,
         indices,
-        projection_context.projection,
-        &display_points,
+        &world_points,
         [4, 5, 6, 7],
         shade_color(color, 1.0),
     )?;
     push_cube_face(
         vertices,
         indices,
-        projection_context.projection,
-        &display_points,
+        &world_points,
         [1, 5, 6, 2],
         shade_color(color, 0.82),
     )?;
     push_cube_face(
         vertices,
         indices,
-        projection_context.projection,
-        &display_points,
+        &world_points,
         [3, 2, 6, 7],
         shade_color(color, 0.68),
     )?;
@@ -579,7 +718,6 @@ fn push_sphere_mesh(
     vertices: &mut Vec<ViewportVertex>,
     indices: &mut Vec<u16>,
     mesh: &MeshDraw,
-    projection_context: ViewportProjectionContext,
     color: [f32; 4],
     size: f32,
 ) -> Option<([f32; 3], [f32; 3], [f32; 3])> {
@@ -588,7 +726,6 @@ fn push_sphere_mesh(
     let world_points = push_primitive_vertices(
         vertices,
         mesh,
-        projection_context,
         color,
         &[
             Vec3::new(0.0, radius, 0.0),
@@ -613,7 +750,6 @@ fn push_cone_mesh(
     vertices: &mut Vec<ViewportVertex>,
     indices: &mut Vec<u16>,
     mesh: &MeshDraw,
-    projection_context: ViewportProjectionContext,
     color: [f32; 4],
     size: f32,
 ) -> Option<([f32; 3], [f32; 3], [f32; 3])> {
@@ -623,7 +759,6 @@ fn push_cone_mesh(
     let world_points = push_primitive_vertices(
         vertices,
         mesh,
-        projection_context,
         color,
         &[
             Vec3::new(0.0, height, 0.0),
@@ -653,7 +788,6 @@ fn push_cylinder_mesh(
     vertices: &mut Vec<ViewportVertex>,
     indices: &mut Vec<u16>,
     mesh: &MeshDraw,
-    projection_context: ViewportProjectionContext,
     color: [f32; 4],
     size: f32,
 ) -> Option<([f32; 3], [f32; 3], [f32; 3])> {
@@ -664,7 +798,6 @@ fn push_cylinder_mesh(
     let world_points = push_primitive_vertices(
         vertices,
         mesh,
-        projection_context,
         color,
         &[
             Vec3::new(0.0, height, 0.0),
@@ -707,7 +840,6 @@ fn push_cylinder_mesh(
 fn push_primitive_vertices(
     vertices: &mut Vec<ViewportVertex>,
     mesh: &MeshDraw,
-    projection_context: ViewportProjectionContext,
     color: [f32; 4],
     locals: &[Vec3],
 ) -> Option<Vec<Vec3>> {
@@ -718,13 +850,8 @@ fn push_primitive_vertices(
 
     for local in locals {
         let world = transform_rotation * (*local * transform_scale) + transform_translation;
-        let display_world = transform_rotation * (*local * transform_scale / VIEWPORT_WORLD_SCALE)
-            + transform_translation;
-        let projected = projection_context
-            .projection
-            .project_world_point(display_world.to_array())?;
         vertices.push(ViewportVertex {
-            position: [projected[0], projected[1], 0.0],
+            position: world.to_array(),
             color,
         });
         world_points.push(world);
@@ -769,11 +896,8 @@ fn push_imported_mesh(
     for vertex in &imported_mesh.vertices {
         let local = Vec3::from_array(vertex.position) * transform_scale;
         let world = transform_rotation * local + transform_translation;
-        let projected = projection_context
-            .projection
-            .project_world_point(world.to_array())?;
         vertices.push(ViewportVertex {
-            position: [projected[0], projected[1], 0.0],
+            position: world.to_array(),
             color,
         });
         world_points.push(world);
@@ -800,7 +924,6 @@ fn push_imported_mesh(
 fn push_cube_face(
     vertices: &mut Vec<ViewportVertex>,
     indices: &mut Vec<u16>,
-    projection: ViewportProjection,
     world_points: &[Vec3; 8],
     face: [usize; 4],
     color: [f32; 4],
@@ -811,9 +934,8 @@ fn push_cube_face(
     let i3 = base.checked_add(3)?;
 
     for corner in face {
-        let projected = projection.project_world_point(world_points[corner].to_array())?;
         vertices.push(ViewportVertex {
-            position: [projected[0], projected[1], 0.0],
+            position: world_points[corner].to_array(),
             color,
         });
     }
@@ -860,16 +982,6 @@ fn selected_tint(color: [f32; 4]) -> [f32; 4] {
         color[2] * (1.0 - TINT) + SELECTED_CUBE_COLOR[2] * TINT,
         color[3],
     ]
-}
-
-fn projection_scale(projection: &Projection) -> f32 {
-    match projection {
-        Projection::Perspective { fov_y_degrees } => {
-            let clamped = fov_y_degrees.clamp(1.0, 179.0).to_radians();
-            (60.0_f32.to_radians() * 0.5).tan() / (clamped * 0.5).tan()
-        }
-        Projection::Orthographic { vertical_size } => (5.0 / vertical_size.max(0.01)).min(100.0),
-    }
 }
 
 fn transformed_cube_world_points(transform: &Transform, size: f32) -> [Vec3; 8] {
@@ -923,39 +1035,6 @@ fn normalized_quaternion(rotation: [f32; 4]) -> [f32; 4] {
 
 fn transform_local_point(mesh_rotation: Quat, translation: Vec3, point: [f32; 3]) -> Vec3 {
     mesh_rotation * Vec3::from_array(point) + translation
-}
-
-fn project_perspective_point(point: Vec3, projection_scale: f32) -> [f32; 2] {
-    let perspective_scale = projection_scale / (1.0 + point.z.max(0.0));
-    [
-        (point.x + point.z * VIEWPORT_DEPTH_SKEW[0]) * perspective_scale,
-        (point.y + point.z * VIEWPORT_DEPTH_SKEW[1]) * perspective_scale,
-    ]
-}
-
-#[must_use]
-pub fn fit_viewport_draw_to_size(
-    draw: &ViewportDrawCall,
-    viewport_size: [f32; 2],
-) -> ViewportDrawCall {
-    let [width, height] = viewport_size;
-    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
-        return draw.clone();
-    }
-
-    let mut fitted = draw.clone();
-    if width < height {
-        let scale = width / height;
-        for vertex in &mut fitted.vertices {
-            vertex.position[1] *= scale;
-        }
-    } else if width > height {
-        let scale = height / width;
-        for vertex in &mut fitted.vertices {
-            vertex.position[0] *= scale;
-        }
-    }
-    fitted
 }
 
 #[must_use]

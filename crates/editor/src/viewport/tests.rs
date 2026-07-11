@@ -7,7 +7,26 @@ use super::{
 };
 use ecs::EntityId;
 use math::{Quat, Transform, Vec3};
-use render::{ViewportDrawCall, ViewportMeshSpan, ViewportProjection, ViewportVertex};
+use render::{
+    ViewportClipPlanes, ViewportDrawCall, ViewportMeshSpan, ViewportProjection, ViewportSize,
+    ViewportVertex, ViewportView,
+};
+
+fn test_projection() -> ViewportProjection {
+    let view = ViewportView::new(
+        EntityId::new("test_camera"),
+        Transform::from_translation([0.0, 0.0, -4.0]),
+        ecs::Projection::Perspective {
+            fov_y_degrees: 90.0,
+        },
+    );
+    ViewportProjection::from_view(
+        &view,
+        ViewportSize::new(200.0, 200.0).unwrap(),
+        ViewportClipPlanes::DEFAULT,
+    )
+    .unwrap()
+}
 
 fn draw_with_two_mesh_spans() -> ViewportDrawCall {
     ViewportDrawCall {
@@ -189,17 +208,25 @@ fn fly_navigation_maps_wasd_to_viewport_axes() {
 fn projected_origin_delta_after_look(delta: egui::Vec2) -> egui::Vec2 {
     let mut camera = ViewCamera::default();
     let before_view = camera.to_viewport_view();
-    let before = ViewportProjection::from_view(&before_view)
-        .unwrap()
-        .project_world_point([0.0, 0.0, 0.0])
-        .unwrap();
+    let before = ViewportProjection::from_view(
+        &before_view,
+        ViewportSize::new(800.0, 600.0).unwrap(),
+        ViewportClipPlanes::DEFAULT,
+    )
+    .unwrap()
+    .project_world_point([0.0, 0.0, 0.0])
+    .unwrap();
 
     camera.look(delta);
     let after_view = camera.to_viewport_view();
-    let after = ViewportProjection::from_view(&after_view)
-        .unwrap()
-        .project_world_point([0.0, 0.0, 0.0])
-        .unwrap();
+    let after = ViewportProjection::from_view(
+        &after_view,
+        ViewportSize::new(800.0, 600.0).unwrap(),
+        ViewportClipPlanes::DEFAULT,
+    )
+    .unwrap()
+    .project_world_point([0.0, 0.0, 0.0])
+    .unwrap();
 
     egui::vec2(after[0] - before[0], after[1] - before[1])
 }
@@ -482,9 +509,13 @@ fn orthographic_fit_uses_world_metrics_for_center_and_scale() {
 fn hit_test_uses_entity_span_metadata() {
     let draw = draw_with_two_mesh_spans();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
-    let hit = screen_position_for_vertex(rect, draw.vertices[5].position);
+    let projection = test_projection();
+    let projected = projection
+        .project_world_point(draw.mesh_spans[1].world_center)
+        .unwrap();
+    let hit = screen_position_for_vertex(rect, [projected[0], projected[1], 0.0]);
 
-    let action = hit_test_viewport_draw(&draw, rect, hit);
+    let action = hit_test_viewport_draw(&draw, &projection, rect, hit);
 
     assert_eq!(action, ViewportAction::Select(EntityId::new("cube_1")));
 }
@@ -493,10 +524,72 @@ fn hit_test_uses_entity_span_metadata() {
 fn hit_test_empty_space_clears_selection() {
     let draw = draw_with_two_mesh_spans();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
+    let projection = test_projection();
 
-    let action = hit_test_viewport_draw(&draw, rect, egui::pos2(100.0, 100.0));
+    let action = hit_test_viewport_draw(&draw, &projection, rect, egui::pos2(100.0, 100.0));
 
     assert_eq!(action, ViewportAction::ClearSelection);
+}
+
+#[test]
+fn hit_test_selects_nearest_world_triangle() {
+    let draw = ViewportDrawCall {
+        label: "overlap".to_owned(),
+        camera_entity: EntityId::new("test_camera"),
+        vertex_count: 6,
+        index_count: 6,
+        vertices: vec![
+            ViewportVertex {
+                position: [-1.0, -1.0, 0.0],
+                color: [1.0; 4],
+            },
+            ViewportVertex {
+                position: [1.0, -1.0, 0.0],
+                color: [1.0; 4],
+            },
+            ViewportVertex {
+                position: [0.0, 1.0, 0.0],
+                color: [1.0; 4],
+            },
+            ViewportVertex {
+                position: [-1.0, -1.0, 2.0],
+                color: [1.0; 4],
+            },
+            ViewportVertex {
+                position: [1.0, -1.0, 2.0],
+                color: [1.0; 4],
+            },
+            ViewportVertex {
+                position: [0.0, 1.0, 2.0],
+                color: [1.0; 4],
+            },
+        ],
+        indices: vec![0, 1, 2, 3, 4, 5],
+        mesh_spans: vec![
+            ViewportMeshSpan {
+                entity: EntityId::new("near"),
+                vertex_range: 0..3,
+                index_range: 0..3,
+                world_bounds_min: [-1.0, -1.0, 0.0],
+                world_bounds_max: [1.0, 1.0, 0.0],
+                world_center: [0.0, 0.0, 0.0],
+            },
+            ViewportMeshSpan {
+                entity: EntityId::new("far"),
+                vertex_range: 3..6,
+                index_range: 3..6,
+                world_bounds_min: [-1.0, -1.0, 2.0],
+                world_bounds_max: [1.0, 1.0, 2.0],
+                world_center: [0.0, 0.0, 2.0],
+            },
+        ],
+    };
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(200.0, 200.0));
+
+    assert_eq!(
+        hit_test_viewport_draw(&draw, &test_projection(), rect, rect.center()),
+        ViewportAction::Select(EntityId::new("near"))
+    );
 }
 
 #[test]
@@ -536,9 +629,10 @@ fn orientation_overlay_consumes_before_scene_selection() {
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
     let layout = super::orientation_cube_layout(rect);
     let pointer = layout.top.center();
+    let projection = test_projection();
 
     let overlay = super::orientation_cube_hit_test(&layout, pointer);
-    let selection = hit_test_viewport_draw(&draw, rect, pointer);
+    let selection = hit_test_viewport_draw(&draw, &projection, rect, pointer);
 
     assert!(matches!(overlay, Some(ViewportAction::SetViewPreset(_))));
     assert_ne!(overlay, Some(selection));
@@ -565,8 +659,15 @@ fn move_z_gizmo_uses_screen_up_axis() {
 fn gizmo_layout_uses_fitted_draw_and_selected_span() {
     let draw = draw_with_two_mesh_spans();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
+    let projection = test_projection();
 
-    let handles = super::gizmo_layout(&draw, rect, Some(&EntityId::new("cube_1")), GizmoMode::Move);
+    let handles = super::gizmo_layout(
+        &draw,
+        &projection,
+        rect,
+        Some(&EntityId::new("cube_1")),
+        GizmoMode::Move,
+    );
 
     assert_eq!(handles.len(), 3);
     assert!(
@@ -595,8 +696,15 @@ fn gizmo_layout_uses_fitted_draw_and_selected_span() {
 fn move_gizmo_layout_keeps_three_selectable_axes() {
     let draw = draw_with_two_mesh_spans();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
+    let projection = test_projection();
 
-    let handles = super::gizmo_layout(&draw, rect, Some(&EntityId::new("cube_1")), GizmoMode::Move);
+    let handles = super::gizmo_layout(
+        &draw,
+        &projection,
+        rect,
+        Some(&EntityId::new("cube_1")),
+        GizmoMode::Move,
+    );
     let axes = handles
         .iter()
         .map(|handle| format!("{:.1},{:.1}", handle.axis.x, handle.axis.y))
@@ -672,9 +780,11 @@ fn assert_quat_close(actual: [f32; 4], expected: [f32; 4]) {
 fn rotate_gizmo_layout_uses_fixed_screen_axes() {
     let draw = draw_with_two_mesh_spans();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
+    let projection = test_projection();
 
     let handles = super::gizmo_layout(
         &draw,
+        &projection,
         rect,
         Some(&EntityId::new("cube_1")),
         GizmoMode::Rotate,
@@ -904,7 +1014,12 @@ fn fit_visible_draw_pans_edge_selection_toward_center() {
 
     assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
     let view = camera.to_viewport_view();
-    let projection = ViewportProjection::from_view(&view).unwrap();
+    let projection = ViewportProjection::from_view(
+        &view,
+        ViewportSize::new(800.0, 600.0).unwrap(),
+        ViewportClipPlanes::DEFAULT,
+    )
+    .unwrap();
     let center = projection
         .project_world_point(draw.mesh_spans[1].world_center)
         .unwrap();
@@ -920,7 +1035,12 @@ fn fit_visible_draw_without_selection_centers_all_visible_cubes() {
 
     assert!(camera.fit_draw(&draw, None));
     let view = camera.to_viewport_view();
-    let projection = ViewportProjection::from_view(&view).unwrap();
+    let projection = ViewportProjection::from_view(
+        &view,
+        ViewportSize::new(800.0, 600.0).unwrap(),
+        ViewportClipPlanes::DEFAULT,
+    )
+    .unwrap();
     let center = projection.project_world_point([0.0, 0.0, 0.0]).unwrap();
 
     assert!(center[0].abs() < 0.000_1);

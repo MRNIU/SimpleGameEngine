@@ -212,7 +212,7 @@ fn editor_model_can_build_viewport_draw_for_editor_view() {
     let editor_draw = editor.viewport_draw_call_for_view(&editor_view).unwrap();
 
     assert_eq!(editor_draw.camera_entity, EntityId::new("editor_view"));
-    assert_ne!(scene_camera_draw.vertices, editor_draw.vertices);
+    assert_eq!(scene_camera_draw.vertices, editor_draw.vertices);
     assert_eq!(editor_draw.mesh_spans.len(), 1);
 }
 

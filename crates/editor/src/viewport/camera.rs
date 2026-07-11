@@ -15,8 +15,6 @@ const SPEED_SCROLL_SCALE: f32 = 0.05;
 const DEFAULT_ORBIT_DISTANCE: f32 = 8.0;
 const DEFAULT_FOV_Y_DEGREES: f32 = 60.0;
 const FRAME_MARGIN: f32 = 1.35;
-// ponytail: mirrors render's fixed viewport projection; replace with a render-provided matrix if it stops being fixed.
-const VIEWPORT_DEPTH_SKEW: [f32; 2] = [0.35, 0.2];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ViewCamera {
@@ -359,9 +357,7 @@ impl ViewCamera {
     }
 
     fn centered_pivot_offset(self) -> Vec3 {
-        let [skew_x, skew_y] = VIEWPORT_DEPTH_SKEW;
-        let local_z = self.orbit_distance / (1.0 + skew_x * skew_x + skew_y * skew_y).sqrt();
-        self.rotation() * Vec3::new(-skew_x * local_z, -skew_y * local_z, local_z)
+        self.forward() * self.orbit_distance
     }
 }
 
