@@ -2,7 +2,7 @@
 
 use ecs::{EntityId, Projection};
 use eframe::egui;
-use math::{Transform, Vec3};
+use math::{Quat, Transform, Vec3};
 use render::{
     ViewportClipPlanes, ViewportDrawCall, ViewportProjection, ViewportSize, ViewportView,
 };
@@ -10,6 +10,7 @@ use render::{
 mod camera;
 mod gizmo;
 mod grid;
+mod orientation_cube;
 mod wgpu_bridge;
 
 pub(crate) use camera::{ViewCamera, ViewMoveInput, ViewPreset};
@@ -41,17 +42,6 @@ pub(crate) struct ReferenceLine {
     pub(crate) end: [f32; 3],
     pub(crate) color: egui::Color32,
     pub(crate) width: f32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct OrientationCubeLayout {
-    pub(crate) top: egui::Rect,
-    pub(crate) bottom: egui::Rect,
-    pub(crate) front: egui::Rect,
-    pub(crate) back: egui::Rect,
-    pub(crate) right: egui::Rect,
-    pub(crate) left: egui::Rect,
-    pub(crate) perspective: egui::Rect,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -239,7 +229,11 @@ pub(crate) fn draw_viewport(
     let esc_pressed = ui.input(|input| input.key_pressed(egui::Key::Escape));
     let mut pointer_consumed_by_gizmo = false;
     let mut pointer_consumed_by_camera = false;
-    let orientation_layout = orientation_cube_layout(rect);
+    let orientation_rotation = view.as_ref().map_or_else(
+        || camera.view_rotation(),
+        |view| Quat::from_array(view.transform.rotation),
+    );
+    let orientation_layout = orientation_cube::orientation_cube_layout(rect, orientation_rotation);
 
     if esc_pressed && let Some(drag) = gizmo.drag().cloned() {
         gizmo.clear_drag();
@@ -251,7 +245,8 @@ pub(crate) fn draw_viewport(
 
     if primary_pressed
         && let Some(pointer) = response.interact_pointer_pos()
-        && let Some(overlay_action) = orientation_cube_hit_test(&orientation_layout, pointer)
+        && let Some(overlay_action) =
+            orientation_cube::orientation_cube_hit_test(&orientation_layout, pointer)
     {
         return overlay_action;
     }
@@ -473,7 +468,7 @@ pub(crate) fn draw_viewport(
         egui::FontId::proportional(13.0),
         egui::Color32::from_rgb(205, 214, 224),
     );
-    paint_orientation_cube(&painter, &orientation_layout);
+    orientation_cube::paint_orientation_cube(&painter, &orientation_layout);
     paint_gizmo_handles(&painter, &handles, gizmo.hovered(), gizmo.active());
     action
 }
@@ -531,49 +526,6 @@ fn visible_mesh_center(draw: &ViewportDrawCall, selected: Option<&EntityId>) -> 
     }
     let center = (min + max) * 0.5;
     (found && center.is_finite()).then_some(center)
-}
-
-pub(crate) fn orientation_cube_layout(rect: egui::Rect) -> OrientationCubeLayout {
-    let size = egui::vec2(30.0, 22.0);
-    let origin = rect.right_top() + egui::vec2(-118.0, 12.0);
-    OrientationCubeLayout {
-        top: egui::Rect::from_min_size(origin + egui::vec2(36.0, 0.0), size),
-        bottom: egui::Rect::from_min_size(origin + egui::vec2(36.0, 52.0), size),
-        front: egui::Rect::from_min_size(origin + egui::vec2(36.0, 26.0), size),
-        back: egui::Rect::from_min_size(origin + egui::vec2(72.0, 26.0), size),
-        right: egui::Rect::from_min_size(origin + egui::vec2(72.0, 0.0), size),
-        left: egui::Rect::from_min_size(origin, size),
-        perspective: egui::Rect::from_min_size(
-            origin + egui::vec2(0.0, 82.0),
-            egui::vec2(102.0, 22.0),
-        ),
-    }
-}
-
-pub(crate) fn orientation_cube_hit_test(
-    layout: &OrientationCubeLayout,
-    pointer: egui::Pos2,
-) -> Option<ViewportAction> {
-    [
-        (layout.top, ViewportAction::SetViewPreset(ViewPreset::Top)),
-        (
-            layout.bottom,
-            ViewportAction::SetViewPreset(ViewPreset::Bottom),
-        ),
-        (
-            layout.front,
-            ViewportAction::SetViewPreset(ViewPreset::Front),
-        ),
-        (layout.back, ViewportAction::SetViewPreset(ViewPreset::Back)),
-        (
-            layout.right,
-            ViewportAction::SetViewPreset(ViewPreset::Right),
-        ),
-        (layout.left, ViewportAction::SetViewPreset(ViewPreset::Left)),
-        (layout.perspective, ViewportAction::ReturnToPerspective),
-    ]
-    .into_iter()
-    .find_map(|(rect, action)| rect.contains(pointer).then_some(action))
 }
 
 fn viewport_canvas_size(available: egui::Vec2) -> egui::Vec2 {
@@ -640,37 +592,6 @@ fn paint_reference_lines(
                 screen_position_for_vertex(rect, [end[0], end[1], 0.0]),
             ],
             egui::Stroke::new(line.width, line.color),
-        );
-    }
-}
-
-fn paint_orientation_cube(painter: &egui::Painter, layout: &OrientationCubeLayout) {
-    for (rect, label, color) in [
-        (layout.top, "Top", egui::Color32::from_rgb(80, 130, 240)),
-        (layout.bottom, "Bot", egui::Color32::from_rgb(80, 130, 240)),
-        (layout.front, "Front", egui::Color32::from_rgb(160, 60, 60)),
-        (layout.back, "Back", egui::Color32::from_rgb(160, 60, 60)),
-        (layout.right, "Right", egui::Color32::from_rgb(60, 150, 80)),
-        (layout.left, "Left", egui::Color32::from_rgb(60, 150, 80)),
-        (
-            layout.perspective,
-            "Perspective",
-            egui::Color32::from_rgb(42, 48, 54),
-        ),
-    ] {
-        painter.rect_filled(rect, 2.0, color);
-        painter.rect_stroke(
-            rect,
-            2.0,
-            egui::Stroke::new(1.0, egui::Color32::WHITE),
-            egui::StrokeKind::Inside,
-        );
-        painter.text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            label,
-            egui::FontId::proportional(11.0),
-            egui::Color32::WHITE,
         );
     }
 }

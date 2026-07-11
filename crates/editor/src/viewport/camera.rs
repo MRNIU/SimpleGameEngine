@@ -202,7 +202,7 @@ impl ViewCamera {
                 EntityId::new(EDITOR_VIEW_ENTITY),
                 Transform {
                     translation: self.position,
-                    rotation: self.rotation().to_array(),
+                    rotation: self.view_rotation().to_array(),
                     scale: [1.0, 1.0, 1.0],
                 },
                 Projection::Perspective {
@@ -212,8 +212,8 @@ impl ViewCamera {
                     ),
                 },
             ),
-            ViewMode::Orthographic(preset) => {
-                let rotation = preset_rotation(preset);
+            ViewMode::Orthographic(_) => {
+                let rotation = self.view_rotation();
                 let forward = rotation * Vec3::Z;
                 ViewportView::new(
                     EntityId::new(EDITOR_VIEW_ENTITY),
@@ -351,6 +351,14 @@ impl ViewCamera {
     #[must_use]
     pub(crate) const fn is_orthographic(self) -> bool {
         matches!(self.mode, ViewMode::Orthographic(_))
+    }
+
+    #[must_use]
+    pub(crate) fn view_rotation(self) -> Quat {
+        match self.mode {
+            ViewMode::Perspective => self.rotation(),
+            ViewMode::Orthographic(preset) => preset_rotation(preset),
+        }
     }
 
     pub(crate) fn dolly(&mut self, delta_y: f32) {

@@ -919,30 +919,86 @@ fn close_camera_gizmo_keeps_axis_when_positive_endpoint_is_behind() {
     );
 }
 
+fn polygon_area(polygon: [egui::Pos2; 4]) -> f32 {
+    polygon
+        .into_iter()
+        .zip(polygon.into_iter().cycle().skip(1))
+        .take(4)
+        .map(|(a, b)| a.x * b.y - b.x * a.y)
+        .sum::<f32>()
+        * 0.5
+}
+
+fn polygon_center(polygon: [egui::Pos2; 4]) -> egui::Pos2 {
+    let sum = polygon
+        .into_iter()
+        .fold(egui::Vec2::ZERO, |sum, point| sum + point.to_vec2());
+    (sum / 4.0).to_pos2()
+}
+
 #[test]
-fn orientation_cube_hit_test_returns_presets_and_perspective() {
+fn default_viewcube_has_three_non_degenerate_visible_faces() {
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
-    let layout = super::orientation_cube_layout(rect);
+    let layout = super::orientation_cube::orientation_cube_layout(
+        rect,
+        ViewCamera::default().view_rotation(),
+    );
+
+    assert_eq!(layout.faces.len(), 3);
+    assert!(
+        layout
+            .faces
+            .iter()
+            .all(|face| polygon_area(face.polygon).abs() > 1.0)
+    );
+}
+
+#[test]
+fn viewcube_face_click_returns_its_preset_and_perspective() {
+    let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
+    let layout = super::orientation_cube::orientation_cube_layout(
+        rect,
+        ViewCamera::default().view_rotation(),
+    );
+    let face = &layout.faces[0];
 
     assert_eq!(
-        super::orientation_cube_hit_test(&layout, layout.top.center()),
-        Some(ViewportAction::SetViewPreset(super::ViewPreset::Top))
+        super::orientation_cube::orientation_cube_hit_test(&layout, polygon_center(face.polygon)),
+        Some(ViewportAction::SetViewPreset(face.preset))
     );
     assert_eq!(
-        super::orientation_cube_hit_test(&layout, layout.perspective.center()),
+        super::orientation_cube::orientation_cube_hit_test(&layout, layout.perspective.center()),
         Some(ViewportAction::ReturnToPerspective)
     );
 }
 
 #[test]
-fn orientation_overlay_consumes_before_scene_selection() {
+fn viewcube_projection_changes_with_camera_rotation() {
+    let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
+    let before = super::orientation_cube::orientation_cube_layout(
+        rect,
+        ViewCamera::default().view_rotation(),
+    );
+    let after = super::orientation_cube::orientation_cube_layout(
+        rect,
+        Quat::from_rotation_z(0.5) * ViewCamera::default().view_rotation(),
+    );
+
+    assert_ne!(before.faces, after.faces);
+}
+
+#[test]
+fn viewcube_overlay_consumes_before_scene_selection() {
     let draw = draw_with_two_mesh_spans();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
-    let layout = super::orientation_cube_layout(rect);
-    let pointer = layout.top.center();
+    let layout = super::orientation_cube::orientation_cube_layout(
+        rect,
+        ViewCamera::default().view_rotation(),
+    );
+    let pointer = polygon_center(layout.faces[0].polygon);
     let projection = test_projection();
 
-    let overlay = super::orientation_cube_hit_test(&layout, pointer);
+    let overlay = super::orientation_cube::orientation_cube_hit_test(&layout, pointer);
     let selection = hit_test_viewport_draw(&draw, &projection, rect, pointer);
 
     assert!(matches!(overlay, Some(ViewportAction::SetViewPreset(_))));
