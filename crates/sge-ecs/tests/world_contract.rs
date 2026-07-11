@@ -2,6 +2,8 @@
 //
 //! `sge-ecs` public contract tests.
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
 use sge_ecs::{EcsError, World};
 
 #[derive(Debug, PartialEq)]
@@ -12,6 +14,16 @@ struct Velocity(f32);
 
 #[derive(Debug, PartialEq)]
 struct Score(u32);
+
+struct PanicsOnDrop;
+
+impl Drop for PanicsOnDrop {
+    fn drop(&mut self) {
+        panic!("component drop panic");
+    }
+}
+
+struct Marker;
 
 #[test]
 fn stale_entity_cannot_access_reused_slot() {
@@ -33,6 +45,25 @@ fn stale_entity_cannot_access_reused_slot() {
         world.insert(stale, Position(3.0)).unwrap_err(),
         EcsError::EntityNotAlive(stale)
     );
+}
+
+#[test]
+fn despawn_drop_panic_keeps_entity_alive_and_slot_unrecycled() {
+    let mut world = World::new();
+    world.register_component::<PanicsOnDrop>().unwrap();
+    world.register_component::<Marker>().unwrap();
+    world.finish_registration();
+    let entity = world.spawn();
+    assert!(world.insert(entity, PanicsOnDrop).unwrap().is_none());
+    assert!(world.insert(entity, Marker).unwrap().is_none());
+
+    let result = catch_unwind(AssertUnwindSafe(|| world.despawn(entity)));
+    assert!(result.is_err());
+
+    let next = world.spawn();
+    assert!(world.is_alive(entity));
+    assert!(world.is_alive(next));
+    assert_eq!(world.entities().count(), 2);
 }
 
 #[test]

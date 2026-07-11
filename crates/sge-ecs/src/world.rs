@@ -99,13 +99,18 @@ impl World {
     }
 
     pub fn despawn(&mut self, entity: Entity) -> Result<(), EcsError> {
-        if !self.entities.despawn(entity) {
+        if !self.entities.is_alive(entity) {
             return Err(EcsError::EntityNotAlive(entity));
         }
 
         for storage in self.components.values_mut() {
             storage.remove_entity(entity);
         }
+        let despawned = self.entities.despawn(entity);
+        debug_assert!(
+            despawned,
+            "validated entity must remain alive during cleanup"
+        );
         Ok(())
     }
 
