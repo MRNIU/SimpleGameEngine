@@ -6,6 +6,7 @@ members = [
   "crates/editor",
   "crates/input",
   "crates/math",
+  "crates/reflect",
   "crates/render",
   "crates/runtime",
   "crates/scene",
