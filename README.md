@@ -16,8 +16,8 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 
 ## 当前实现
 
-- Cargo workspace 包含 `app`、`ecs`、`math`、`asset`、`scene`、`render`、`window`、`input`、`editor`、`runtime`。
-- `asset` 负责 `assets/asset_manifest.ron`、稳定 UUID、OBJ loader、导入目标路径和 imported CPU mesh 数据；`ecs` 保存 entity/component 真源，`scene` 负责 `.scene.ron` roundtrip，`render` 从 ECS 抽取 viewport 数据并保留 `wgpu` viewport pipeline 边界。
+- Cargo workspace 当前包含 `app`、`ecs`、`asset`、`scene`、`render`、`window`、`input`、`editor`、`runtime`，以及 Core M1 的 `sge-math`（目录仍为 `crates/math/`）和 `sge-ecs`；旧 Cargo package 名 `math` 已不再使用。
+- `asset` 负责 `assets/asset_manifest.ron`、稳定 UUID、OBJ loader、导入目标路径和 imported CPU mesh 数据；固定 `ecs` prototype 保存现有 entity/component 真源，独立 `sge-ecs` 提供尚未接入 editor/runtime 的 typed runtime World；`scene` 负责 `.scene.ron` roundtrip，`render` 从现有 ECS 抽取 viewport 数据并保留 `wgpu` viewport pipeline 边界。
 - `editor` 使用 `eframe::Renderer::Wgpu`，提供 Unreal-like 左 Hierarchy / 中央 Viewport / 右 Inspector 布局，顶部菜单栏、分组 toolbar、底部状态栏、固定快捷键、material color、light 参数、camera projection 的即时 Inspector 编辑，以及 editor-only `Pilot Camera` 预览开关。
 - `editor` viewport 使用 `Z-up` editor camera、自适应十进制 world grid、XYZ axis、随 camera rotation 更新并可点击 orthographic preset 的 ViewCube、camera speed/FOV/distance hint 和 Move/Rotate/Scale gizmo。Perspective 默认水平 FOV 为 `90°`，按实际 viewport aspect 换算垂直 FOV，并使用随相机移动/高度扩展的 world-plane material grid；Orthographic preset 使用对应的 `XY` / `XZ` / `YZ` 自适应 line grid。两条 grid 路径与 scene mesh 在同一个 WGPU depth pass 中渲染，不作为覆盖物遮挡 mesh。
 - viewport 导航对齐 UE Level Editor 默认语义：`RMB` look、`RMB + WASD/QE` fly、`RMB + wheel` 切换 1–8 档速度、普通 wheel 前后移动、`MMB` 或 `LMB + RMB` pan、`Alt + LMB/MMB/RMB` orbit/track/dolly、`F` frame。Option/Alt orbit、track、dolly 和普通 LMB navigation 在手势开始时锁存，直到对应鼠标键释放，中途 modifier 变化不会切换模式。toolbar 可调整速度档位和 `0.1..10.0` 倍率；正交 RMB pan 和 wheel/`LMB + RMB` zoom 不切回 Perspective，Pilot Camera 时禁用 editor camera 修改。
@@ -28,7 +28,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 - `runtime` 可以按显式 project root 加载 scene + manifest + imported OBJ，并生成 viewport draw call。
 - 当前发布版 `eframe/egui-wgpu 0.35.0` 仍依赖 `wgpu 29`；workspace 统一到 `wgpu 29.0.4`，避免 editor/render 跨版本共享 GPU 类型。
 
-已批准目标架构见下列文档。目标架构尚未实现；本节以上的 workspace 和功能描述仍是当前代码真源：
+已批准目标架构见下列文档。目标架构当前仅部分实现：Core M1 已落地 `sge-math` package 边界和 typed `sge-ecs` runtime World，Reflect、最小 InputFrame、EngineApp 与 headless game plugin 尚未实现；本节以上的 workspace 和功能描述仍是当前代码真源：
 
 - `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`
 

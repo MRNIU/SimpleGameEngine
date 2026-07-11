@@ -1,18 +1,19 @@
 # Rust Engine Architecture Overview
 
-日期：2026-07-11
+日期：2026-07-12
 
 SimpleGameEngine 当前主线是 editor-first 的 Rust engine/editor workspace。本文只描述当前 HEAD 已实现的 crate、运行路径和验证证据。
 
-目标架构见 `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`。该规格中的 `sge-*` crates、EngineApp、Reflect、Play World、Player、Cook 和 Stage 是待实施目标，不能从本文的当前实现表中推断为已经存在。
+目标架构见 `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`。该规格当前仅部分落地：Core M1 已实现 `sge-math` package 边界和 typed `sge-ecs` runtime World；EngineApp、Reflect、Play World、Player、Cook 和 Stage 仍是待实施目标。
 
 ## 当前 crate 边界
 
 | crate | 当前职责 |
 | --- | --- |
 | `app` | engine lifecycle、tick、render extraction glue |
-| `ecs` | entity/component 真源、parent cache rebuild |
-| `math` | `Transform` 和 glam re-export |
+| `ecs` | 现有固定 `EntityRecord` prototype、entity/component 真源、parent cache rebuild |
+| `sge-ecs` | 独立串行 typed runtime World、显式 component/resource 注册、opaque Entity 和单组件 query；尚未接入 editor/runtime |
+| `sge-math`（`crates/math/`） | `Transform` 和 glam re-export；旧 package 名 `math` 已不再使用 |
 | `asset` | asset id、稳定 UUID、`assets/asset_manifest.ron` load/save、OBJ loader、imported CPU mesh、导入路径 helper |
 | `scene` | `.scene.ron` save/load |
 | `render` | ECS render extraction、`wgpu 29` viewport pipeline、world-space primitive/imported mesh draw call、标准 `ViewportProjection`、offscreen color/depth pass、mesh span world metrics |

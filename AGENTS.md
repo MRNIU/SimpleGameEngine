@@ -28,7 +28,9 @@
 | 模块/目录 | 职责 | 不负责 |
 |-----------|------|--------|
 | `crates/app/` | 仅有薄 `Engine`/tick 实验；当前没有 Editor/Runtime 产品调用方 | 目标 EngineApp、Editor lifecycle |
-| `crates/ecs/` | 当前固定 `EntityRecord`、entity map 和层级操作 | 开放 typed component storage、scene 序列化、渲染和 UI |
+| `crates/math/` | Cargo package `sge-math`；当前 `Transform` 和 glam 类型 re-export | Reflect metadata、ECS storage |
+| `crates/ecs/` | 现有固定 `EntityRecord` prototype、entity map 和层级操作 | typed runtime World、scene 序列化、渲染和 UI |
+| `crates/sge-ecs/` | Core M1 串行 typed runtime World、显式类型注册、opaque Entity 和单组件 query | 现有 prototype adapter、Reflect、scene/render/editor 集成 |
 | `crates/scene/` | 当前 `.scene.ron` 与固定 entity records 的 save/load | 目标 Reflect scene product、GPU、editor session |
 | `crates/asset/` | 当前 Asset UUID/manifest、OBJ source loader、imported CPU mesh | 目标 source/runtime 分层 |
 | `crates/render/` | 当前 ECS extraction、viewport draw data 和唯一 WGPU viewport renderer | editor 数据结构所有权 |
@@ -73,10 +75,10 @@
 
 ## 项目状态
 
-最后审阅日期：2026-07-11
+最后审阅日期：2026-07-12
 
 - 当前阶段：editor 使用显式 project 工作上下文；Open Project 选择已有 `project.sge.ron`，不把空文件夹初始化为 project；用户 scene 和 imported OBJ 只能写入当前 project。
 - 示例 project 真源：`examples/editor_smoke/`。
 - 已通过证据：人工 host-native editor smoke 已确认真实窗口像素输出、两次 `New Cube`、手动移动第二个 cube、保存并重新打开 `.scene.ron`
 - 已完成收口：editor 已按现有 `model` / `app` / `viewport` 边界拆薄，文件 IO 留在 `editor::app`，`crates/editor/src/lib.rs` 只保留模块入口和 re-export
-- 下一个里程碑：目标架构规格已批准；先为 Core Kernel（Reflect、typed ECS、最小 InputFrame、EngineApp、headless game plugin）编写独立 implementation plan，不直接创建完整目标 crate 空壳或进入最终 demo
+- 下一个里程碑仍是 Core M1：`sge-math` package 边界和 typed `sge-ecs` runtime World 已实现；Reflect、最小 InputFrame、EngineApp、headless game plugin 尚未实现，继续按已批准 implementation plan 逐项推进
