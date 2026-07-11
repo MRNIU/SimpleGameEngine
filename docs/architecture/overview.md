@@ -1,8 +1,10 @@
 # Rust Engine Architecture Overview
 
-日期：2026-07-09
+日期：2026-07-11
 
-SimpleGameEngine 当前主线是 editor-first 的 Rust engine/editor workspace。已批准设计见 `docs/superpowers/specs/2026-07-06-rust-engine-architecture-design.md`。
+SimpleGameEngine 当前主线是 editor-first 的 Rust engine/editor workspace。本文只描述当前 HEAD 已实现的 crate、运行路径和验证证据。
+
+目标架构见 `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`。该规格中的 `sge-*` crates、EngineApp、Reflect、Play World、Player、Cook 和 Stage 是待实施目标，不能从本文的当前实现表中推断为已经存在。
 
 ## 当前 crate 边界
 

@@ -2,6 +2,8 @@
 
 日期：2026-07-06
 
+> 状态：已由 `2026-07-11-rust-engine-target-architecture-design.md` 取代。本文只保留 Rust reset 与 editor-first MVP 的历史决策，不再作为目标 crate、依赖、Reflect、Player、Cook 或 Play Mode 的设计真源。
+
 ## 结论
 
 SimpleGameEngine 将从当前 C++ 软件渲染参考仓库切换为新的 Rust 游戏引擎仓库。旧 C++ 源码、CMake、CPM、GoogleTest、SDL C++ 示例、C++ CI 和 C++ 文档规则都进入删除或替换范围；如需参考旧实现，通过 Git 历史访问。

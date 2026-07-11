@@ -5,8 +5,8 @@
 ## 项目概览
 
 - 项目名称：SimpleGameEngine
-- 当前定位：转向 Rust 的跨平台游戏引擎实验仓库
-- 当前决议：以新的 Rust engine/editor 架构替换旧 C++ 软件渲染结构
+- 当前定位：Rust 跨平台游戏引擎与 editor 实验仓库；现有产品路径是 editor prototype
+- 当前决议：以已批准目标架构逐步替换当前 prototype 内核，不维护旧内部 API 或文件格式兼容层
 - 目标技术栈：Rust stable channel、Cargo workspace、egui、winit、wgpu
 - 默认开发环境：Dev Container / Docker
 - 旧实现参考：通过 Git 历史查看；旧 C++ 目录、CMake 和测试结构允许在 Rust reset 中删除或替换
@@ -17,18 +17,24 @@
 |------|------|
 | `README.md` | 安装、编译、运行、测试和文档生成命令 |
 | `docs/conventions.md` | 代码、文档、测试和环境约定 |
+| `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md` | 已批准目标方向、目标 crate/产品边界、延期子系统与迁移顺序 |
 | `.gitmessage` | commit message 模板 |
 | 局部 `AGENTS.md` | 目录级规则；优先级高于本文件的通用条款 |
 
-## 架构边界
+## 当前实现边界
+
+下表描述当前源码，不代表目标架构已经落地。迁移目标以目标架构规格为准；实现过程中不得为延期子系统创建空壳 crate、trait 或占位 component。
 
 | 模块/目录 | 职责 | 不负责 |
 |-----------|------|--------|
-| `crates/app/` | engine lifecycle、main loop、schedule glue | editor-only 状态 |
-| `crates/ecs/` | 自研最小 ECS：entity、component storage、query、system | scene 序列化、渲染和 UI |
-| `crates/scene/` | `.scene.ron` save/load 和可保存 world subset | GPU 资源、窗口状态、editor panel 状态 |
-| `crates/render/` | wgpu 初始化、viewport mesh render、camera | editor 数据结构所有权 |
-| `crates/editor/` | egui panels、hierarchy、inspector、viewport | 底层 ECS 存储实现 |
+| `crates/app/` | 仅有薄 `Engine`/tick 实验；当前没有 Editor/Runtime 产品调用方 | 目标 EngineApp、Editor lifecycle |
+| `crates/ecs/` | 当前固定 `EntityRecord`、entity map 和层级操作 | 开放 typed component storage、scene 序列化、渲染和 UI |
+| `crates/scene/` | 当前 `.scene.ron` 与固定 entity records 的 save/load | 目标 Reflect scene product、GPU、editor session |
+| `crates/asset/` | 当前 Asset UUID/manifest、OBJ source loader、imported CPU mesh | 目标 source/runtime 分层 |
+| `crates/render/` | 当前 ECS extraction、viewport draw data 和唯一 WGPU viewport renderer | editor 数据结构所有权 |
+| `crates/editor/` | 当前 eframe/egui host、project workflow、panels、Inspector、viewport、history 和 gizmo | 目标 Play World、底层 ECS 存储实现 |
+| `crates/runtime/` | 当前一次性 scene/manifest/OBJ loader smoke | 持续 Player loop、game plugin、cooked-only runtime |
+| `crates/input/`、`crates/window/` | 当前只被薄 `app` 使用的实验 API | Editor 的 eframe window/input 所有权 |
 | `assets/` | engine-owned primitive 和默认材质资源 | 用户 project 资源、运行时生成缓存 |
 | `crates/*/tests/` | Rust integration tests | 依赖人工 GUI 的唯一验证 |
 
@@ -67,10 +73,10 @@
 
 ## 项目状态
 
-最后审阅日期：2026-07-09
+最后审阅日期：2026-07-11
 
 - 当前阶段：editor 使用显式 project 工作上下文；Open Project 选择已有 `project.sge.ron`，不把空文件夹初始化为 project；用户 scene 和 imported OBJ 只能写入当前 project。
 - 示例 project 真源：`examples/editor_smoke/`。
 - 已通过证据：人工 host-native editor smoke 已确认真实窗口像素输出、两次 `New Cube`、手动移动第二个 cube、保存并重新打开 `.scene.ron`
 - 已完成收口：editor 已按现有 `model` / `app` / `viewport` 边界拆薄，文件 IO 留在 `editor::app`，`crates/editor/src/lib.rs` 只保留模块入口和 re-export
-- 下一个里程碑：继续扩 editor 功能前先明确单个用户可见目标，不新增空壳 crate 或大管线
+- 下一个里程碑：书面复核目标架构规格后，先为 Core Kernel（Reflect、typed ECS、最小 InputFrame、EngineApp、headless game plugin）编写独立 implementation plan；不直接创建完整目标 crate 空壳或进入最终 demo
