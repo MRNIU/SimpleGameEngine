@@ -1,7 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
 use ecs::{Camera, Light, MaterialOverride, Projection};
-use math::Transform;
+use sge_math::Transform;
 
 use super::EditorError;
 

@@ -6,7 +6,7 @@ use super::{
     panels::{inspector_transform_fields, mesh_size_for_display},
 };
 use ecs::{Camera, EntityId, EntityRecord, Light, MaterialOverride, Projection};
-use math::{Quat, Transform};
+use sge_math::{Quat, Transform};
 use std::path::PathBuf;
 
 use crate::model::PrimitiveKind;

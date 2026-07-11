@@ -12,7 +12,7 @@ asset = { path = "../asset" }
 ecs = { path = "../ecs" }
 eframe.workspace = true
 egui.workspace = true
-math = { path = "../math" }
+sge-math = { path = "../math" }
 render = { path = "../render" }
 rfd.workspace = true
 ron.workspace = true

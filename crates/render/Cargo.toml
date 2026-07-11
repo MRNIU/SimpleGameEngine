@@ -8,7 +8,7 @@ repository.workspace = true
 [dependencies]
 asset = { path = "../asset" }
 ecs = { path = "../ecs" }
-math = { path = "../math" }
+sge-math = { path = "../math" }
 wgpu.workspace = true
 
 [lints]

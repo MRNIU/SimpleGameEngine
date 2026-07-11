@@ -5,7 +5,7 @@
 use std::{borrow::Cow, collections::BTreeMap, ops::Range};
 
 use ecs::{Camera, EntityId, Light, Projection, World};
-use math::{Quat, Transform, Vec3};
+use sge_math::{Quat, Transform, Vec3};
 use wgpu::util::DeviceExt;
 
 mod viewport_projection;

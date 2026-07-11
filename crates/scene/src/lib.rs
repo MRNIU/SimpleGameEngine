@@ -49,7 +49,7 @@ pub enum SceneError {
 mod tests {
     use super::{load_scene, save_scene};
     use ecs::{EntityId, World};
-    use math::Transform;
+    use sge_math::Transform;
 
     #[test]
     fn serialized_scene_omits_runtime_children_cache() {

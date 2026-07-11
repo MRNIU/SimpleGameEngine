@@ -1,6 +1,6 @@
 use super::EditorModel;
 use ecs::{Camera, EntityId, Light, LightKind, MaterialOverride, Projection};
-use math::Transform;
+use sge_math::Transform;
 
 #[test]
 fn new_editor_starts_with_camera() {

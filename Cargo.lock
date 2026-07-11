@@ -550,8 +550,8 @@ dependencies = [
 name = "ecs"
 version = "0.1.0"
 dependencies = [
- "math",
  "serde",
+ "sge-math",
  "thiserror 2.0.18",
 ]
 
@@ -565,12 +565,12 @@ dependencies = [
  "ecs",
  "eframe",
  "egui",
- "math",
  "render",
  "rfd",
  "ron",
  "scene",
  "serde",
+ "sge-math",
  "thiserror 2.0.18",
  "tracing",
  "tracing-subscriber",
@@ -1480,14 +1480,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "math"
-version = "0.1.0"
-dependencies = [
- "glam",
- "serde",
-]
-
-[[package]]
 name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2280,7 +2272,7 @@ version = "0.1.0"
 dependencies = [
  "asset",
  "ecs",
- "math",
+ "sge-math",
  "wgpu",
 ]
 
@@ -2412,9 +2404,9 @@ version = "0.1.0"
 dependencies = [
  "asset",
  "ecs",
- "math",
  "ron",
  "serde",
+ "sge-math",
  "thiserror 2.0.18",
 ]
 
@@ -2483,6 +2475,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "sge-math"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "serde",
 ]
 
 [[package]]

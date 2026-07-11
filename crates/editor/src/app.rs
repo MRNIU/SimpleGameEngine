@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 use ecs::{Camera, EntityId, Light, MaterialOverride};
 use eframe::egui;
-use math::Transform;
+use sge_math::Transform;
 
 use crate::{
     app::project::ProjectContext,

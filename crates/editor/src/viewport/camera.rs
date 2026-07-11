@@ -2,8 +2,8 @@
 
 use ecs::{EntityId, Projection};
 use eframe::egui;
-use math::{Mat3, Quat, Transform, Vec3};
 use render::{ViewportDrawCall, ViewportView};
+use sge_math::{Mat3, Quat, Transform, Vec3};
 
 use super::{
     ViewportNavigationGesture,
@@ -517,7 +517,7 @@ fn preset_rotation(preset: ViewPreset) -> Quat {
         ViewPreset::Left => (Vec3::Y, Vec3::Z),
     };
     let right = up.cross(forward).normalize_or_zero();
-    Quat::from_mat3(&math::Mat3::from_cols(right, up, forward))
+    Quat::from_mat3(&sge_math::Mat3::from_cols(right, up, forward))
 }
 
 fn visible_center(draw: &ViewportDrawCall, selected: Option<&EntityId>) -> Option<Vec3> {

@@ -2,7 +2,7 @@
 
 use ecs::EntityId;
 use eframe::egui;
-use math::Transform;
+use sge_math::Transform;
 
 use crate::{
     model::{EditorModel, PrimitiveKind},

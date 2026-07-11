@@ -2,10 +2,10 @@
 
 use ecs::{EntityId, Projection};
 use eframe::egui;
-use math::{Quat, Transform, Vec3};
 use render::{
     ViewportClipPlanes, ViewportDrawCall, ViewportProjection, ViewportSize, ViewportView,
 };
+use sge_math::{Quat, Transform, Vec3};
 
 mod camera;
 mod gizmo;

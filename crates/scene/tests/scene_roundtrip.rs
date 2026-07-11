@@ -3,8 +3,8 @@
 //! 场景 roundtrip 与 runtime children cache 测试。
 
 use ecs::{Camera, EntityId, Light, LightKind, MaterialOverride, MeshRef, Projection, World};
-use math::Transform;
 use scene::{load_scene, save_scene};
+use sge_math::Transform;
 
 #[test]
 fn scene_roundtrip_rebuilds_children_cache_and_render_components() {

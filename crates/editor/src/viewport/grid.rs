@@ -1,8 +1,8 @@
 // Copyright The SimpleGameEngine Contributors
 
 use eframe::egui;
-use math::Vec3;
 use render::ViewportProjection;
+use sge_math::Vec3;
 
 use super::{ReferenceLine, ViewPreset};
 
