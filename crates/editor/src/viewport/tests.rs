@@ -608,6 +608,7 @@ fn camera_hint_uses_world_metrics_for_distance() {
     assert!(hint.contains("Camera Speed"));
     assert!(hint.contains("Distance"));
     assert!(hint.contains("9.43"));
+    assert!(hint.contains('\n'));
 }
 
 #[test]
@@ -848,6 +849,56 @@ fn reference_grid_uses_xy_plane_and_z_axis_marker() {
             && line.end[2] > 0.0
             && line.color == egui::Color32::from_rgb(80, 130, 240)
     }));
+}
+
+#[test]
+fn reference_grid_axis_colors_match_world_line_directions() {
+    let frame = adaptive_grid_lines(&default_editor_projection(), GridPlane::XY, 1.0).unwrap();
+    let red = egui::Color32::from_rgb(160, 60, 60);
+    let green = egui::Color32::from_rgb(60, 150, 80);
+    let red_line = frame.lines.iter().find(|line| line.color == red).unwrap();
+    let green_line = frame.lines.iter().find(|line| line.color == green).unwrap();
+    let red_direction = Vec3::from_array(red_line.end) - Vec3::from_array(red_line.start);
+    let green_direction = Vec3::from_array(green_line.end) - Vec3::from_array(green_line.start);
+
+    assert!(red_direction.normalize().dot(Vec3::X).abs() > 0.99);
+    assert!(green_direction.normalize().dot(Vec3::Y).abs() > 0.99);
+}
+
+#[test]
+fn close_camera_gizmo_keeps_axis_when_positive_endpoint_is_behind() {
+    let forward = Vec3::new(-1.0, 0.0, -0.5).normalize();
+    let right = Vec3::NEG_Y;
+    let up = forward.cross(right).normalize();
+    let rotation = Quat::from_mat3(&math::Mat3::from_cols(right, up, forward));
+    let view = ViewportView::new(
+        EntityId::new("close_camera"),
+        Transform {
+            translation: [1.0, 0.0, 0.2],
+            rotation: rotation.to_array(),
+            scale: [1.0; 3],
+        },
+        Projection::Perspective {
+            fov_y_degrees: 60.0,
+        },
+    );
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+    let size = ViewportSize::new(rect.width(), rect.height()).unwrap();
+    let projection =
+        ViewportProjection::from_view(&view, size, ViewportClipPlanes::DEFAULT).unwrap();
+    let handles = super::gizmo_layout(
+        &draw_with_two_mesh_spans(),
+        &projection,
+        rect,
+        Some(&EntityId::new("cube_1")),
+        GizmoMode::Move,
+    );
+
+    assert!(
+        handles
+            .iter()
+            .any(|handle| handle.handle == GizmoHandle::MoveX)
+    );
 }
 
 #[test]

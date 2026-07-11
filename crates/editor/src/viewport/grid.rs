@@ -142,7 +142,7 @@ fn append_axis_lines(
             grid_line(
                 u * coordinate + v * min_v,
                 u * coordinate + v * max_v,
-                u,
+                v,
                 coordinate,
                 step,
             ),
@@ -156,7 +156,7 @@ fn append_axis_lines(
             grid_line(
                 v * coordinate + u * min_u,
                 v * coordinate + u * max_u,
-                v,
+                u,
                 coordinate,
                 step,
             ),

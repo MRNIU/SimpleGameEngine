@@ -415,7 +415,7 @@ pub(crate) fn pilot_camera_hint_text(
         .unwrap_or(Vec3::ZERO);
     let distance = center.distance(Vec3::from_array(view.transform.translation));
     let mesh_count = draw.map_or(0, |draw| draw.mesh_spans.len());
-    format!("Pilot Camera  {projection}  Distance {distance:.2}  Meshes {mesh_count}")
+    format!("Pilot Camera\n{projection}  Distance {distance:.2}  Meshes {mesh_count}")
 }
 
 fn visible_mesh_center(draw: &ViewportDrawCall, selected: Option<&EntityId>) -> Option<Vec3> {

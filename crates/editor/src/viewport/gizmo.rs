@@ -408,12 +408,22 @@ fn projected_world_axis(
     axis: Vec3,
 ) -> Option<egui::Vec2> {
     let start = projected_screen_position(projection, rect, origin)?;
-    let end = projected_screen_position(
+    if let Some(end) = projected_screen_position(
         projection,
         rect,
         (Vec3::from_array(origin) + axis).to_array(),
+    ) {
+        let projected = normalized_screen_axis(end - start);
+        if projected != egui::Vec2::ZERO {
+            return Some(projected);
+        }
+    }
+    let opposite = projected_screen_position(
+        projection,
+        rect,
+        (Vec3::from_array(origin) - axis).to_array(),
     )?;
-    let projected = normalized_screen_axis(end - start);
+    let projected = normalized_screen_axis(start - opposite);
     (projected != egui::Vec2::ZERO).then_some(projected)
 }
 

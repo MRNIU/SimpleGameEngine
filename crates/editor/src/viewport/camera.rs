@@ -401,7 +401,7 @@ impl ViewCamera {
                     .unwrap_or(Vec3::ZERO)
                     .distance(Vec3::from_array(self.position));
                 format!(
-                    "Perspective  FOV X {:.0}  Camera Speed {:.2}  Distance {:.2}",
+                    "Perspective\nFOV X {:.0}  Camera Speed {:.2}  Distance {:.2}",
                     self.horizontal_fov_degrees(),
                     self.effective_speed(),
                     distance
@@ -409,7 +409,7 @@ impl ViewCamera {
             }
             ViewMode::Orthographic(_) => {
                 format!(
-                    "{}  Ortho Scale {:.2}",
+                    "{}\nOrtho Scale {:.2}",
                     self.view_mode_label(),
                     self.ortho_scale
                 )
