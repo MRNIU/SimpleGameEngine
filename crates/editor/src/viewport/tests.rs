@@ -34,6 +34,35 @@ fn test_viewport_size() -> ViewportSize {
     ViewportSize::new(1600.0, 900.0).unwrap()
 }
 
+fn default_editor_projection() -> ViewportProjection {
+    editor_projection_for_size(800.0, 600.0)
+}
+
+fn editor_projection_for_size(width: f32, height: f32) -> ViewportProjection {
+    let size = ViewportSize::new(width, height).unwrap();
+    ViewportProjection::from_view(
+        &ViewCamera::default().to_viewport_view(size),
+        size,
+        ViewportClipPlanes::DEFAULT,
+    )
+    .unwrap()
+}
+
+fn projected_screen_axis(
+    projection: &ViewportProjection,
+    rect: egui::Rect,
+    origin: [f32; 3],
+    axis: Vec3,
+) -> egui::Vec2 {
+    let start = projection.project_world_point(origin).unwrap();
+    let end = projection
+        .project_world_point((Vec3::from_array(origin) + axis).to_array())
+        .unwrap();
+    (screen_position_for_vertex(rect, [end[0], end[1], 0.0])
+        - screen_position_for_vertex(rect, [start[0], start[1], 0.0]))
+    .normalized()
+}
+
 #[test]
 fn default_camera_uses_ue_fov_and_speed() {
     let camera = ViewCamera::default();
@@ -77,7 +106,8 @@ fn orthographic_navigation_does_not_return_to_perspective() {
 
 #[test]
 fn adaptive_grid_uses_decimal_steps_and_hysteresis() {
-    assert_eq!(grid_step_for_spacing(15.0, 1.0), 10.0);
+    assert_eq!(grid_step_for_spacing(3.0, 1.0), 10.0);
+    assert_eq!(grid_step_for_spacing(15.0, 1.0), 1.0);
     assert_eq!(grid_step_for_spacing(20.0, 10.0), 10.0);
     assert_eq!(grid_step_for_spacing(180.0, 10.0), 1.0);
 }
@@ -93,6 +123,35 @@ fn perspective_grid_lines_are_projectable_after_clipping() {
             .project_world_segment(line.start, line.end)
             .is_some()
     }));
+}
+
+#[test]
+fn tilted_perspective_grid_reaches_visible_viewport_edges() {
+    let projection = editor_projection_for_size(384.0, 448.0);
+    let frame = adaptive_grid_lines(&projection, GridPlane::XY, 1.0).unwrap();
+    let line_count = frame.lines.len();
+    let mut minimum = [f32::INFINITY; 2];
+    let mut maximum = [f32::NEG_INFINITY; 2];
+    for line in frame.lines {
+        let Some(segment) = projection.project_world_segment(line.start, line.end) else {
+            continue;
+        };
+        for point in segment {
+            minimum[0] = minimum[0].min(point[0]);
+            minimum[1] = minimum[1].min(point[1]);
+            maximum[0] = maximum[0].max(point[0]);
+            maximum[1] = maximum[1].max(point[1]);
+        }
+    }
+
+    assert!(minimum[0] <= -0.95, "grid left edge: {minimum:?}");
+    assert!(maximum[0] >= 0.95, "grid right edge: {maximum:?}");
+    assert!(minimum[1] <= -0.95, "grid bottom edge: {minimum:?}");
+    assert!(
+        line_count >= 12,
+        "default perspective needs a complete minor grid, got {} lines",
+        line_count
+    );
 }
 
 #[test]
@@ -873,6 +932,37 @@ fn move_gizmo_layout_keeps_three_selectable_axes() {
 }
 
 #[test]
+fn move_gizmo_axes_follow_projected_world_axes() {
+    let draw = draw_with_two_mesh_spans();
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+    let projection = default_editor_projection();
+    let handles = super::gizmo_layout(
+        &draw,
+        &projection,
+        rect,
+        Some(&EntityId::new("cube_1")),
+        GizmoMode::Move,
+    );
+
+    for (handle, world_axis) in [
+        (GizmoHandle::MoveX, Vec3::X),
+        (GizmoHandle::MoveY, Vec3::Y),
+        (GizmoHandle::MoveZ, Vec3::Z),
+    ] {
+        let actual = handles
+            .iter()
+            .find(|candidate| candidate.handle == handle)
+            .unwrap()
+            .axis;
+        let expected = projected_screen_axis(&projection, rect, [0.6, 0.0, 0.0], world_axis);
+        assert!(
+            actual.dot(expected) > 0.99,
+            "{handle:?}: {actual:?} != {expected:?}"
+        );
+    }
+}
+
+#[test]
 fn gizmo_hit_test_prefers_nearest_handle() {
     let handles = vec![
         GizmoHandleRect::new(
@@ -936,10 +1026,10 @@ fn assert_quat_close(actual: [f32; 4], expected: [f32; 4]) {
 }
 
 #[test]
-fn rotate_gizmo_layout_uses_fixed_screen_axes() {
+fn rotate_gizmo_layout_uses_projected_world_axes() {
     let draw = draw_with_two_mesh_spans();
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(200.0, 200.0));
-    let projection = test_projection();
+    let projection = default_editor_projection();
 
     let handles = super::gizmo_layout(
         &draw,
@@ -962,9 +1052,30 @@ fn rotate_gizmo_layout_uses_fixed_screen_axes() {
         .iter()
         .find(|handle| handle.handle == GizmoHandle::RotateZ)
         .unwrap();
-    assert_eq!(rotate_x.axis, egui::Vec2::X);
-    assert_eq!(rotate_y.axis, -egui::Vec2::Y);
-    assert_eq!(rotate_z.axis, -egui::Vec2::Y);
+    assert!(
+        rotate_x.axis.dot(projected_screen_axis(
+            &projection,
+            rect,
+            [0.6, 0.0, 0.0],
+            Vec3::X
+        )) > 0.99
+    );
+    assert!(
+        rotate_y.axis.dot(projected_screen_axis(
+            &projection,
+            rect,
+            [0.6, 0.0, 0.0],
+            Vec3::Y
+        )) > 0.99
+    );
+    assert!(
+        rotate_z.axis.dot(projected_screen_axis(
+            &projection,
+            rect,
+            [0.6, 0.0, 0.0],
+            Vec3::Z
+        )) > 0.99
+    );
     assert_eq!(rotate_x.rect.size(), egui::vec2(10.0, 10.0));
 }
 
@@ -1231,6 +1342,16 @@ fn camera_navigation_consumes_pointer_before_gizmo_and_selection() {
     assert!(!super::can_select_viewport(true, false, true));
     assert!(super::can_start_gizmo_drag(true, false, false));
     assert!(super::can_select_viewport(true, false, false));
+}
+
+#[test]
+fn active_gizmo_drag_blocks_plain_lmb_camera_navigation() {
+    assert!(super::plain_lmb_navigation_requested(
+        true, true, false, false, true, false
+    ));
+    assert!(!super::plain_lmb_navigation_requested(
+        true, true, false, true, true, false
+    ));
 }
 
 #[test]

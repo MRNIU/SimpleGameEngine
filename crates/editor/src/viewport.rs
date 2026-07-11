@@ -18,6 +18,7 @@ pub(crate) use gizmo::GizmoHandleRect;
 pub(crate) use gizmo::{
     GizmoDrag, GizmoHandle, GizmoMode, TransformGizmoState, gizmo_drag_from_press_origin,
     gizmo_layout, hit_test_gizmo, paint_gizmo_handles, transform_for_gizmo_drag,
+    transform_for_gizmo_drag_along_axis,
 };
 pub(crate) use grid::{GridPlane, adaptive_grid_lines};
 use wgpu_bridge::paint_wgpu_viewport;
@@ -105,6 +106,23 @@ pub(crate) const fn can_select_viewport(
     pointer_consumed_by_camera: bool,
 ) -> bool {
     primary_clicked && !pointer_consumed_by_gizmo && !pointer_consumed_by_camera
+}
+
+#[must_use]
+pub(crate) const fn plain_lmb_navigation_requested(
+    viewport_hovered: bool,
+    primary_down: bool,
+    other_navigation_input: bool,
+    gizmo_drag_active: bool,
+    primary_dragged: bool,
+    orthographic: bool,
+) -> bool {
+    viewport_hovered
+        && primary_down
+        && !other_navigation_input
+        && !gizmo_drag_active
+        && primary_dragged
+        && !orthographic
 }
 
 pub(crate) fn draw_viewport(
@@ -197,8 +215,9 @@ pub(crate) fn draw_viewport(
             return ViewportAction::CommitTransform {
                 target: drag.target,
                 before: drag.start_transform,
-                after: transform_for_gizmo_drag(
+                after: transform_for_gizmo_drag_along_axis(
                     drag.handle,
+                    gizmo_axis(&handles, drag.handle),
                     drag.start_transform,
                     drag.start_pointer,
                     pointer,
@@ -214,8 +233,9 @@ pub(crate) fn draw_viewport(
                 if let Some(pointer) = response.interact_pointer_pos() {
                     action = ViewportAction::PreviewTransform {
                         target: drag.target,
-                        transform: transform_for_gizmo_drag(
+                        transform: transform_for_gizmo_drag_along_axis(
                             drag.handle,
+                            gizmo_axis(&handles, drag.handle),
                             drag.start_transform,
                             drag.start_pointer,
                             pointer,
@@ -299,14 +319,14 @@ pub(crate) fn draw_viewport(
         }
     }
 
-    if viewport_hovered
-        && primary_down
-        && !alt_down
-        && !middle_down
-        && !right_down
-        && gizmo.hovered().is_none()
-        && response.dragged_by(egui::PointerButton::Primary)
-        && !camera.is_orthographic()
+    if plain_lmb_navigation_requested(
+        viewport_hovered,
+        primary_down,
+        alt_down || middle_down || right_down,
+        gizmo.drag().is_some(),
+        response.dragged_by(egui::PointerButton::Primary),
+        camera.is_orthographic(),
+    ) && gizmo.hovered().is_none()
     {
         pointer_consumed_by_camera = true;
         if navigation_enabled {
@@ -366,6 +386,13 @@ pub(crate) fn draw_viewport(
     paint_orientation_cube(&painter, &orientation_layout);
     paint_gizmo_handles(&painter, &handles, gizmo.hovered(), gizmo.active());
     action
+}
+
+fn gizmo_axis(handles: &[gizmo::GizmoHandleRect], target: GizmoHandle) -> egui::Vec2 {
+    handles
+        .iter()
+        .find(|handle| handle.handle == target)
+        .map_or_else(|| gizmo::default_screen_axis(target), |handle| handle.axis)
 }
 
 #[must_use]

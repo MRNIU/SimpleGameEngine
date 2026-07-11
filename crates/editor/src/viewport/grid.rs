@@ -6,7 +6,7 @@ use render::ViewportProjection;
 
 use super::{ReferenceLine, ViewPreset};
 
-const MIN_MINOR_SPACING: f32 = 16.0;
+const MIN_MINOR_SPACING: f32 = 4.0;
 const MAX_MINOR_SPACING: f32 = 160.0;
 const MAX_LINES_PER_AXIS: usize = 256;
 
@@ -75,8 +75,12 @@ pub(crate) fn adaptive_grid_lines(
     .collect::<Vec<_>>();
     let anchor = intersections.last().copied()?;
     let (mut min_u, mut max_u, mut min_v, mut max_v) = plane_extent(&intersections, u, v)?;
-    let spacing = projected_spacing(projection, anchor, u, previous_step)
-        .or_else(|| projected_spacing(projection, anchor, v, previous_step))?;
+    let spacing = projected_spacing(projection, anchor, u, previous_step)?.max(projected_spacing(
+        projection,
+        anchor,
+        v,
+        previous_step,
+    )?);
     let mut step = grid_step_for_spacing(spacing, previous_step).clamp(0.000_1, 1_000_000.0);
 
     loop {
