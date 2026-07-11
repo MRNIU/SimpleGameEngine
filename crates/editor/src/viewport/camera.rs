@@ -12,10 +12,13 @@ const LOOK_SENSITIVITY: f32 = 0.01;
 const ORBIT_SENSITIVITY: f32 = 0.01;
 const PAN_SENSITIVITY: f32 = 0.0025;
 const DOLLY_SENSITIVITY: f32 = 0.02;
-const MOVE_SCALE: f32 = 4.0;
-const SPEED_SCROLL_SCALE: f32 = 0.05;
 const DEFAULT_ORBIT_DISTANCE: f32 = 8.0;
-const DEFAULT_FOV_Y_DEGREES: f32 = 60.0;
+const ORTHOGRAPHIC_CAMERA_DISTANCE: f32 = 1_000.0;
+const DEFAULT_HORIZONTAL_FOV_DEGREES: f32 = 90.0;
+const DEFAULT_SPEED_LEVEL: u8 = 4;
+const DEFAULT_SPEED_SCALAR: f32 = 1.0;
+const SPEED_MULTIPLIERS: [f32; 8] = [0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0];
+const BASE_MOVE_SPEED: f32 = 4.0;
 const FRAME_MARGIN: f32 = 1.35;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -23,10 +26,11 @@ pub(crate) struct ViewCamera {
     position: [f32; 3],
     yaw: f32,
     pitch: f32,
-    speed: f32,
+    speed_level: u8,
+    speed_scalar: f32,
     orbit_pivot: [f32; 3],
     orbit_distance: f32,
-    fov_y_degrees: f32,
+    horizontal_fov_degrees: f32,
     mode: ViewMode,
     ortho_center: [f32; 3],
     ortho_scale: f32,
@@ -55,11 +59,11 @@ pub(crate) struct ViewMoveInput {
     pub(crate) backward: bool,
     pub(crate) left: bool,
     pub(crate) right: bool,
+    pub(crate) up: bool,
+    pub(crate) down: bool,
 }
 
 impl ViewCamera {
-    pub(crate) const MIN_SPEED: f32 = 0.05;
-    pub(crate) const MAX_SPEED: f32 = 20.0;
     pub(crate) const MIN_PITCH: f32 = -1.45;
     pub(crate) const MAX_PITCH: f32 = 1.45;
     pub(crate) const MIN_ORBIT_DISTANCE: f32 = 0.25;
@@ -76,10 +80,41 @@ impl ViewCamera {
         self.yaw
     }
 
-    #[cfg(test)]
     #[must_use]
-    pub(crate) const fn speed(self) -> f32 {
-        self.speed
+    pub(crate) const fn horizontal_fov_degrees(self) -> f32 {
+        self.horizontal_fov_degrees
+    }
+
+    #[must_use]
+    pub(crate) const fn speed_level(self) -> u8 {
+        self.speed_level
+    }
+
+    pub(crate) fn set_speed_level(&mut self, level: u8) {
+        self.speed_level = level.clamp(1, 8);
+    }
+
+    pub(crate) fn adjust_speed_level(&mut self, delta: i8) {
+        let level = i16::from(self.speed_level) + i16::from(delta);
+        self.speed_level = level.clamp(1, 8) as u8;
+    }
+
+    #[must_use]
+    pub(crate) const fn speed_scalar(self) -> f32 {
+        self.speed_scalar
+    }
+
+    pub(crate) fn set_speed_scalar(&mut self, scalar: f32) {
+        if scalar.is_finite() {
+            self.speed_scalar = scalar.clamp(0.1, 10.0);
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn effective_speed(self) -> f32 {
+        BASE_MOVE_SPEED
+            * SPEED_MULTIPLIERS[usize::from(self.speed_level.saturating_sub(1))]
+            * self.speed_scalar
     }
 
     #[cfg(test)]
@@ -92,12 +127,6 @@ impl ViewCamera {
     #[must_use]
     pub(crate) const fn orbit_distance(self) -> f32 {
         self.orbit_distance
-    }
-
-    #[cfg(test)]
-    #[must_use]
-    pub(crate) const fn fov_y_degrees(self) -> f32 {
-        self.fov_y_degrees
     }
 
     #[cfg(test)]
@@ -121,14 +150,6 @@ impl ViewCamera {
         self.sync_pivot_from_position();
     }
 
-    pub(crate) fn adjust_speed(&mut self, scroll_y: f32) {
-        if !scroll_y.is_finite() {
-            return;
-        }
-        self.speed =
-            (self.speed + scroll_y * SPEED_SCROLL_SCALE).clamp(Self::MIN_SPEED, Self::MAX_SPEED);
-    }
-
     pub(crate) fn move_local(&mut self, input: ViewMoveInput, dt: f32) {
         if !dt.is_finite() || dt <= 0.0 {
             return;
@@ -149,10 +170,16 @@ impl ViewCamera {
         if input.left {
             direction -= right;
         }
+        if input.up {
+            direction += Vec3::Z;
+        }
+        if input.down {
+            direction -= Vec3::Z;
+        }
         if direction.length_squared() <= f32::EPSILON {
             return;
         }
-        let movement = direction.normalize() * self.speed * dt * MOVE_SCALE;
+        let movement = direction.normalize() * self.effective_speed() * dt;
         let moved = Vec3::from_array(self.position) + movement;
         if !moved.is_finite() {
             return;
@@ -165,7 +192,7 @@ impl ViewCamera {
     }
 
     #[must_use]
-    pub(crate) fn to_viewport_view(self) -> ViewportView {
+    pub(crate) fn to_viewport_view(self, viewport_size: render::ViewportSize) -> ViewportView {
         match self.mode {
             ViewMode::Perspective => ViewportView::new(
                 EntityId::new(EDITOR_VIEW_ENTITY),
@@ -175,20 +202,29 @@ impl ViewCamera {
                     scale: [1.0, 1.0, 1.0],
                 },
                 Projection::Perspective {
-                    fov_y_degrees: self.fov_y_degrees,
+                    fov_y_degrees: vertical_fov_degrees(
+                        self.horizontal_fov_degrees,
+                        viewport_size.aspect_ratio(),
+                    ),
                 },
             ),
-            ViewMode::Orthographic(preset) => ViewportView::new(
-                EntityId::new(EDITOR_VIEW_ENTITY),
-                Transform {
-                    translation: self.ortho_center,
-                    rotation: preset_rotation(preset).to_array(),
-                    scale: [1.0, 1.0, 1.0],
-                },
-                Projection::Orthographic {
-                    vertical_size: self.ortho_scale,
-                },
-            ),
+            ViewMode::Orthographic(preset) => {
+                let rotation = preset_rotation(preset);
+                let forward = rotation * Vec3::Z;
+                ViewportView::new(
+                    EntityId::new(EDITOR_VIEW_ENTITY),
+                    Transform {
+                        translation: (Vec3::from_array(self.ortho_center)
+                            - forward * ORTHOGRAPHIC_CAMERA_DISTANCE)
+                            .to_array(),
+                        rotation: rotation.to_array(),
+                        scale: [1.0, 1.0, 1.0],
+                    },
+                    Projection::Orthographic {
+                        vertical_size: self.ortho_scale,
+                    },
+                )
+            }
         }
     }
 
@@ -212,7 +248,7 @@ impl ViewCamera {
         let distance = frame_distance(min, max);
         self.orbit_pivot = center.to_array();
         self.orbit_distance = distance;
-        self.fov_y_degrees = DEFAULT_FOV_Y_DEGREES;
+        self.horizontal_fov_degrees = DEFAULT_HORIZONTAL_FOV_DEGREES;
         self.update_position_from_pivot();
         match self.mode {
             ViewMode::Perspective => {}
@@ -224,15 +260,8 @@ impl ViewCamera {
         true
     }
 
-    pub(crate) fn begin_navigation(
-        &mut self,
-        draw: Option<&ViewportDrawCall>,
-        selected: Option<&EntityId>,
-    ) {
-        if matches!(self.mode, ViewMode::Orthographic(_)) {
-            self.mode = ViewMode::Perspective;
-            self.frame_visible(draw, selected);
-        } else {
+    pub(crate) fn begin_navigation(&mut self) {
+        if matches!(self.mode, ViewMode::Perspective) {
             self.return_to_perspective();
         }
     }
@@ -260,6 +289,52 @@ impl ViewCamera {
         }
         self.position = (Vec3::from_array(self.position) + movement).to_array();
         self.orbit_pivot = (Vec3::from_array(self.orbit_pivot) + movement).to_array();
+    }
+
+    pub(crate) fn lmb_navigate(&mut self, delta: egui::Vec2) {
+        if !delta.x.is_finite() || !delta.y.is_finite() {
+            return;
+        }
+        self.look(egui::vec2(delta.x, 0.0));
+        self.wheel_move(-delta.y.signum());
+    }
+
+    pub(crate) fn wheel_move(&mut self, wheel_y: f32) {
+        if !wheel_y.is_finite() || wheel_y == 0.0 {
+            return;
+        }
+        let movement = self.forward() * wheel_y.signum() * self.effective_speed() * 0.25;
+        self.position = (Vec3::from_array(self.position) + movement).to_array();
+        self.orbit_pivot = (Vec3::from_array(self.orbit_pivot) + movement).to_array();
+    }
+
+    pub(crate) fn ortho_pan(&mut self, delta: egui::Vec2) {
+        let ViewMode::Orthographic(preset) = self.mode else {
+            return;
+        };
+        if !delta.x.is_finite() || !delta.y.is_finite() {
+            return;
+        }
+        let rotation = preset_rotation(preset);
+        let right = rotation * Vec3::X;
+        let up = rotation * Vec3::Y;
+        let scale = self.ortho_scale * 0.0015;
+        let movement = (-right * delta.x + up * delta.y) * scale;
+        if movement.is_finite() {
+            self.ortho_center = (Vec3::from_array(self.ortho_center) + movement).to_array();
+        }
+    }
+
+    pub(crate) fn ortho_zoom(&mut self, delta: f32) {
+        if !matches!(self.mode, ViewMode::Orthographic(_)) || !delta.is_finite() {
+            return;
+        }
+        self.ortho_scale = (self.ortho_scale * (-delta * 0.1).exp()).clamp(0.01, 100_000.0);
+    }
+
+    #[must_use]
+    pub(crate) const fn is_orthographic(self) -> bool {
+        matches!(self.mode, ViewMode::Orthographic(_))
     }
 
     pub(crate) fn dolly(&mut self, delta_y: f32) {
@@ -326,8 +401,10 @@ impl ViewCamera {
                     .unwrap_or(Vec3::ZERO)
                     .distance(Vec3::from_array(self.position));
                 format!(
-                    "Perspective  Camera Speed {:.2}  Distance {:.2}",
-                    self.speed, distance
+                    "Perspective  FOV X {:.0}  Camera Speed {:.2}  Distance {:.2}",
+                    self.horizontal_fov_degrees(),
+                    self.effective_speed(),
+                    distance
                 )
             }
             ViewMode::Orthographic(_) => {
@@ -387,16 +464,22 @@ impl Default for ViewCamera {
             position: [-5.0, -5.0, 4.0],
             yaw: std::f32::consts::FRAC_PI_4,
             pitch: -0.45,
-            speed: 1.0,
+            speed_level: DEFAULT_SPEED_LEVEL,
+            speed_scalar: DEFAULT_SPEED_SCALAR,
             orbit_pivot: [0.0, 0.0, 0.0],
             orbit_distance: DEFAULT_ORBIT_DISTANCE,
-            fov_y_degrees: DEFAULT_FOV_Y_DEGREES,
+            horizontal_fov_degrees: DEFAULT_HORIZONTAL_FOV_DEGREES,
             mode: ViewMode::Perspective,
             ortho_center: [0.0, 0.0, 0.0],
             ortho_scale: 5.0,
             grid: GridState::DEFAULT,
         }
     }
+}
+
+fn vertical_fov_degrees(horizontal_fov_degrees: f32, aspect: f32) -> f32 {
+    let half_x = 0.5 * horizontal_fov_degrees.clamp(1.0, 179.0).to_radians();
+    (2.0 * (half_x.tan() / aspect.max(f32::EPSILON)).atan()).to_degrees()
 }
 
 fn preset_rotation(preset: ViewPreset) -> Quat {
@@ -408,8 +491,8 @@ fn preset_rotation(preset: ViewPreset) -> Quat {
         ViewPreset::Right => (Vec3::NEG_Y, Vec3::Z),
         ViewPreset::Left => (Vec3::Y, Vec3::Z),
     };
-    let right = forward.cross(up).normalize_or_zero();
-    Quat::from_mat3(&math::Mat3::from_cols(forward, right, up))
+    let right = up.cross(forward).normalize_or_zero();
+    Quat::from_mat3(&math::Mat3::from_cols(right, up, forward))
 }
 
 fn visible_center(draw: &ViewportDrawCall, selected: Option<&EntityId>) -> Option<Vec3> {

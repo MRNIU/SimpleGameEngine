@@ -84,7 +84,7 @@ pub(crate) const fn camera_navigation_requested(
     right_down: bool,
 ) -> bool {
     let any_navigation_button = primary_down || middle_down || right_down;
-    let camera_button_allowed = alt_down || right_down;
+    let camera_button_allowed = alt_down || middle_down || right_down;
     viewport_hovered && any_navigation_button && camera_button_allowed
 }
 
@@ -133,11 +133,13 @@ pub(crate) fn draw_viewport(
     let scroll_y = ui.input(|input| input.smooth_scroll_delta.y);
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(18, 24, 29));
+    let viewport_size = ViewportSize::new(rect.width(), rect.height());
     let view = view_override
         .cloned()
-        .unwrap_or_else(|| camera.to_viewport_view());
-    let projection = ViewportSize::new(rect.width(), rect.height())
-        .and_then(|size| ViewportProjection::from_view(&view, size, ViewportClipPlanes::DEFAULT));
+        .or_else(|| viewport_size.map(|size| camera.to_viewport_view(size)));
+    let projection = view.as_ref().zip(viewport_size).and_then(|(view, size)| {
+        ViewportProjection::from_view(view, size, ViewportClipPlanes::DEFAULT)
+    });
     let f_pressed = ui.input(|input| input.key_pressed(egui::Key::F));
     let keyboard_fit_requested = keyboard_shortcuts_allowed && f_pressed;
     let fit_requested = fit_view_requested || keyboard_fit_requested;
@@ -237,9 +239,15 @@ pub(crate) fn draw_viewport(
     if camera_navigation {
         pointer_consumed_by_camera = true;
         if navigation_enabled {
-            camera.begin_navigation(draw, selected);
+            camera.begin_navigation();
             ui.ctx().request_repaint();
-            if alt_down && primary_down {
+            if camera.is_orthographic() {
+                if primary_down && right_down {
+                    camera.ortho_zoom(-pointer_delta.y * 0.02);
+                } else if right_down || middle_down {
+                    camera.ortho_pan(pointer_delta);
+                }
+            } else if alt_down && primary_down {
                 if response.dragged_by(egui::PointerButton::Primary) {
                     camera.orbit(pointer_delta);
                 }
@@ -251,12 +259,14 @@ pub(crate) fn draw_viewport(
                 if response.dragged_by(egui::PointerButton::Secondary) {
                     camera.dolly(pointer_delta.y);
                 }
+            } else if middle_down || (primary_down && right_down) {
+                camera.pan(pointer_delta);
             } else if right_down {
                 if response.dragged_by(egui::PointerButton::Secondary) {
                     camera.look(pointer_delta);
                 }
                 if scroll_y != 0.0 {
-                    camera.adjust_speed(scroll_y);
+                    camera.adjust_speed_level(if scroll_y > 0.0 { 1 } else { -1 });
                 }
                 camera.move_local(
                     ViewMoveInput {
@@ -264,6 +274,8 @@ pub(crate) fn draw_viewport(
                         backward: ui.input(|input| input.key_down(egui::Key::S)),
                         left: ui.input(|input| input.key_down(egui::Key::A)),
                         right: ui.input(|input| input.key_down(egui::Key::D)),
+                        up: ui.input(|input| input.key_down(egui::Key::E)),
+                        down: ui.input(|input| input.key_down(egui::Key::Q)),
                     },
                     ui.input(|input| input.stable_dt),
                 );
@@ -271,6 +283,34 @@ pub(crate) fn draw_viewport(
         } else {
             action =
                 ViewportAction::Status("Disable Pilot Camera to navigate editor view".to_owned());
+        }
+    }
+
+    if viewport_hovered && scroll_y != 0.0 && !right_down {
+        pointer_consumed_by_camera = true;
+        if navigation_enabled {
+            if camera.is_orthographic() {
+                camera.ortho_zoom(scroll_y.signum());
+            } else {
+                camera.wheel_move(scroll_y);
+            }
+            ui.ctx().request_repaint();
+        }
+    }
+
+    if viewport_hovered
+        && primary_down
+        && !alt_down
+        && !middle_down
+        && !right_down
+        && gizmo.hovered().is_none()
+        && response.dragged_by(egui::PointerButton::Primary)
+        && !camera.is_orthographic()
+    {
+        pointer_consumed_by_camera = true;
+        if navigation_enabled {
+            camera.lmb_navigate(pointer_delta);
+            ui.ctx().request_repaint();
         }
     }
 

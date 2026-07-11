@@ -259,7 +259,9 @@ impl EditorApp {
         self.load_scene_from_relative_path(&scene_path)?;
 
         let content_reopen_ok = self.semantic_smoke_content_reopened(&semantic_state);
-        let view = self.viewport_camera.to_viewport_view();
+        let view = self
+            .viewport_camera
+            .to_viewport_view(render::ViewportSize::DEFAULT);
         let semantic = self.model.smoke_report_for_view_with_checks(
             &view,
             semantic_state.transform_undo_redo_ok,
@@ -518,7 +520,9 @@ impl EditorApp {
         let imported_viewport_span = render::viewport_draw_call_with_view_and_meshes(
             &self.model.render_scene(),
             self.model.selected(),
-            &self.viewport_camera.to_viewport_view(),
+            &self
+                .viewport_camera
+                .to_viewport_view(render::ViewportSize::DEFAULT),
             &self.imported_meshes,
         )
         .is_some_and(|draw| {

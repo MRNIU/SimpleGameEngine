@@ -15,6 +15,11 @@ pub struct ViewportSize {
 }
 
 impl ViewportSize {
+    pub const DEFAULT: Self = Self {
+        width: 1600.0,
+        height: 900.0,
+    };
+
     #[must_use]
     pub fn new(width: f32, height: f32) -> Option<Self> {
         (width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0)

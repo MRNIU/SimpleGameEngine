@@ -338,6 +338,14 @@ impl EditorApp {
         self.pilot_camera = false;
     }
 
+    pub(crate) fn set_viewport_speed_level(&mut self, level: u8) {
+        self.viewport_camera.set_speed_level(level);
+    }
+
+    pub(crate) fn set_viewport_speed_scalar(&mut self, scalar: f32) {
+        self.viewport_camera.set_speed_scalar(scalar);
+    }
+
     pub(super) fn run_ui_action(&mut self, action: EditorUiAction) {
         if Self::action_requires_project(action) && self.current_project.is_none() {
             self.status = "Open or create a project first".to_owned();
@@ -487,6 +495,7 @@ impl EditorApp {
     fn viewport_navigation_intent(context: &egui::Context) -> bool {
         context.input(|input| {
             input.pointer.secondary_down()
+                || input.pointer.middle_down()
                 || (input.modifiers.alt
                     && (input.pointer.primary_down()
                         || input.pointer.middle_down()

@@ -13,6 +13,32 @@ use crate::model::PrimitiveKind;
 use crate::viewport::ViewportAction;
 
 #[test]
+fn viewport_reset_restores_ue_camera_defaults() {
+    let mut app = super::EditorApp::default();
+    app.set_viewport_speed_level(8);
+    app.set_viewport_speed_scalar(3.0);
+
+    app.reset_viewport_state();
+
+    assert_eq!(app.viewport_camera.speed_level(), 4);
+    assert_eq!(app.viewport_camera.speed_scalar(), 1.0);
+    assert_eq!(app.viewport_camera.horizontal_fov_degrees(), 90.0);
+}
+
+#[test]
+fn speed_controls_do_not_dirty_scene_or_add_history() {
+    let mut app = super::EditorApp::default();
+    app.model.mark_saved();
+    app.model.clear_history();
+
+    app.set_viewport_speed_level(6);
+    app.set_viewport_speed_scalar(2.0);
+
+    assert!(!app.model.is_dirty());
+    assert!(!app.model.can_undo());
+}
+
+#[test]
 fn parses_smoke_argument() {
     let options = EditorLaunchOptions::from_args([
         "editor".to_owned(),
@@ -408,7 +434,9 @@ fn import_obj_path_creates_manifest_asset_entity_and_draw_call() {
     let selected = app.model.selected().cloned().unwrap();
     let record = app.model.world().entity(selected.as_str()).unwrap();
     assert_eq!(record.mesh.as_ref().unwrap().asset, uuid.to_asset_ref());
-    let view = app.viewport_camera.to_viewport_view();
+    let view = app
+        .viewport_camera
+        .to_viewport_view(render::ViewportSize::DEFAULT);
     let draw = render::viewport_draw_call_with_view_and_meshes(
         &app.model.render_scene(),
         app.model.selected(),
@@ -1290,6 +1318,10 @@ fn toolbar_source_uses_polish_groups_and_no_toolbar_path_label() {
     assert!(toolbar.contains("\"Rotate (E)\""));
     assert!(toolbar.contains("\"Scale (R)\""));
     assert!(toolbar.contains("\"Transform\""));
+    assert!(toolbar.contains("viewport_camera_speed_level"));
+    assert!(toolbar.contains("Speed {speed_level}"));
+    assert!(toolbar.contains("!self.pilot_camera"));
+    assert!(toolbar.contains("Slider::new(&mut speed_scalar, 0.1..=10.0)"));
     assert!(toolbar.contains("\"State\""));
     assert!(!toolbar.contains("ui.label(\"Path\")"));
 }

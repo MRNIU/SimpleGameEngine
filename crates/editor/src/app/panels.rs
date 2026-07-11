@@ -245,6 +245,36 @@ impl EditorApp {
             }
             ui.separator();
 
+            ui.add_enabled_ui(!self.pilot_camera, |ui| {
+                ui.label("Camera");
+                let mut speed_level = self.viewport_camera.speed_level();
+                egui::ComboBox::from_id_salt("viewport_camera_speed_level")
+                    .selected_text(format!("Speed {speed_level}"))
+                    .width(72.0)
+                    .show_ui(ui, |ui| {
+                        for level in 1..=8 {
+                            ui.selectable_value(&mut speed_level, level, level.to_string());
+                        }
+                    });
+                if speed_level != self.viewport_camera.speed_level() {
+                    self.set_viewport_speed_level(speed_level);
+                }
+
+                let mut speed_scalar = self.viewport_camera.speed_scalar();
+                if ui
+                    .add(
+                        egui::Slider::new(&mut speed_scalar, 0.1..=10.0)
+                            .logarithmic(true)
+                            .show_value(true)
+                            .text("Scale"),
+                    )
+                    .changed()
+                {
+                    self.set_viewport_speed_scalar(speed_scalar);
+                }
+            });
+            ui.separator();
+
             ui.label("State");
             if self.model.is_dirty() {
                 ui.label("Unsaved");
@@ -339,7 +369,9 @@ impl EditorApp {
             .pilot_camera
             .then(|| self.model.selected_camera_view())
             .flatten();
-        let editor_view = self.viewport_camera.to_viewport_view();
+        let editor_view = self
+            .viewport_camera
+            .to_viewport_view(render::ViewportSize::DEFAULT);
         let view = piloted_view.as_ref().unwrap_or(&editor_view);
         let render_scene = self.model.render_scene();
         let draw = render::viewport_draw_call_with_view_and_meshes(

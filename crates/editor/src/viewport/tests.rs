@@ -5,7 +5,7 @@ use super::{
     ViewMoveInput, ViewportAction, ViewportWgpuProbe, hit_test_viewport_draw,
     screen_position_for_vertex,
 };
-use ecs::EntityId;
+use ecs::{EntityId, Projection};
 use math::{Quat, Transform, Vec3};
 use render::{
     ViewportClipPlanes, ViewportDrawCall, ViewportMeshSpan, ViewportProjection, ViewportSize,
@@ -28,6 +28,51 @@ fn test_projection() -> ViewportProjection {
         ViewportClipPlanes::DEFAULT,
     )
     .unwrap()
+}
+
+fn test_viewport_size() -> ViewportSize {
+    ViewportSize::new(1600.0, 900.0).unwrap()
+}
+
+#[test]
+fn default_camera_uses_ue_fov_and_speed() {
+    let camera = ViewCamera::default();
+
+    assert_eq!(camera.horizontal_fov_degrees(), 90.0);
+    assert_eq!(camera.speed_level(), 4);
+    assert_eq!(camera.speed_scalar(), 1.0);
+}
+
+#[test]
+fn editor_horizontal_fov_converts_to_vertical_fov() {
+    let view = ViewCamera::default().to_viewport_view(test_viewport_size());
+    let Projection::Perspective { fov_y_degrees } = view.projection else {
+        panic!("expected perspective projection");
+    };
+    let expected = 2.0 * ((45.0_f32.to_radians().tan()) / (1600.0 / 900.0)).atan();
+
+    assert!((fov_y_degrees.to_radians() - expected).abs() < 1.0e-5);
+}
+
+#[test]
+fn speed_level_and_scalar_define_effective_speed() {
+    let mut camera = ViewCamera::default();
+    camera.set_speed_level(5);
+    camera.set_speed_scalar(2.0);
+
+    assert_eq!(camera.effective_speed(), 16.0);
+    camera.adjust_speed_level(100);
+    assert_eq!(camera.speed_level(), 8);
+}
+
+#[test]
+fn orthographic_navigation_does_not_return_to_perspective() {
+    let mut camera = ViewCamera::default();
+    camera.set_preset(super::ViewPreset::Top);
+    camera.ortho_pan(egui::vec2(20.0, -10.0));
+    camera.ortho_zoom(1.0);
+
+    assert_eq!(camera.view_mode_label(), "Top Orthographic");
 }
 
 #[test]
@@ -162,28 +207,29 @@ fn viewport_canvas_does_not_exceed_positive_available_space() {
 }
 
 #[test]
-fn view_camera_clamps_pitch_and_speed() {
+fn view_camera_clamps_pitch_and_speed_settings() {
     let mut camera = ViewCamera::default();
 
-    camera.adjust_speed(10.0);
-    assert!(camera.speed() >= 1.5);
-
     camera.look(egui::vec2(0.0, 20_000.0));
-    camera.adjust_speed(-10_000.0);
+    camera.set_speed_level(0);
+    camera.set_speed_scalar(-10_000.0);
     assert!(camera.pitch().is_finite());
     assert!(camera.pitch() >= ViewCamera::MIN_PITCH);
-    assert_eq!(camera.speed(), ViewCamera::MIN_SPEED);
+    assert_eq!(camera.speed_level(), 1);
+    assert_eq!(camera.speed_scalar(), 0.1);
 
     camera.look(egui::vec2(0.0, -20_000.0));
-    camera.adjust_speed(10_000.0);
+    camera.set_speed_level(u8::MAX);
+    camera.set_speed_scalar(10_000.0);
     assert!(camera.pitch() <= ViewCamera::MAX_PITCH);
-    assert_eq!(camera.speed(), ViewCamera::MAX_SPEED);
+    assert_eq!(camera.speed_level(), 8);
+    assert_eq!(camera.speed_scalar(), 10.0);
 }
 
 #[test]
 fn view_camera_movement_changes_editor_only_view() {
     let mut camera = ViewCamera::default();
-    let before = camera.to_viewport_view();
+    let before = camera.to_viewport_view(test_viewport_size());
 
     camera.move_local(
         ViewMoveInput {
@@ -193,7 +239,7 @@ fn view_camera_movement_changes_editor_only_view() {
         },
         1.0,
     );
-    let after = camera.to_viewport_view();
+    let after = camera.to_viewport_view(test_viewport_size());
     let movement = Vec3::from_array(after.transform.translation)
         - Vec3::from_array(before.transform.translation);
 
@@ -204,10 +250,20 @@ fn view_camera_movement_changes_editor_only_view() {
 
 fn translation_delta_after_move(input: ViewMoveInput) -> Vec3 {
     let mut camera = ViewCamera::default();
-    let before = Vec3::from_array(camera.to_viewport_view().transform.translation);
+    let before = Vec3::from_array(
+        camera
+            .to_viewport_view(test_viewport_size())
+            .transform
+            .translation,
+    );
 
     camera.move_local(input, 1.0);
-    let after = Vec3::from_array(camera.to_viewport_view().transform.translation);
+    let after = Vec3::from_array(
+        camera
+            .to_viewport_view(test_viewport_size())
+            .transform
+            .translation,
+    );
 
     after - before
 }
@@ -239,9 +295,67 @@ fn fly_navigation_maps_wasd_to_viewport_axes() {
     );
 }
 
+#[test]
+fn fly_navigation_maps_qe_to_world_vertical_axis() {
+    let up = translation_delta_after_move(ViewMoveInput {
+        up: true,
+        ..ViewMoveInput::default()
+    });
+    let down = translation_delta_after_move(ViewMoveInput {
+        down: true,
+        ..ViewMoveInput::default()
+    });
+
+    assert!(up.dot(Vec3::Z) > 0.0);
+    assert!(down.dot(Vec3::Z) < 0.0);
+}
+
+#[test]
+fn plain_wheel_moves_along_camera_forward() {
+    let mut camera = ViewCamera::default();
+    let before = Vec3::from_array(
+        camera
+            .to_viewport_view(test_viewport_size())
+            .transform
+            .translation,
+    );
+    let (forward, _, _) = camera.basis();
+
+    camera.wheel_move(1.0);
+    let after = Vec3::from_array(
+        camera
+            .to_viewport_view(test_viewport_size())
+            .transform
+            .translation,
+    );
+
+    assert!((after - before).dot(Vec3::from_array(forward)) > 0.0);
+}
+
+#[test]
+fn plain_lmb_navigation_turns_and_moves_camera() {
+    let mut camera = ViewCamera::default();
+    let before_yaw = camera.yaw();
+    let before = camera
+        .to_viewport_view(test_viewport_size())
+        .transform
+        .translation;
+
+    camera.lmb_navigate(egui::vec2(20.0, 10.0));
+
+    assert_ne!(camera.yaw(), before_yaw);
+    assert_ne!(
+        camera
+            .to_viewport_view(test_viewport_size())
+            .transform
+            .translation,
+        before
+    );
+}
+
 fn projected_origin_delta_after_look(delta: egui::Vec2) -> egui::Vec2 {
     let mut camera = ViewCamera::default();
-    let before_view = camera.to_viewport_view();
+    let before_view = camera.to_viewport_view(test_viewport_size());
     let before = ViewportProjection::from_view(
         &before_view,
         ViewportSize::new(800.0, 600.0).unwrap(),
@@ -252,7 +366,7 @@ fn projected_origin_delta_after_look(delta: egui::Vec2) -> egui::Vec2 {
     .unwrap();
 
     camera.look(delta);
-    let after_view = camera.to_viewport_view();
+    let after_view = camera.to_viewport_view(test_viewport_size());
     let after = ViewportProjection::from_view(
         &after_view,
         ViewportSize::new(800.0, 600.0).unwrap(),
@@ -371,30 +485,31 @@ fn orthographic_presets_are_finite_and_named() {
         super::ViewPreset::Left,
     ] {
         camera.set_preset(preset);
-        let view = camera.to_viewport_view();
+        let view = camera.to_viewport_view(test_viewport_size());
         assert!(view.transform.translation.into_iter().all(f32::is_finite));
         assert!(view.transform.rotation.into_iter().all(f32::is_finite));
+        let projection =
+            ViewportProjection::from_view(&view, test_viewport_size(), ViewportClipPlanes::DEFAULT)
+                .unwrap();
+        assert!(
+            projection.project_world_point([0.0, 0.0, 0.0]).is_some(),
+            "{preset:?} must keep the world origin inside the clip volume"
+        );
         assert!(camera.view_mode_label().contains("Orthographic"));
     }
 }
 
 #[test]
-fn right_mouse_navigation_from_orthographic_returns_to_perspective() {
+fn right_mouse_navigation_keeps_orthographic_mode() {
     let mut camera = ViewCamera::default();
     camera.set_preset(super::ViewPreset::Top);
-    let before = camera.to_viewport_view();
+    let before = camera.to_viewport_view(test_viewport_size());
 
-    camera.look(egui::vec2(20.0, 0.0));
-    camera.move_local(
-        ViewMoveInput {
-            forward: true,
-            ..ViewMoveInput::default()
-        },
-        1.0,
-    );
-    let after = camera.to_viewport_view();
+    camera.ortho_pan(egui::vec2(20.0, 0.0));
+    camera.ortho_zoom(1.0);
+    let after = camera.to_viewport_view(test_viewport_size());
 
-    assert_eq!(camera.view_mode_label(), "Perspective");
+    assert_eq!(camera.view_mode_label(), "Top Orthographic");
     assert_ne!(before.transform.translation, after.transform.translation);
 }
 
@@ -442,7 +557,7 @@ fn orthographic_fit_keeps_selected_mesh_from_filling_viewport() {
     draw.mesh_spans[1].world_center = [0.5, 0.5, 0.5];
 
     assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
-    let view = camera.to_viewport_view();
+    let view = camera.to_viewport_view(test_viewport_size());
     let ecs::Projection::Orthographic { vertical_size } = view.projection else {
         panic!("expected orthographic projection");
     };
@@ -456,7 +571,7 @@ fn frame_selected_mesh_updates_perspective_pivot_and_distance() {
     let mut camera = ViewCamera::default();
 
     assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
-    let view = camera.to_viewport_view();
+    let view = camera.to_viewport_view(test_viewport_size());
     let pivot = Vec3::from_array(camera.orbit_pivot());
     let position = Vec3::from_array(view.transform.translation);
 
@@ -486,12 +601,12 @@ fn dolly_changes_distance_without_changing_fov() {
     let mut camera = ViewCamera::default();
     assert!(camera.fit_draw(&draw, Some(&entity)));
     let before_distance = camera.orbit_distance();
-    let before_fov = camera.fov_y_degrees();
+    let before_fov = camera.horizontal_fov_degrees();
 
     camera.dolly(-20.0);
 
     assert!(camera.orbit_distance() < before_distance);
-    assert_eq!(camera.fov_y_degrees(), before_fov);
+    assert_eq!(camera.horizontal_fov_degrees(), before_fov);
 }
 
 #[test]
@@ -500,16 +615,25 @@ fn orbit_pan_and_dolly_keep_pivot_contract() {
     let mut camera = ViewCamera::default();
     assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
     let pivot = camera.orbit_pivot();
-    let position = camera.to_viewport_view().transform.translation;
+    let position = camera
+        .to_viewport_view(test_viewport_size())
+        .transform
+        .translation;
 
     camera.orbit(egui::vec2(80.0, -20.0));
-    let orbit_position = camera.to_viewport_view().transform.translation;
+    let orbit_position = camera
+        .to_viewport_view(test_viewport_size())
+        .transform
+        .translation;
     assert_eq!(camera.orbit_pivot(), pivot);
     assert_ne!(orbit_position, position);
 
     camera.pan(egui::vec2(12.0, -6.0));
     let panned_pivot = camera.orbit_pivot();
-    let panned_position = camera.to_viewport_view().transform.translation;
+    let panned_position = camera
+        .to_viewport_view(test_viewport_size())
+        .transform
+        .translation;
     assert_ne!(panned_pivot, pivot);
     assert_ne!(panned_position, orbit_position);
 
@@ -529,7 +653,7 @@ fn orthographic_fit_uses_world_metrics_for_center_and_scale() {
     draw.mesh_spans[1].world_center = [12.0, 23.0, 1.0];
 
     assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
-    let view = camera.to_viewport_view();
+    let view = camera.to_viewport_view(test_viewport_size());
 
     assert!(view.transform.translation.into_iter().all(f32::is_finite));
     assert!(
@@ -1036,7 +1160,7 @@ fn fit_visible_draw_keeps_camera_finite() {
     let mut camera = ViewCamera::default();
 
     assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube"))));
-    let view = camera.to_viewport_view();
+    let view = camera.to_viewport_view(test_viewport_size());
 
     assert!(view.transform.translation.into_iter().all(f32::is_finite));
     assert!(view.transform.rotation.into_iter().all(f32::is_finite));
@@ -1048,7 +1172,7 @@ fn fit_visible_draw_pans_edge_selection_toward_center() {
     let mut camera = ViewCamera::default();
 
     assert!(camera.fit_draw(&draw, Some(&EntityId::new("cube_1"))));
-    let view = camera.to_viewport_view();
+    let view = camera.to_viewport_view(test_viewport_size());
     let projection = ViewportProjection::from_view(
         &view,
         ViewportSize::new(800.0, 600.0).unwrap(),
@@ -1069,7 +1193,7 @@ fn fit_visible_draw_without_selection_centers_all_visible_cubes() {
     let mut camera = ViewCamera::default();
 
     assert!(camera.fit_draw(&draw, None));
-    let view = camera.to_viewport_view();
+    let view = camera.to_viewport_view(test_viewport_size());
     let projection = ViewportProjection::from_view(
         &view,
         ViewportSize::new(800.0, 600.0).unwrap(),
@@ -1099,6 +1223,9 @@ fn camera_navigation_consumes_pointer_before_gizmo_and_selection() {
     ));
     assert!(super::camera_navigation_requested(
         false, true, false, false, true
+    ));
+    assert!(super::camera_navigation_requested(
+        false, true, false, true, false
     ));
     assert!(!super::can_start_gizmo_drag(true, false, true));
     assert!(!super::can_select_viewport(true, false, true));
