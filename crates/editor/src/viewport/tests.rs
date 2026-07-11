@@ -179,6 +179,22 @@ fn tilted_perspective_grid_reaches_visible_viewport_edges() {
 }
 
 #[test]
+fn perspective_grid_does_not_end_inside_visible_ground() {
+    let projection = editor_projection_for_size(768.0, 914.0);
+    let frame = adaptive_grid_lines(&projection, GridPlane::XY, 1.0).unwrap();
+    let interior_endpoints = frame
+        .lines
+        .iter()
+        .filter(|line| line.start[2] == 0.0 && line.end[2] == 0.0)
+        .filter_map(|line| projection.project_world_segment(line.start, line.end))
+        .flatten()
+        .filter(|point| point[0].abs() < 0.95 && point[1].abs() < 0.95 && point[1] < 0.5)
+        .count();
+
+    assert_eq!(interior_endpoints, 0);
+}
+
+#[test]
 fn orthographic_side_view_selects_matching_grid_plane() {
     assert_eq!(
         grid_plane_for_preset(super::ViewPreset::Front),

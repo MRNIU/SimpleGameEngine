@@ -134,14 +134,18 @@ fn append_axis_lines(
     step: f32,
 ) {
     let (min_u, max_u, min_v, max_v) = extent;
+    let segment_min_u = min_u - (max_u - min_u) * 16.0;
+    let segment_max_u = max_u + (max_u - min_u) * 16.0;
+    let segment_min_v = min_v - (max_v - min_v) * 16.0;
+    let segment_max_v = max_v + (max_v - min_v) * 16.0;
     for index in 0..line_count(min_u, max_u, step) {
         let coordinate = min_u + index as f32 * step;
         push_projectable(
             lines,
             projection,
             grid_line(
-                u * coordinate + v * min_v,
-                u * coordinate + v * max_v,
+                u * coordinate + v * segment_min_v,
+                u * coordinate + v * segment_max_v,
                 v,
                 coordinate,
                 step,
@@ -154,8 +158,8 @@ fn append_axis_lines(
             lines,
             projection,
             grid_line(
-                v * coordinate + u * min_u,
-                v * coordinate + u * max_u,
+                v * coordinate + u * segment_min_u,
+                v * coordinate + u * segment_max_u,
                 u,
                 coordinate,
                 step,
