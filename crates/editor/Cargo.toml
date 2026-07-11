@@ -7,7 +7,6 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-app = { path = "../app" }
 asset = { path = "../asset" }
 ecs = { path = "../ecs" }
 eframe.workspace = true
