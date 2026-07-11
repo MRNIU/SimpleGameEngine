@@ -1496,6 +1496,73 @@ fn active_gizmo_drag_blocks_plain_lmb_camera_navigation() {
 }
 
 #[test]
+fn orbit_navigation_gesture_stays_latched_when_option_releases_before_lmb() {
+    let active = super::update_navigation_gesture(
+        Some(super::ViewportNavigationGesture::Orbit),
+        super::NavigationGestureInput {
+            primary_down: true,
+            ..Default::default()
+        },
+    );
+
+    assert_eq!(active, Some(super::ViewportNavigationGesture::Orbit));
+}
+
+#[test]
+fn released_navigation_gesture_allows_next_plain_lmb_navigation() {
+    assert_eq!(
+        super::update_navigation_gesture(
+            Some(super::ViewportNavigationGesture::Orbit),
+            super::NavigationGestureInput::default(),
+        ),
+        None
+    );
+    assert_eq!(
+        super::update_navigation_gesture(
+            None,
+            super::NavigationGestureInput {
+                primary_down: true,
+                primary_dragged: true,
+                ..Default::default()
+            },
+        ),
+        Some(super::ViewportNavigationGesture::LmbNavigate)
+    );
+}
+
+#[test]
+fn option_track_and_dolly_navigation_gestures_latch_until_button_release() {
+    for (gesture, input) in [
+        (
+            super::ViewportNavigationGesture::Track,
+            super::NavigationGestureInput {
+                middle_down: true,
+                ..Default::default()
+            },
+        ),
+        (
+            super::ViewportNavigationGesture::Dolly,
+            super::NavigationGestureInput {
+                right_down: true,
+                ..Default::default()
+            },
+        ),
+    ] {
+        assert_eq!(
+            super::update_navigation_gesture(Some(gesture), input),
+            Some(gesture)
+        );
+        assert_eq!(
+            super::update_navigation_gesture(
+                Some(gesture),
+                super::NavigationGestureInput::default()
+            ),
+            None
+        );
+    }
+}
+
+#[test]
 fn active_gizmo_blocks_selection_after_camera_does_not_consume() {
     assert!(!super::can_start_gizmo_drag(true, true, false));
     assert!(!super::can_select_viewport(true, true, false));

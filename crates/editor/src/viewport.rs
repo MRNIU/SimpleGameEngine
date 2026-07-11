@@ -54,6 +54,50 @@ pub(crate) struct OrientationCubeLayout {
     pub(crate) perspective: egui::Rect,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ViewportNavigationGesture {
+    Orbit,
+    Track,
+    Dolly,
+    LmbNavigate,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct NavigationGestureInput {
+    pub(crate) alt_down: bool,
+    pub(crate) primary_pressed: bool,
+    pub(crate) middle_pressed: bool,
+    pub(crate) right_pressed: bool,
+    pub(crate) primary_down: bool,
+    pub(crate) middle_down: bool,
+    pub(crate) right_down: bool,
+    pub(crate) primary_dragged: bool,
+}
+
+#[must_use]
+pub(crate) const fn update_navigation_gesture(
+    current: Option<ViewportNavigationGesture>,
+    input: NavigationGestureInput,
+) -> Option<ViewportNavigationGesture> {
+    match current {
+        Some(ViewportNavigationGesture::Orbit | ViewportNavigationGesture::LmbNavigate)
+            if input.primary_down =>
+        {
+            current
+        }
+        Some(ViewportNavigationGesture::Track) if input.middle_down => current,
+        Some(ViewportNavigationGesture::Dolly) if input.right_down => current,
+        Some(_) => None,
+        None if input.alt_down && input.primary_pressed => Some(ViewportNavigationGesture::Orbit),
+        None if input.alt_down && input.middle_pressed => Some(ViewportNavigationGesture::Track),
+        None if input.alt_down && input.right_pressed => Some(ViewportNavigationGesture::Dolly),
+        None if input.primary_down && input.primary_dragged => {
+            Some(ViewportNavigationGesture::LmbNavigate)
+        }
+        None => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ViewportAction {
     None,
@@ -184,6 +228,10 @@ pub(crate) fn draw_viewport(
     gizmo.sync_active_from_drag();
     let primary_down = ui.input(|input| input.pointer.primary_down());
     let primary_pressed = ui.input(|input| input.pointer.primary_pressed());
+    let middle_pressed =
+        ui.input(|input| input.pointer.button_pressed(egui::PointerButton::Middle));
+    let right_pressed =
+        ui.input(|input| input.pointer.button_pressed(egui::PointerButton::Secondary));
     let middle_down = ui.input(|input| input.pointer.middle_down());
     let right_down = ui.input(|input| input.pointer.secondary_down());
     let alt_down = ui.input(|input| input.modifiers.alt);
@@ -250,13 +298,40 @@ pub(crate) fn draw_viewport(
     }
 
     let viewport_hovered = response.hovered();
-    let camera_navigation = camera_navigation_requested(
-        alt_down,
+    let plain_lmb_dragged = plain_lmb_navigation_requested(
         viewport_hovered,
         primary_down,
-        middle_down,
-        right_down,
-    );
+        alt_down || middle_down || right_down,
+        gizmo.drag().is_some(),
+        response.dragged_by(egui::PointerButton::Primary),
+        camera.is_orthographic(),
+    ) && gizmo.hovered().is_none();
+    let navigation_gesture = if camera.is_orthographic() {
+        None
+    } else {
+        update_navigation_gesture(
+            camera.navigation_gesture(),
+            NavigationGestureInput {
+                alt_down,
+                primary_pressed,
+                middle_pressed,
+                right_pressed,
+                primary_down,
+                middle_down,
+                right_down,
+                primary_dragged: plain_lmb_dragged,
+            },
+        )
+    };
+    camera.set_navigation_gesture(navigation_gesture);
+    let camera_navigation = navigation_gesture.is_some()
+        || camera_navigation_requested(
+            alt_down,
+            viewport_hovered,
+            primary_down,
+            middle_down,
+            right_down,
+        );
     if camera_navigation {
         pointer_consumed_by_camera = true;
         if navigation_enabled {
@@ -268,38 +343,50 @@ pub(crate) fn draw_viewport(
                 } else if right_down || middle_down {
                     camera.ortho_pan(pointer_delta);
                 }
-            } else if alt_down && primary_down {
-                if response.dragged_by(egui::PointerButton::Primary) {
-                    camera.orbit(pointer_delta);
+            } else {
+                match navigation_gesture {
+                    Some(ViewportNavigationGesture::Orbit) => {
+                        if response.dragged_by(egui::PointerButton::Primary) {
+                            camera.orbit(pointer_delta);
+                        }
+                    }
+                    Some(ViewportNavigationGesture::Track) => {
+                        if response.dragged_by(egui::PointerButton::Middle) {
+                            camera.pan(pointer_delta);
+                        }
+                    }
+                    Some(ViewportNavigationGesture::Dolly) => {
+                        if response.dragged_by(egui::PointerButton::Secondary) {
+                            camera.dolly(pointer_delta.y);
+                        }
+                    }
+                    Some(ViewportNavigationGesture::LmbNavigate) => {
+                        camera.lmb_navigate(pointer_delta);
+                    }
+                    None if middle_down || (primary_down && right_down) => {
+                        camera.pan(pointer_delta);
+                    }
+                    None if right_down => {
+                        if response.dragged_by(egui::PointerButton::Secondary) {
+                            camera.look(pointer_delta);
+                        }
+                        if scroll_y != 0.0 {
+                            camera.adjust_speed_level(if scroll_y > 0.0 { 1 } else { -1 });
+                        }
+                        camera.move_local(
+                            ViewMoveInput {
+                                forward: ui.input(|input| input.key_down(egui::Key::W)),
+                                backward: ui.input(|input| input.key_down(egui::Key::S)),
+                                left: ui.input(|input| input.key_down(egui::Key::A)),
+                                right: ui.input(|input| input.key_down(egui::Key::D)),
+                                up: ui.input(|input| input.key_down(egui::Key::E)),
+                                down: ui.input(|input| input.key_down(egui::Key::Q)),
+                            },
+                            ui.input(|input| input.stable_dt),
+                        );
+                    }
+                    None => {}
                 }
-            } else if alt_down && middle_down {
-                if response.dragged_by(egui::PointerButton::Middle) {
-                    camera.pan(pointer_delta);
-                }
-            } else if alt_down && right_down {
-                if response.dragged_by(egui::PointerButton::Secondary) {
-                    camera.dolly(pointer_delta.y);
-                }
-            } else if middle_down || (primary_down && right_down) {
-                camera.pan(pointer_delta);
-            } else if right_down {
-                if response.dragged_by(egui::PointerButton::Secondary) {
-                    camera.look(pointer_delta);
-                }
-                if scroll_y != 0.0 {
-                    camera.adjust_speed_level(if scroll_y > 0.0 { 1 } else { -1 });
-                }
-                camera.move_local(
-                    ViewMoveInput {
-                        forward: ui.input(|input| input.key_down(egui::Key::W)),
-                        backward: ui.input(|input| input.key_down(egui::Key::S)),
-                        left: ui.input(|input| input.key_down(egui::Key::A)),
-                        right: ui.input(|input| input.key_down(egui::Key::D)),
-                        up: ui.input(|input| input.key_down(egui::Key::E)),
-                        down: ui.input(|input| input.key_down(egui::Key::Q)),
-                    },
-                    ui.input(|input| input.stable_dt),
-                );
             }
         } else {
             action =
@@ -315,22 +402,6 @@ pub(crate) fn draw_viewport(
             } else {
                 camera.wheel_move(scroll_y);
             }
-            ui.ctx().request_repaint();
-        }
-    }
-
-    if plain_lmb_navigation_requested(
-        viewport_hovered,
-        primary_down,
-        alt_down || middle_down || right_down,
-        gizmo.drag().is_some(),
-        response.dragged_by(egui::PointerButton::Primary),
-        camera.is_orthographic(),
-    ) && gizmo.hovered().is_none()
-    {
-        pointer_consumed_by_camera = true;
-        if navigation_enabled {
-            camera.lmb_navigate(pointer_delta);
             ui.ctx().request_repaint();
         }
     }

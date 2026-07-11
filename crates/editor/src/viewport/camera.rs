@@ -5,7 +5,10 @@ use eframe::egui;
 use math::{Mat3, Quat, Transform, Vec3};
 use render::{ViewportDrawCall, ViewportView};
 
-use super::grid::{GridPlane, GridState, grid_plane_for_preset};
+use super::{
+    ViewportNavigationGesture,
+    grid::{GridPlane, GridState, grid_plane_for_preset},
+};
 
 const EDITOR_VIEW_ENTITY: &str = "editor_view";
 const LOOK_SENSITIVITY: f32 = 0.01;
@@ -35,6 +38,7 @@ pub(crate) struct ViewCamera {
     ortho_center: [f32; 3],
     ortho_scale: f32,
     grid: GridState,
+    navigation_gesture: Option<ViewportNavigationGesture>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -266,6 +270,18 @@ impl ViewCamera {
         }
     }
 
+    #[must_use]
+    pub(crate) const fn navigation_gesture(self) -> Option<ViewportNavigationGesture> {
+        self.navigation_gesture
+    }
+
+    pub(crate) const fn set_navigation_gesture(
+        &mut self,
+        gesture: Option<ViewportNavigationGesture>,
+    ) {
+        self.navigation_gesture = gesture;
+    }
+
     pub(crate) fn orbit(&mut self, delta: egui::Vec2) {
         if !delta.x.is_finite() || !delta.y.is_finite() {
             return;
@@ -473,6 +489,7 @@ impl Default for ViewCamera {
             ortho_center: [0.0, 0.0, 0.0],
             ortho_scale: 5.0,
             grid: GridState::DEFAULT,
+            navigation_gesture: None,
         }
     }
 }
