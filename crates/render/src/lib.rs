@@ -8,6 +8,13 @@ use ecs::{Camera, EntityId, Light, Projection, World};
 use math::{Quat, Transform, Vec3};
 use wgpu::util::DeviceExt;
 
+mod viewport_projection;
+
+pub use viewport_projection::{
+    DEFAULT_FAR_PLANE, DEFAULT_NEAR_PLANE, ViewportClipPlanes, ViewportSize, WorldRay,
+};
+pub(crate) use viewport_projection::ViewportProjectionMatrix;
+
 pub const VIEWPORT_SHADER: &str = include_str!("viewport.wgsl");
 const VIEWPORT_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] = [
     wgpu::VertexAttribute {

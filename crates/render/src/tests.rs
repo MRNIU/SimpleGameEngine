@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    ViewportProjection, ViewportView, extract_render_scene, fit_viewport_draw_to_size,
-    viewport_draw_call, viewport_draw_call_with_selection, viewport_draw_call_with_view,
+    ViewportClipPlanes, ViewportProjection, ViewportProjectionMatrix, ViewportSize, ViewportView,
+    extract_render_scene, fit_viewport_draw_to_size, viewport_draw_call,
+    viewport_draw_call_with_selection, viewport_draw_call_with_view,
     viewport_draw_call_with_view_and_meshes, viewport_pipeline_info, viewport_vertex_buffer_layout,
     viewport_vertex_bytes,
 };
@@ -36,6 +37,77 @@ fn world_with_camera_transform(transform: Transform) -> World {
         )
         .unwrap();
     world
+}
+
+fn matrix_projection() -> ViewportProjectionMatrix {
+    let view = ViewportView::new(
+        EntityId::new("matrix_camera"),
+        Transform::identity(),
+        Projection::Perspective {
+            fov_y_degrees: 90.0,
+        },
+    );
+    ViewportProjectionMatrix::from_view(
+        &view,
+        ViewportSize::new(1600.0, 900.0).unwrap(),
+        ViewportClipPlanes::DEFAULT,
+    )
+    .unwrap()
+}
+
+#[test]
+fn viewport_projection_matrix_preserves_world_line_collinearity() {
+    let projection = matrix_projection();
+    assert!(
+        projection
+            .view_projection_array()
+            .into_iter()
+            .all(f32::is_finite)
+    );
+    let a = projection.project_world_point([-2.0, 0.0, 4.0]).unwrap();
+    let b = projection.project_world_point([0.0, 0.0, 8.0]).unwrap();
+    let c = projection.project_world_point([2.0, 0.0, 12.0]).unwrap();
+    let cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+
+    assert!(cross.abs() < 1.0e-5, "projected line bent: {cross}");
+}
+
+#[test]
+fn viewport_projection_matrix_rejects_points_outside_depth_range() {
+    let projection = matrix_projection();
+
+    assert!(projection.project_world_point([0.0, 0.0, -1.0]).is_none());
+    assert!(projection.project_world_point([0.0, 0.0, 0.05]).is_none());
+    assert!(projection.project_world_point([0.0, 0.0, 20_000.0]).is_none());
+}
+
+#[test]
+fn viewport_projection_matrix_center_ray_matches_camera_forward() {
+    let ray = matrix_projection().screen_ray([0.0, 0.0]).unwrap();
+
+    assert!((ray.direction[0]).abs() < 1.0e-5);
+    assert!((ray.direction[1]).abs() < 1.0e-5);
+    assert!((ray.direction[2] - 1.0).abs() < 1.0e-5);
+}
+
+#[test]
+fn viewport_projection_matrix_rejects_invalid_size_and_clip_planes() {
+    assert!(ViewportSize::new(0.0, 900.0).is_none());
+    assert!(ViewportSize::new(f32::NAN, 900.0).is_none());
+    assert!(ViewportClipPlanes::new(0.0, 100.0).is_none());
+    assert!(ViewportClipPlanes::new(10.0, 1.0).is_none());
+}
+
+#[test]
+fn viewport_projection_matrix_clips_segment_to_frustum() {
+    let projection = matrix_projection();
+    let clipped = projection
+        .project_world_segment([-4.0, 0.0, 0.05], [4.0, 0.0, 8.0])
+        .unwrap();
+
+    assert!(clipped.into_iter().flatten().all(f32::is_finite));
+    assert!(clipped[0][0] >= -1.0 && clipped[0][0] <= 1.0);
+    assert!(clipped[1][0] >= -1.0 && clipped[1][0] <= 1.0);
 }
 
 fn add_cube(world: &mut World, id: &str, translation: [f32; 3]) {
