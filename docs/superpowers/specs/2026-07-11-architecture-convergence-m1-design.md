@@ -4,7 +4,7 @@
 
 ## 结论
 
-当前代码没有整体架构腐化，但实际产品路径、Cargo 依赖和架构文档之间已经出现局部漂移，同时 `render` 与 `editor` 的少数实现文件持续聚合职责。本里程碑做一次最小架构收口：删除未进入产品路径的 `app` / `input` / `window` 支线，清理残留依赖，并在现有 crate 内拆分高频热点文件。
+当前代码没有整体架构腐化，但实际产品路径、Cargo 依赖和架构文档之间已经出现局部漂移，同时 `render` 与 `editor` 的少数实现文件持续聚合职责。本里程碑做一次最小架构收口：保留 `app` / `input` / `window` 作为未来 runtime 基础能力的孵化边界，明确它们不属于当前 editor 产品路径，清理虚假依赖，并在现有 crate 内拆分高频热点文件。
 
 本次不改变 editor、runtime、scene、asset、ECS 或 viewport 的用户可见行为，不新增 crate、依赖、trait 层、事件总线或调度框架。
 
@@ -27,11 +27,11 @@
 
 ## 方案比较
 
-### 方案 A：删除旁路，保留现有真实路径并做 crate 内拆分
+### 方案 A：保留孵化 crate，明确定位并做 crate 内拆分
 
-删除当前没有产品调用方的 `app`、`input`、`window` crate；editor 继续由 eframe 驱动，runtime 继续保持薄入口。热点文件只在原 crate 内按职责拆分，公共 API 和行为保持不变。
+保留 `app`、`input`、`window` crate，但明确它们是尚未接入当前产品路径的 runtime 基础能力孵化边界。editor 继续由 eframe 驱动，runtime 继续保持薄入口；editor/runtime 不再声明未使用的 `app` dependency。热点文件只在原 crate 内按职责拆分，公共 API 和行为保持不变。
 
-优点：与当前事实一致，删除量大于新增量，不引入推测性框架。缺点：将来出现真正 runtime loop 时，需要基于届时需求重新建立 lifecycle/input/window 边界。
+优点：保留既有实验方向，同时让文档和 Cargo 依赖准确表达当前事实，不强迫 editor 接入不匹配的生命周期。缺点：三个 crate 暂时只有内部调用和单元测试，后续必须继续避免把孵化状态误写成已接入能力。
 
 ### 方案 B：强制让 editor 与 runtime 接入 app
 
@@ -39,18 +39,18 @@
 
 优点：表面上恢复原设计依赖图。缺点：当前没有共享 loop 需求，eframe 与 runtime 的生命周期也不同，会提前引入 adapter、trait 和状态同步问题。
 
-### 方案 C：只拆大文件，不处理旁路
+### 方案 C：删除 app/input/window
 
-保留所有 crate 和 Cargo 依赖，只移动源码文件。
+删除当前没有产品调用方的三个 crate，将来出现真实 runtime loop 时再重新建立边界。
 
-优点：变更最小。缺点：继续保留不参与产品路径的架构层，文档和代码仍然表达错误关系。
+优点：workspace 最精简。缺点：丢失用户要求保留的 runtime 基础实验边界。
 
 采用方案 A。
 
 ## 目标
 
 1. 让 workspace 成员、Cargo 依赖、README、AGENTS 和架构文档与真实运行路径一致。
-2. 删除没有产品调用方的 app/input/window 支线，不保留兼容 facade。
+2. 保留 app/input/window，并明确其孵化定位、当前调用关系和进入产品路径的条件。
 3. 降低 render 与 editor 热点文件的修改集中度。
 4. 保持现有 public API、scene schema、asset manifest、viewport 行为和 smoke 输出合同。
 5. 完整 CI gate 继续通过。
@@ -64,23 +64,24 @@
 - 不改变 WGPU pipeline、projection、grid、selection、gizmo 或 Pilot Camera 行为。
 - 不以本次拆分为理由重命名公共类型或批量改写测试。
 
-## Workspace 收口
+## Workspace 定位收口
 
-从 workspace 删除：
+以下 crate 继续保留为 workspace member：
 
-- `crates/app/`
-- `crates/input/`
-- `crates/window/`
+- `app`：未来非 editor runtime 的 lifecycle、tick 和 render extraction glue 孵化边界；当前不拥有 editor 的 eframe lifecycle，也没有接入 runtime binary。
+- `input`：未来 runtime/shared frontend 的 engine-level input snapshot 孵化边界；当前只被 `app` 使用，不包装或复制 editor 的 egui input state。
+- `window`：未来独立 winit runtime window 的配置孵化边界；当前只被 `app` 使用，不拥有 editor 的 eframe window。
 
-同步清理：
+当前允许的依赖只有 `app -> ecs/render/input/window`。editor 和 runtime 不依赖 `app`，直到出现真实共享 lifecycle 合同；input/window 不反向依赖 app、editor 或 runtime。
 
-- root `Cargo.toml` 的 workspace members 和不再需要的直接 `winit` workspace dependency。
+同步收口：
+
 - `crates/editor/Cargo.toml` 与 `crates/runtime/Cargo.toml` 中未使用的 `app` dependency。
 - `crates/scene/Cargo.toml` 中未使用的 `asset` dependency；仅测试需要的 `math` 移入 `dev-dependencies`。
 - README、AGENTS 和 `docs/architecture/overview.md` 中的 workspace 清单、职责表和依赖关系。
-- 已批准架构设计中的当前状态说明：保留历史决策背景，但明确 app/input/window 已在本里程碑退出当前 MVP，而不是继续把它们描述为活跃路径。
+- 已批准架构设计中的当前状态说明：保留历史决策背景，同时明确 app/input/window 是孵化边界而不是当前 editor/runtime 已接入路径。
 
-未来只有在出现 editor 之外的真实持续运行 loop、跨前端共享 input state 或独立 winit window owner 时，才重新评估对应边界；届时根据真实调用方设计，不恢复旧占位 API。
+未来只有在出现 editor 之外的真实持续运行 loop、跨前端共享 input state 或独立 winit window owner 时，才允许扩展并接入对应边界；届时根据真实调用方设计，不提前增加 adapter、trait 或配置。
 
 ## Render 内部结构
 
@@ -140,7 +141,7 @@ scene path + explicit project root
 ## 错误与兼容性
 
 - 文件、RON、OBJ 和 WGPU 错误口径保持不变。
-- public type、函数签名和 re-export 保持不变；仅删除没有外部产品调用方的 app/input/window crate API。
+- public type、函数签名和 re-export 保持不变；app/input/window 的现有 API 继续保留，但文档明确其孵化状态。
 - `.scene.ron`、`project.sge.ron` 和 `asset_manifest.ron` 不发生格式变化。
 - smoke summary 字段和成功条件保持不变。
 - 不声称本次收口新增跨平台或 GPU 兼容性证据。
@@ -149,9 +150,9 @@ scene path + explicit project root
 
 结构验证：
 
-- workspace metadata 不再包含 app/input/window package。
-- editor、runtime 和 scene manifests 不再声明上述残留依赖。
-- `rg` 确认 README、AGENTS 和当前架构 overview 不再把已删除 crate 描述为活跃路径。
+- workspace metadata 继续包含 app/input/window package，且三者的 crate 文档明确孵化定位。
+- editor 与 runtime manifests 不再声明 `app` dependency；scene 不再声明未使用的 `asset` 普通 dependency。
+- `rg` 确认 README、AGENTS 和当前架构 overview 没有把 app/input/window 描述为当前 editor/runtime 已接入路径。
 - `render` crate root 的现有 public 名称仍可被 editor/runtime/tests 编译使用。
 
 自动 gate：
@@ -168,7 +169,7 @@ xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron
 
 ## 完成标准
 
-- app/input/window 及其残留依赖已删除，文档与真实入口一致。
+- app/input/window 保持可编译和测试，定位、当前调用关系及接入条件已写清；editor/runtime 的虚假 app dependency 已删除。
 - render 和 editor 热点按上述职责拆分，crate root public API 与行为保持。
 - 没有新增 crate、第三方依赖、单实现 trait 或推测性生命周期框架。
 - CI gate、workspace build 和现有 editor semantic/WGPU smoke 全部通过。
