@@ -341,10 +341,10 @@ impl EditorApp {
             && self.viewport_camera.horizontal_fov_degrees() == 90.0
             && self.viewport_camera.speed_level() == 4
             && self.viewport_camera.speed_scalar() == 1.0;
+        let viewport_pipeline =
+            render::viewport_pipeline_info(eframe::wgpu::TextureFormat::Rgba8UnormSrgb);
         let viewport_wgpu_depth_ok =
-            render::viewport_pipeline_info(eframe::wgpu::TextureFormat::Rgba8UnormSrgb)
-                .depth_format
-                .is_some();
+            viewport_pipeline.depth_format.is_some() && viewport_pipeline.grid_depth_write;
 
         anyhow::ensure!(viewport_projection_ok, "smoke viewport projection failed");
         anyhow::ensure!(viewport_grid_ok, "smoke adaptive grid failed");

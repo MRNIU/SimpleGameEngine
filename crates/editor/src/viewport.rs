@@ -356,21 +356,22 @@ pub(crate) fn draw_viewport(
         action = hit_test_viewport_draw(draw, projection, rect, pointer);
     }
 
-    if let Some((draw, projection, probe)) = draw
-        .zip(projection.as_ref())
-        .zip(wgpu_probe)
-        .map(|((draw, projection), probe)| (draw, projection, probe))
-    {
-        paint_wgpu_viewport(&painter, rect, draw, projection, probe);
-    } else if let Some((draw, projection)) = draw.zip(projection.as_ref()) {
-        paint_fallback_viewport(rect, &painter, draw, projection);
-    }
-    if let Some(projection) = projection.as_ref()
-        && let Some(frame) =
-            grid::adaptive_grid_lines(projection, camera.grid_plane(), camera.grid_minor_step())
-    {
+    let grid_frame = projection.as_ref().and_then(|projection| {
+        grid::adaptive_grid_lines(projection, camera.grid_plane(), camera.grid_minor_step())
+    });
+    if let Some(frame) = grid_frame.as_ref() {
         camera.set_grid_minor_step(frame.minor_step);
-        paint_reference_lines(&painter, rect, projection, &frame.lines);
+    }
+    let grid_lines = grid_frame
+        .as_ref()
+        .map_or(&[] as &[ReferenceLine], |frame| frame.lines.as_slice());
+    if let (Some(projection), Some(probe)) = (projection.as_ref(), wgpu_probe) {
+        paint_wgpu_viewport(&painter, rect, draw, grid_lines, projection, probe);
+    } else if let Some(projection) = projection.as_ref() {
+        paint_reference_lines(&painter, rect, projection, grid_lines);
+        if let Some(draw) = draw {
+            paint_fallback_viewport(rect, &painter, draw, projection);
+        }
     }
     let hint_text = hint_text_override.map_or_else(
         || camera.hint_text(draw, selected),

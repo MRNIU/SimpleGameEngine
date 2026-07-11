@@ -126,6 +126,30 @@ fn perspective_grid_lines_are_projectable_after_clipping() {
 }
 
 #[test]
+fn perspective_grid_survives_when_one_plane_axis_is_behind_camera() {
+    let forward = Vec3::new(-1.0, 0.0, -1.0).normalize();
+    let right = Vec3::NEG_Y;
+    let up = forward.cross(right).normalize();
+    let rotation = Quat::from_mat3(&math::Mat3::from_cols(right, up, forward));
+    let view = ViewportView::new(
+        EntityId::new("low_camera"),
+        Transform {
+            translation: [0.1, 0.0, 0.1],
+            rotation: rotation.to_array(),
+            scale: [1.0; 3],
+        },
+        Projection::Perspective {
+            fov_y_degrees: 60.0,
+        },
+    );
+    let size = ViewportSize::new(800.0, 600.0).unwrap();
+    let projection =
+        ViewportProjection::from_view(&view, size, ViewportClipPlanes::DEFAULT).unwrap();
+
+    assert!(adaptive_grid_lines(&projection, GridPlane::XY, 1.0).is_some());
+}
+
+#[test]
 fn tilted_perspective_grid_reaches_visible_viewport_edges() {
     let projection = editor_projection_for_size(384.0, 448.0);
     let frame = adaptive_grid_lines(&projection, GridPlane::XY, 1.0).unwrap();
@@ -959,6 +983,54 @@ fn move_gizmo_axes_follow_projected_world_axes() {
             actual.dot(expected) > 0.99,
             "{handle:?}: {actual:?} != {expected:?}"
         );
+    }
+}
+
+#[test]
+fn top_move_gizmo_omits_view_aligned_z_axis() {
+    let draw = draw_with_two_mesh_spans();
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+    let size = ViewportSize::new(rect.width(), rect.height()).unwrap();
+    let mut camera = ViewCamera::default();
+    camera.set_preset(super::ViewPreset::Top);
+    let projection = ViewportProjection::from_view(
+        &camera.to_viewport_view(size),
+        size,
+        ViewportClipPlanes::DEFAULT,
+    )
+    .unwrap();
+
+    let handles = super::gizmo_layout(
+        &draw,
+        &projection,
+        rect,
+        Some(&EntityId::new("cube_1")),
+        GizmoMode::Move,
+    );
+
+    assert!(
+        handles
+            .iter()
+            .any(|handle| handle.handle == GizmoHandle::MoveX)
+    );
+    assert!(
+        handles
+            .iter()
+            .any(|handle| handle.handle == GizmoHandle::MoveY)
+    );
+    assert!(
+        !handles
+            .iter()
+            .any(|handle| handle.handle == GizmoHandle::MoveZ)
+    );
+    for (handle, world_axis) in [(GizmoHandle::MoveX, Vec3::X), (GizmoHandle::MoveY, Vec3::Y)] {
+        let actual = handles
+            .iter()
+            .find(|candidate| candidate.handle == handle)
+            .unwrap()
+            .axis;
+        let expected = projected_screen_axis(&projection, rect, [0.6, 0.0, 0.0], world_axis);
+        assert!(actual.dot(expected) > 0.99);
     }
 }
 

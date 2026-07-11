@@ -75,12 +75,14 @@ pub(crate) fn adaptive_grid_lines(
     .collect::<Vec<_>>();
     let anchor = intersections.last().copied()?;
     let (mut min_u, mut max_u, mut min_v, mut max_v) = plane_extent(&intersections, u, v)?;
-    let spacing = projected_spacing(projection, anchor, u, previous_step)?.max(projected_spacing(
-        projection,
-        anchor,
-        v,
-        previous_step,
-    )?);
+    let spacing = match (
+        projected_spacing(projection, anchor, u, previous_step),
+        projected_spacing(projection, anchor, v, previous_step),
+    ) {
+        (Some(u), Some(v)) => u.max(v),
+        (Some(spacing), None) | (None, Some(spacing)) => spacing,
+        (None, None) => return None,
+    };
     let mut step = grid_step_for_spacing(spacing, previous_step).clamp(0.000_1, 1_000_000.0);
 
     loop {

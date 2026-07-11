@@ -197,6 +197,8 @@ fn viewport_pipeline_declares_depth_testing() {
     let info = viewport_pipeline_info(wgpu::TextureFormat::Rgba8UnormSrgb);
 
     assert_eq!(info.depth_format, Some(wgpu::TextureFormat::Depth32Float));
+    assert_eq!(info.grid_topology, wgpu::PrimitiveTopology::LineList);
+    assert!(info.grid_depth_write);
 }
 
 fn add_light(world: &mut World, id: &str, color: [f32; 3], intensity: f32) {

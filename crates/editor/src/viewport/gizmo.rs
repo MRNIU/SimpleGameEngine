@@ -323,50 +323,44 @@ pub(crate) fn paint_gizmo_handles(
     }
 }
 
-fn move_gizmo_handles(center: egui::Pos2, axes: [egui::Vec2; 3]) -> Vec<GizmoHandleRect> {
-    vec![
-        GizmoHandleRect::new(
-            GizmoHandle::MoveX,
-            center + axes[0] * GIZMO_HANDLE_LENGTH,
-            axes[0],
-            GIZMO_MOVE_HIT_SIZE,
-        ),
-        GizmoHandleRect::new(
-            GizmoHandle::MoveY,
-            center + axes[1] * GIZMO_HANDLE_LENGTH,
-            axes[1],
-            GIZMO_MOVE_HIT_SIZE,
-        ),
-        GizmoHandleRect::new(
-            GizmoHandle::MoveZ,
-            center + axes[2] * GIZMO_HANDLE_LENGTH,
-            axes[2],
-            GIZMO_MOVE_HIT_SIZE,
-        ),
-    ]
+fn move_gizmo_handles(center: egui::Pos2, axes: [Option<egui::Vec2>; 3]) -> Vec<GizmoHandleRect> {
+    axis_handles(
+        center,
+        axes,
+        [GizmoHandle::MoveX, GizmoHandle::MoveY, GizmoHandle::MoveZ],
+    )
 }
 
-fn rotate_gizmo_handles(center: egui::Pos2, axes: [egui::Vec2; 3]) -> Vec<GizmoHandleRect> {
-    vec![
-        GizmoHandleRect::new(
+fn rotate_gizmo_handles(center: egui::Pos2, axes: [Option<egui::Vec2>; 3]) -> Vec<GizmoHandleRect> {
+    axis_handles(
+        center,
+        axes,
+        [
             GizmoHandle::RotateX,
-            center + axes[0] * GIZMO_HANDLE_LENGTH,
-            axes[0],
-            GIZMO_MOVE_HIT_SIZE,
-        ),
-        GizmoHandleRect::new(
             GizmoHandle::RotateY,
-            center + axes[1] * GIZMO_HANDLE_LENGTH,
-            axes[1],
-            GIZMO_MOVE_HIT_SIZE,
-        ),
-        GizmoHandleRect::new(
             GizmoHandle::RotateZ,
-            center + axes[2] * GIZMO_HANDLE_LENGTH,
-            axes[2],
-            GIZMO_MOVE_HIT_SIZE,
-        ),
-    ]
+        ],
+    )
+}
+
+fn axis_handles(
+    center: egui::Pos2,
+    axes: [Option<egui::Vec2>; 3],
+    handles: [GizmoHandle; 3],
+) -> Vec<GizmoHandleRect> {
+    axes.into_iter()
+        .zip(handles)
+        .filter_map(|(axis, handle)| {
+            axis.map(|axis| {
+                GizmoHandleRect::new(
+                    handle,
+                    center + axis * GIZMO_HANDLE_LENGTH,
+                    axis,
+                    GIZMO_MOVE_HIT_SIZE,
+                )
+            })
+        })
+        .collect()
 }
 
 fn span_screen_bounds(
@@ -399,11 +393,11 @@ fn projected_world_axes(
     projection: &ViewportProjection,
     rect: egui::Rect,
     origin: [f32; 3],
-) -> [egui::Vec2; 3] {
+) -> [Option<egui::Vec2>; 3] {
     [
-        projected_world_axis(projection, rect, origin, Vec3::X, egui::Vec2::X),
-        projected_world_axis(projection, rect, origin, Vec3::Y, egui::Vec2::Y),
-        projected_world_axis(projection, rect, origin, Vec3::Z, -egui::Vec2::Y),
+        projected_world_axis(projection, rect, origin, Vec3::X),
+        projected_world_axis(projection, rect, origin, Vec3::Y),
+        projected_world_axis(projection, rect, origin, Vec3::Z),
     ]
 }
 
@@ -412,24 +406,15 @@ fn projected_world_axis(
     rect: egui::Rect,
     origin: [f32; 3],
     axis: Vec3,
-    fallback: egui::Vec2,
-) -> egui::Vec2 {
-    let Some(start) = projected_screen_position(projection, rect, origin) else {
-        return fallback;
-    };
-    let Some(end) = projected_screen_position(
+) -> Option<egui::Vec2> {
+    let start = projected_screen_position(projection, rect, origin)?;
+    let end = projected_screen_position(
         projection,
         rect,
         (Vec3::from_array(origin) + axis).to_array(),
-    ) else {
-        return fallback;
-    };
+    )?;
     let projected = normalized_screen_axis(end - start);
-    if projected == egui::Vec2::ZERO {
-        fallback
-    } else {
-        projected
-    }
+    (projected != egui::Vec2::ZERO).then_some(projected)
 }
 
 fn projected_screen_position(

@@ -6,7 +6,9 @@ use std::sync::{
 };
 
 use eframe::{egui, egui_wgpu, wgpu};
-use render::{ViewportDrawCall, ViewportRenderer};
+use render::{ViewportDrawCall, ViewportRenderFrame, ViewportRenderer, ViewportVertex};
+
+use super::ReferenceLine;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct ViewportWgpuReport {
@@ -61,7 +63,8 @@ impl ViewportGpuResources {
 
 #[derive(Clone)]
 struct ViewportWgpuCallback {
-    draw: ViewportDrawCall,
+    draw: Option<ViewportDrawCall>,
+    grid_vertices: Vec<ViewportVertex>,
     view_projection: [f32; 16],
     logical_size: [f32; 2],
     probe: ViewportWgpuProbe,
@@ -86,9 +89,12 @@ impl egui_wgpu::CallbackTrait for ViewportWgpuCallback {
                 device,
                 queue,
                 egui_encoder,
-                Some(&self.draw),
-                self.view_projection,
-                target_size,
+                ViewportRenderFrame {
+                    draw: self.draw.as_ref(),
+                    grid_vertices: &self.grid_vertices,
+                    view_projection: self.view_projection,
+                    target_size,
+                },
             );
             self.probe.mark_prepared();
         }
@@ -126,17 +132,41 @@ pub(crate) fn install_viewport_renderer(creation_context: &eframe::CreationConte
 pub(crate) fn paint_wgpu_viewport(
     painter: &egui::Painter,
     rect: egui::Rect,
-    draw: &ViewportDrawCall,
+    draw: Option<&ViewportDrawCall>,
+    grid_lines: &[ReferenceLine],
     projection: &render::ViewportProjection,
     probe: &ViewportWgpuProbe,
 ) {
     painter.add(egui_wgpu::Callback::new_paint_callback(
         rect,
         ViewportWgpuCallback {
-            draw: draw.clone(),
+            draw: draw.cloned(),
+            grid_vertices: grid_vertices(grid_lines),
             view_projection: projection.view_projection_array(),
             logical_size: [rect.width(), rect.height()],
             probe: probe.clone(),
         },
     ));
+}
+
+fn grid_vertices(lines: &[ReferenceLine]) -> Vec<ViewportVertex> {
+    lines
+        .iter()
+        .flat_map(|line| {
+            let color = line
+                .color
+                .to_array()
+                .map(|channel| f32::from(channel) / 255.0);
+            [
+                ViewportVertex {
+                    position: line.start,
+                    color,
+                },
+                ViewportVertex {
+                    position: line.end,
+                    color,
+                },
+            ]
+        })
+        .collect()
 }

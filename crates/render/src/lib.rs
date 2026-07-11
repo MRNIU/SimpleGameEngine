@@ -69,6 +69,8 @@ pub struct ViewportPipelineInfo {
     pub primitive_topology: wgpu::PrimitiveTopology,
     pub shader_source: &'static str,
     pub depth_format: Option<wgpu::TextureFormat>,
+    pub grid_topology: wgpu::PrimitiveTopology,
+    pub grid_depth_write: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -131,6 +133,7 @@ struct ViewportProjectionContext {
 }
 
 pub struct ViewportRenderer {
+    grid_pipeline: wgpu::RenderPipeline,
     mesh_pipeline: wgpu::RenderPipeline,
     composite_pipeline: wgpu::RenderPipeline,
     camera_buffer: wgpu::Buffer,
@@ -139,8 +142,17 @@ pub struct ViewportRenderer {
     sampler: wgpu::Sampler,
     targets: Option<ViewportTargets>,
     vertex_buffer: wgpu::Buffer,
+    grid_vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     index_count: u32,
+    grid_vertex_count: u32,
+}
+
+pub struct ViewportRenderFrame<'a> {
+    pub draw: Option<&'a ViewportDrawCall>,
+    pub grid_vertices: &'a [ViewportVertex],
+    pub view_projection: [f32; 16],
+    pub target_size: [u32; 2],
 }
 
 struct ViewportTargets {
@@ -261,6 +273,40 @@ impl ViewportRenderer {
             multiview_mask: None,
             cache: None,
         });
+        let grid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sge_viewport_grid_pipeline"),
+            layout: Some(&mesh_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_mesh"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[viewport_vertex_buffer_layout()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_mesh"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: VIEWPORT_COLOR_FORMAT,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineList,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: VIEWPORT_DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
         let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("sge_viewport_composite_pipeline"),
             layout: Some(&composite_pipeline_layout),
@@ -288,6 +334,7 @@ impl ViewportRenderer {
         });
 
         Self {
+            grid_pipeline,
             mesh_pipeline,
             composite_pipeline,
             camera_buffer,
@@ -300,8 +347,14 @@ impl ViewportRenderer {
                 wgpu::BufferUsages::VERTEX,
                 "sge_viewport_vertices",
             ),
+            grid_vertex_buffer: empty_buffer(
+                device,
+                wgpu::BufferUsages::VERTEX,
+                "sge_viewport_grid_vertices",
+            ),
             index_buffer: empty_buffer(device, wgpu::BufferUsages::INDEX, "sge_viewport_indices"),
             index_count: 0,
+            grid_vertex_count: 0,
         }
     }
 
@@ -310,30 +363,45 @@ impl ViewportRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        draw: Option<&ViewportDrawCall>,
-        view_projection: [f32; 16],
-        target_size: [u32; 2],
+        frame: ViewportRenderFrame<'_>,
     ) {
-        let Some(draw) = draw else {
-            self.index_count = 0;
-            return;
-        };
+        let ViewportRenderFrame {
+            draw,
+            grid_vertices,
+            view_projection,
+            target_size,
+        } = frame;
         if target_size.contains(&0) {
             self.index_count = 0;
             return;
         }
 
-        self.vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("sge_viewport_vertices"),
-            contents: &viewport_vertex_bytes(&draw.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        self.index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("sge_viewport_indices"),
-            contents: &viewport_index_bytes(&draw.indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-        self.index_count = draw.index_count as u32;
+        if let Some(draw) = draw {
+            self.vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("sge_viewport_vertices"),
+                contents: &viewport_vertex_bytes(&draw.vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            self.index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("sge_viewport_indices"),
+                contents: &viewport_index_bytes(&draw.indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+            self.index_count = draw.index_count as u32;
+        } else {
+            self.index_count = 0;
+        }
+        if grid_vertices.is_empty() {
+            self.grid_vertex_count = 0;
+        } else {
+            self.grid_vertex_buffer =
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("sge_viewport_grid_vertices"),
+                    contents: &viewport_vertex_bytes(grid_vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+            self.grid_vertex_count = grid_vertices.len() as u32;
+        }
         queue.write_buffer(
             &self.camera_buffer,
             0,
@@ -385,8 +453,11 @@ impl ViewportRenderer {
             timestamp_writes: None,
             multiview_mask: None,
         });
-        pass.set_pipeline(&self.mesh_pipeline);
         pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        pass.set_pipeline(&self.grid_pipeline);
+        pass.set_vertex_buffer(0, self.grid_vertex_buffer.slice(..));
+        pass.draw(0..self.grid_vertex_count, 0..1);
+        pass.set_pipeline(&self.mesh_pipeline);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         pass.draw_indexed(0..self.index_count, 0, 0..1);
@@ -530,6 +601,8 @@ pub const fn viewport_pipeline_info(color_format: wgpu::TextureFormat) -> Viewpo
         primitive_topology: wgpu::PrimitiveTopology::TriangleList,
         shader_source: VIEWPORT_SHADER,
         depth_format: Some(VIEWPORT_DEPTH_FORMAT),
+        grid_topology: wgpu::PrimitiveTopology::LineList,
+        grid_depth_write: true,
     }
 }
 
