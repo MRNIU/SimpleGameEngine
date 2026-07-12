@@ -580,14 +580,19 @@ Editor 的 build/export UI 启动相同 game-specific Build target，不能在 E
 
 ```text
 Stage/
-├── game executable
-├── runtime manifest/catalog
-└── Content/ cooked products
+├── stage_manifest.ron
+└── generations/<stage_id>/
+    ├── game executable
+    └── runtime/
+        ├── runtime_catalog.ron
+        └── generations/<runtime_generation>/ cooked products
 ```
 
 把 Stage 复制到没有 project source 和 import cache 的目录后，Player 必须仍能启动并运行。该验证属于产品边界正确性，不是旧文件兼容或性能测试。
 
-Stage 先写入临时目录，验证完整后再原子替换最终输出，不能在失败后留下可被误认为成功产物的半成品目录。
+portable filesystem不能用一次标准rename原子替换非空目录。Stage因此与Cook采用同一publication模型：
+先写入并验证immutable generation，再以单文件atomic replace提交`stage_manifest.ron`作为current pointer；
+不能删除旧目录冒充原子替换，也不能让临时目录被loader识别为成功产物。精确合同见M6 canonical spec。
 
 Package/Pak、压缩、签名、installer、DLC 和 chunking 均延期。
 
