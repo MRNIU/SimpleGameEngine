@@ -169,11 +169,12 @@ pub fn extract(
 - MeshRenderer必须同时有 Transform与 Material；Camera/Light必须有 Transform。
 - 每个 mesh ref必须能在 store中 typed lookup；不得静默跳过。
 - 空 World产生合法 empty snapshot；零 active camera不是 extraction error。
-- 多个 active camera、多个 Light、缺 companion component、缺 asset、非 finite runtime mutation和
-  count/size overflow返回不同 typed error。首版允许零或一个 directional Light，不静默丢弃额外 Light。
+- 多个 Light、缺 companion component、缺 asset、非 finite runtime mutation和 count/size overflow返回
+  不同 typed extraction error。首版允许零或一个 directional Light，不静默丢弃额外 Light。
 
-`RenderView::from_active_camera(&snapshot)`单独返回 missing/multiple active camera error。Editor在 M5可提供
-editor camera override；M4 preview和 Player使用 active scene camera。
+extractor保留全部 Camera，不选择 presentation camera。`RenderView::from_active_camera(&snapshot)`是
+active camera zero/multiple的唯一验证 owner并返回 typed error。Editor在 M5可提供 editor camera override；
+M4 preview和 Player使用 active scene camera。
 
 ## 唯一 WGPU backend
 
