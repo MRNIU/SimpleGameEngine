@@ -14,16 +14,18 @@ fn id(value: u128) -> Result<AssetId, Box<dyn std::error::Error>> {
 }
 
 fn mesh_bytes() -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    Ok(mesh(1.0)?.to_ron()?.into_bytes())
+}
+
+fn mesh(scale: f32) -> Result<MeshAsset, Box<dyn std::error::Error>> {
     Ok(MeshAsset::new(
         vec![
             MeshVertex::new([0.0, 0.0, 0.0], None, None)?,
-            MeshVertex::new([1.0, 0.0, 0.0], None, None)?,
-            MeshVertex::new([0.0, 1.0, 0.0], None, None)?,
+            MeshVertex::new([scale, 0.0, 0.0], None, None)?,
+            MeshVertex::new([0.0, scale, 0.0], None, None)?,
         ],
         vec![0, 1, 2],
-    )?
-    .to_ron()?
-    .into_bytes())
+    )?)
 }
 
 fn generation(
@@ -115,6 +117,32 @@ fn runtime_store_typed_lookup_rejects_missing_asset() -> Result<(), Box<dyn std:
     assert!(matches!(
         store.mesh(AssetRef::new(id(0x2000_0000)?)),
         Err(RuntimeAssetStoreError::MissingMesh { .. })
+    ));
+    Ok(())
+}
+
+#[test]
+fn authoring_store_builds_typed_lookup_and_rejects_duplicate_ids()
+-> Result<(), Box<dyn std::error::Error>> {
+    let first = id(0x1000_0000)?;
+    let second = id(0x2000_0000)?;
+    let first_mesh = mesh(1.0)?;
+    let second_mesh = mesh(2.0)?;
+    let store = RuntimeAssetStore::from_meshes([
+        (second, second_mesh.clone()),
+        (first, first_mesh.clone()),
+    ])?;
+
+    assert_eq!(store.mesh(AssetRef::new(first))?, &first_mesh);
+    assert_eq!(store.mesh(AssetRef::new(second))?, &second_mesh);
+    assert_eq!(
+        store.asset_type(&first).map(TypeKey::as_str),
+        Some(MESH_ASSET_TYPE_KEY)
+    );
+
+    assert!(matches!(
+        RuntimeAssetStore::from_meshes([(first, first_mesh), (first, second_mesh)]),
+        Err(RuntimeAssetStoreError::DuplicateAssetId { id }) if id == first
     ));
     Ok(())
 }

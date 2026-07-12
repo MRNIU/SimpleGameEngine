@@ -15,6 +15,25 @@ pub struct RuntimeAssetStore {
 }
 
 impl RuntimeAssetStore {
+    pub fn from_meshes(
+        meshes: impl IntoIterator<Item = (AssetId, MeshAsset)>,
+    ) -> Result<Self, RuntimeAssetStoreError> {
+        let mesh_type =
+            TypeKey::new(MESH_ASSET_TYPE_KEY).expect("built-in MeshAsset type key must be valid");
+        let mut asset_types = BTreeMap::new();
+        let mut stored_meshes = BTreeMap::new();
+        for (id, mesh) in meshes {
+            if stored_meshes.insert(id, mesh).is_some() {
+                return Err(RuntimeAssetStoreError::DuplicateAssetId { id });
+            }
+            asset_types.insert(id, mesh_type.clone());
+        }
+        Ok(Self {
+            asset_types,
+            meshes: stored_meshes,
+        })
+    }
+
     pub fn load(generation: &RuntimeGeneration) -> Result<Self, RuntimeAssetStoreError> {
         let mut asset_types = BTreeMap::new();
         let mut meshes = BTreeMap::new();
@@ -68,6 +87,8 @@ impl AssetLookup for RuntimeAssetStore {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeAssetStoreError {
+    #[error("duplicate runtime asset ID: {id}")]
+    DuplicateAssetId { id: AssetId },
     #[error("runtime asset {id} has unsupported product type {asset_type}")]
     UnsupportedProductType { id: AssetId, asset_type: TypeKey },
     #[error("runtime generation is missing product bytes for asset {id}")]
