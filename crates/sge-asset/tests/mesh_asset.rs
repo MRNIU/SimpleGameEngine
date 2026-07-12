@@ -1,6 +1,6 @@
 // Copyright The SimpleGameEngine Contributors
 
-use sge_asset::{AssetType, MESH_ASSET_TYPE_KEY, MeshAsset, MeshVertex};
+use sge_asset::{AssetType, MESH_ASSET_TYPE_KEY, MeshAsset, MeshAssetFormatError, MeshVertex};
 
 fn vertex(position: [f32; 3]) -> Result<MeshVertex, Box<dyn std::error::Error>> {
     Ok(MeshVertex::new(position, None, None)?)
@@ -65,10 +65,13 @@ fn mesh_codec_is_strict_canonical_and_idempotent() -> Result<(), Box<dyn std::er
 fn mesh_codec_rejects_version_shape_trailing_and_invalid_domain()
 -> Result<(), Box<dyn std::error::Error>> {
     let encoded = triangle()?.to_ron()?;
-    assert!(
-        MeshAsset::from_ron(&encoded.replacen("format_version: 1", "format_version: 2", 1))
-            .is_err()
-    );
+    assert!(matches!(
+        MeshAsset::from_ron("(format_version: 2)"),
+        Err(MeshAssetFormatError::VersionMismatch {
+            expected: 1,
+            found: 2,
+        })
+    ));
     assert!(
         MeshAsset::from_ron(&encoded.replacen("indices:", "unknown: 0,\n    indices:", 1)).is_err()
     );

@@ -27,6 +27,11 @@ struct MeshAssetWire {
     indices: Vec<u32>,
 }
 
+#[derive(Deserialize)]
+struct MeshAssetVersionWire {
+    format_version: u32,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MeshVertexWire {
@@ -95,16 +100,20 @@ impl MeshAsset {
     }
 
     pub fn from_ron(input: &str) -> Result<Self, MeshAssetFormatError> {
+        let version: MeshAssetVersionWire =
+            ron::from_str(input).map_err(|source| MeshAssetFormatError::Parse {
+                source: Box::new(source),
+            })?;
+        if version.format_version != MESH_ASSET_FORMAT_VERSION {
+            return Err(MeshAssetFormatError::VersionMismatch {
+                expected: MESH_ASSET_FORMAT_VERSION,
+                found: version.format_version,
+            });
+        }
         let wire: MeshAssetWire =
             ron::from_str(input).map_err(|source| MeshAssetFormatError::Parse {
                 source: Box::new(source),
             })?;
-        if wire.format_version != MESH_ASSET_FORMAT_VERSION {
-            return Err(MeshAssetFormatError::VersionMismatch {
-                expected: MESH_ASSET_FORMAT_VERSION,
-                found: wire.format_version,
-            });
-        }
         let vertices = wire
             .vertices
             .into_iter()
