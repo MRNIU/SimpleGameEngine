@@ -12,6 +12,7 @@ members = [
   "crates/runtime",
   "crates/scene",
   "crates/sge-asset",
+  "crates/sge-asset-pipeline",
   "crates/sge-ecs",
   "crates/sge-scene",
 ]

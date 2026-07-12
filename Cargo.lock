@@ -2546,6 +2546,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sge-asset-pipeline"
+version = "0.1.0"
+dependencies = [
+ "sge-asset",
+ "sge-project",
+ "thiserror 2.0.18",
+ "tobj",
+]
+
+[[package]]
 name = "sge-ecs"
 version = "0.1.0"
 dependencies = [
