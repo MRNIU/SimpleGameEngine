@@ -91,9 +91,15 @@ fn project_root_canonicalizes_an_existing_directory() -> Result<(), Box<dyn std:
     let temp = TestDir::new("root-canonical")?;
     let nested = temp.path().join("nested");
     fs::create_dir(&nested)?;
+    fs::create_dir(nested.join("scenes"))?;
+    fs::write(nested.join("scenes/existing.scene.ron"), b"existing")?;
     let root = ProjectRoot::open(nested.join("..").join("nested"))?;
 
-    assert_eq!(root.as_path(), fs::canonicalize(nested)?);
+    let existing = ProjectPath::new("scenes/existing.scene.ron")?;
+    assert_eq!(root.read(&existing)?, b"existing");
+    let created = ProjectPath::new("created.scene.ron")?;
+    root.write_atomic(&created, b"created")?;
+    assert_eq!(fs::read(nested.join("created.scene.ron"))?, b"created");
 
     let file = temp.path().join("not-a-directory");
     fs::write(&file, b"file")?;
@@ -122,6 +128,28 @@ fn project_root_atomically_creates_reads_and_replaces_a_file()
     root.write_atomic(&root_file, b"root file")?;
     assert_eq!(root.read(&root_file)?, b"root file");
     assert_eq!(fs::read_dir(temp.path().join("scenes"))?.count(), 1);
+    Ok(())
+}
+
+#[test]
+fn project_root_reports_atomic_commit_phase_failure() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = TestDir::new("commit-failure")?;
+    let scenes = temp.path().join("scenes");
+    fs::create_dir(&scenes)?;
+    let target = scenes.join("existing.scene.ron");
+    fs::create_dir(&target)?;
+    let root = ProjectRoot::open(temp.path())?;
+    let path = ProjectPath::new("scenes/existing.scene.ron")?;
+    let error = root
+        .write_atomic(&path, b"bytes")
+        .err()
+        .ok_or_else(|| std::io::Error::other("directory target commit unexpectedly succeeded"))?;
+
+    assert!(matches!(
+        error,
+        sge_project::ProjectIoError::Commit { path: actual, .. } if actual == path
+    ));
+    assert!(target.is_dir());
     Ok(())
 }
 

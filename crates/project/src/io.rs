@@ -34,11 +34,6 @@ impl ProjectRoot {
         Ok(Self { root })
     }
 
-    #[must_use]
-    pub fn as_path(&self) -> &Path {
-        &self.root
-    }
-
     pub fn read(&self, path: &ProjectPath) -> Result<Vec<u8>, ProjectIoError> {
         let target = fs::canonicalize(self.root.join(path.as_str())).map_err(|source| {
             ProjectIoError::Read {
@@ -102,7 +97,7 @@ impl ProjectRoot {
                 path: path.clone(),
                 source,
             })?;
-        file.commit().map_err(|source| ProjectIoError::Write {
+        file.commit().map_err(|source| ProjectIoError::Commit {
             path: path.clone(),
             source,
         })
@@ -127,6 +122,12 @@ pub enum ProjectIoError {
     },
     #[error("cannot write project path {path}: {source}")]
     Write {
+        path: ProjectPath,
+        #[source]
+        source: io::Error,
+    },
+    #[error("cannot commit project path {path}: {source}")]
+    Commit {
         path: ProjectPath,
         #[source]
         source: io::Error,
