@@ -1,11 +1,15 @@
 // Copyright The SimpleGameEngine Contributors
 
-//! Candidate-first project loading and preview-only target Editor host.
+//! Candidate-first EditSession、Reflect Inspector 与 target Editor host。
 
+mod error;
 mod host;
+mod inspector;
 mod preview;
 mod session;
 
+pub use error::{EditError, EditorOpenError, EditorPreviewError};
 pub use host::{EditorRunError, EditorRunOptions, EditorRunReport, run};
+pub use inspector::{InspectorComponent, InspectorField};
 pub use preview::{PreviewProbe, PreviewProbeReport};
-pub use session::{EditorOpenError, EditorSession, EditorWorkspace, PreviewFrame};
+pub use session::{EditSession, EditorWorkspace, PreviewFrame};

@@ -2493,6 +2493,7 @@ dependencies = [
  "sge-asset",
  "sge-asset-pipeline",
  "sge-project",
+ "sge-reflect",
  "sge-render",
  "sge-scene",
  "thiserror 2.0.18",

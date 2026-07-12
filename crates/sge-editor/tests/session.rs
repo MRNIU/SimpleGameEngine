@@ -7,19 +7,19 @@ use std::{
 };
 
 use sge_app::{EngineApp, EngineBuildError, GameDescriptor};
-use sge_editor::{EditorOpenError, EditorSession, EditorWorkspace};
+use sge_editor::{EditSession, EditorOpenError, EditorPreviewError, EditorWorkspace};
 
 static FACTORY_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
 fn demo_project_opens_as_a_preview_candidate() -> Result<(), Box<dyn std::error::Error>> {
     let project = TestProject::new("open")?;
-    let session = EditorSession::open(demo_game::GAME, project.path())?;
+    let session = EditSession::open(demo_game::GAME, project.path())?;
     let frame = session.preview_frame()?;
 
     assert_eq!(session.descriptor().game_id().as_str(), demo_game::GAME_ID);
     assert_eq!(session.manifest().records().len(), 1);
-    assert_eq!(session.scene().entities().count(), 3);
+    assert_eq!(session.snapshot()?.entities().count(), 3);
     assert_eq!(frame.snapshot.meshes().len(), 1);
     assert_eq!(frame.snapshot.lights().len(), 1);
     Ok(())
@@ -103,17 +103,29 @@ fn every_candidate_stage_failure_preserves_the_live_session()
         matches!(error, EditorOpenError::SceneValidation(_))
     })?;
 
+    Ok(())
+}
+
+#[test]
+fn render_incomplete_authoring_opens_with_preview_diagnostics()
+-> Result<(), Box<dyn std::error::Error>> {
     let extraction = TestProject::new("bad-extract")?;
     extraction.replace_scene(MATERIAL_COMPONENT, "")?;
-    assert_preserved(&mut workspace, extraction.path(), live_address, |error| {
-        matches!(error, EditorOpenError::Extraction(_))
-    })?;
+    let extraction_session = EditSession::open(demo_game::GAME, extraction.path())?;
+    assert!(matches!(
+        extraction_session.preview_frame(),
+        Err(EditorPreviewError::Extraction(_))
+    ));
 
     let view = TestProject::new("bad-view")?;
     view.replace_scene("\"active\": Bool(true)", "\"active\": Bool(false)")?;
-    assert_preserved(&mut workspace, view.path(), live_address, |error| {
-        matches!(error, EditorOpenError::View(_))
-    })?;
+    let view_session = EditSession::open(demo_game::GAME, view.path())?;
+    assert!(matches!(
+        view_session.preview_frame(),
+        Err(EditorPreviewError::View(
+            sge_render::RenderViewError::MissingActiveCamera
+        ))
+    ));
     Ok(())
 }
 

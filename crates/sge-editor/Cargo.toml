@@ -12,6 +12,7 @@ sge-asset = { path = "../sge-asset" }
 sge-asset-pipeline = { path = "../sge-asset-pipeline" }
 sge-project = { path = "../project" }
 sge-render = { path = "../sge-render" }
+sge-reflect = { path = "../reflect" }
 sge-scene = { path = "../sge-scene" }
 thiserror.workspace = true
 

@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use eframe::egui;
 use sge_app::GameDescriptor;
 
-use crate::{EditorOpenError, EditorSession, PreviewFrame, PreviewProbe, preview};
+use crate::{
+    EditSession, EditorOpenError, EditorPreviewError, PreviewFrame, PreviewProbe, preview,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditorRunOptions {
@@ -36,7 +38,7 @@ pub fn run(
         return Err(EditorRunError::InvalidInitialSize);
     }
     let project_root = project_root.as_ref().to_path_buf();
-    let session = EditorSession::open(game, &project_root)?;
+    let session = EditSession::open(game, &project_root)?;
     let frame = session.preview_frame()?;
     let probe = PreviewProbe::default();
     let report_probe = probe.clone();
@@ -75,7 +77,7 @@ pub fn run(
 }
 
 struct PreviewApp {
-    session: EditorSession,
+    session: EditSession,
     frame: PreviewFrame,
     probe: PreviewProbe,
     project_root: PathBuf,
@@ -116,6 +118,8 @@ impl eframe::App for PreviewApp {
 pub enum EditorRunError {
     #[error(transparent)]
     Open(#[from] EditorOpenError),
+    #[error(transparent)]
+    PreviewFrame(#[from] EditorPreviewError),
     #[error("initial Editor window size must be non-zero")]
     InvalidInitialSize,
     #[error("eframe Editor failed: {0}")]
