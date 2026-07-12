@@ -10,6 +10,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use sge_app::{EngineApp, EngineBuildError};
 use sge_asset::{AssetId, AssetRef, MESH_ASSET_TYPE_KEY, MeshAsset};
 use sge_ecs::World;
 use sge_project::{
@@ -25,6 +26,7 @@ pub const GAME_ID: &str = "demo.game";
 pub const PRIOR_CATALOG: &[u8] = b"prior catalog bytes\n";
 
 static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
+static APP_CREATIONS: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, PartialEq)]
 pub struct MeshConsumer {
@@ -101,6 +103,15 @@ impl FullCookFixture {
 
     pub fn output_path(&self) -> &Path {
         &self.output
+    }
+
+    pub fn root_path(&self) -> &Path {
+        &self.root
+    }
+
+    pub fn delete_source_project(&self) -> Result<(), Box<dyn Error>> {
+        fs::remove_dir_all(&self.root)?;
+        Ok(())
     }
 
     pub fn create_output(&self, name: &str) -> Result<PathBuf, Box<dyn Error>> {
@@ -230,6 +241,26 @@ pub fn world_without_scene_identity() -> Result<World, Box<dyn Error>> {
     world.register_component::<MeshConsumer>()?;
     world.finish_registration();
     Ok(world)
+}
+
+pub fn reset_app_creations() {
+    APP_CREATIONS.store(0, Ordering::Relaxed);
+}
+
+pub fn app_creations() -> usize {
+    APP_CREATIONS.load(Ordering::Relaxed)
+}
+
+pub fn create_ready_app() -> Result<EngineApp, EngineBuildError> {
+    APP_CREATIONS.fetch_add(1, Ordering::Relaxed);
+    let mut app = EngineApp::new();
+    app.register_component::<SceneEntityId>()?;
+    app.register_component::<Parent>()?;
+    app.register_reflected_component::<MeshConsumer>(
+        mesh_consumer_descriptor().expect("static MeshConsumer descriptor must be valid"),
+    )?;
+    app.finish()?;
+    Ok(app)
 }
 
 fn mesh_consumer_descriptor() -> Result<TypeDescriptor, Box<dyn Error>> {

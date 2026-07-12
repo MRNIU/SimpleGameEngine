@@ -2552,6 +2552,7 @@ dependencies = [
  "atomic-write-file",
  "ron",
  "serde",
+ "sge-app",
  "sge-asset",
  "sge-ecs",
  "sge-project",

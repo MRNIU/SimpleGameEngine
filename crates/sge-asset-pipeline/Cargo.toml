@@ -18,5 +18,8 @@ sge-scene = { path = "../sge-scene" }
 thiserror.workspace = true
 tobj.workspace = true
 
+[dev-dependencies]
+sge-app = { path = "../app" }
+
 [lints]
 workspace = true
