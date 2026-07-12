@@ -6,6 +6,8 @@ use std::{
 };
 
 use sge_editor::{EditError, EditSession, EditorPreviewError};
+use sge_input::{Button, InputFrame, KeyCode};
+use sge_math::Transform;
 use sge_reflect::{FieldKind, Value};
 use sge_scene::{AuthoringEntity, SceneEntityId};
 
@@ -164,6 +166,50 @@ fn valid_authoring_without_active_camera_reports_preview_diagnostic()
         ))
     ));
     assert!(session.is_dirty());
+    Ok(())
+}
+
+#[test]
+fn play_uses_a_fresh_world_and_drop_preserves_edit_world() -> Result<(), Box<dyn std::error::Error>>
+{
+    let project = TestProject::new("play-isolation")?;
+    let edit = EditSession::open(demo_game::GAME, project.path())?;
+    let mesh = id(MESH)?;
+    let before = edit.snapshot()?.to_ron()?;
+    let edit_translation = edit
+        .component::<Transform>(mesh)
+        .ok_or("missing EditWorld Transform")?
+        .translation;
+    let mut play = edit.start_play()?;
+    let mut input = InputFrame::new();
+    input.hold(Button::Key(KeyCode::KeyW));
+
+    play.advance(std::time::Duration::from_millis(20), input)?;
+
+    let play_translation = play
+        .component::<Transform>(mesh)
+        .ok_or("missing PlayWorld Transform")?
+        .translation;
+    assert!(play_translation[2] < edit_translation[2]);
+    let state = play
+        .resource::<demo_game::GameRuntimeState>()
+        .ok_or("missing Play runtime state")?;
+    assert_eq!(state.startup_runs(), 1);
+    assert_eq!(state.fixed_updates(), 1);
+    assert_eq!(state.updates(), 1);
+    assert_eq!(state.post_updates(), 1);
+    let (snapshot, view) = play.render_frame()?;
+    assert_eq!(snapshot.meshes().len(), 1);
+    assert!(view.camera().active());
+    drop(play);
+
+    assert_eq!(edit.snapshot()?.to_ron()?, before);
+    assert_eq!(
+        edit.component::<Transform>(mesh)
+            .ok_or("missing preserved EditWorld Transform")?
+            .translation,
+        edit_translation
+    );
     Ok(())
 }
 

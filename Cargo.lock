@@ -2495,6 +2495,8 @@ dependencies = [
  "sge-app",
  "sge-asset",
  "sge-asset-pipeline",
+ "sge-input",
+ "sge-math",
  "sge-project",
  "sge-reflect",
  "sge-render",

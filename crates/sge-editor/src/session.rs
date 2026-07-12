@@ -12,7 +12,9 @@ use sge_scene::{
     AuthoringEntity, AuthoringScene, SceneEntityId, SceneInstance, instantiate, prepare, snapshot,
 };
 
-use crate::{EditError, EditorOpenError, EditorPreviewError, InspectorComponent};
+use crate::{
+    EditError, EditorOpenError, EditorPreviewError, InspectorComponent, PlaySession, PlayStartError,
+};
 
 pub struct EditSession {
     game: GameDescriptor,
@@ -110,6 +112,15 @@ impl EditSession {
             view,
             assets: Arc::clone(&self.assets),
         })
+    }
+
+    pub fn start_play(&self) -> Result<PlaySession, PlayStartError> {
+        PlaySession::start(self)
+    }
+
+    #[must_use]
+    pub fn component<T: 'static>(&self, entity: SceneEntityId) -> Option<&T> {
+        self.app.world().get(self.instance.entity(&entity)?)
     }
 
     pub fn select(&mut self, selection: Option<SceneEntityId>) -> Result<(), EditError> {
@@ -303,6 +314,18 @@ impl EditSession {
     #[must_use]
     pub const fn project(&self) -> &ProjectRoot {
         &self.project
+    }
+
+    pub(crate) const fn game(&self) -> GameDescriptor {
+        self.game
+    }
+
+    pub(crate) fn assets(&self) -> &RuntimeAssetStore {
+        self.assets.as_ref()
+    }
+
+    pub(crate) const fn assets_arc(&self) -> &Arc<RuntimeAssetStore> {
+        &self.assets
     }
 
     fn execute(&mut self, command: HistoryCommand) -> Result<(), EditError> {
