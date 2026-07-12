@@ -8,8 +8,10 @@ repository.workspace = true
 [dependencies]
 sge-app = { path = "../app" }
 sge-asset = { path = "../sge-asset" }
+sge-ecs = { path = "../sge-ecs" }
 sge-math = { path = "../math" }
 sge-reflect = { path = "../reflect" }
+thiserror.workspace = true
 
 [dev-dependencies]
 sge-scene = { path = "../sge-scene" }

@@ -2610,9 +2610,11 @@ version = "0.1.0"
 dependencies = [
  "sge-app",
  "sge-asset",
+ "sge-ecs",
  "sge-math",
  "sge-reflect",
  "sge-scene",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

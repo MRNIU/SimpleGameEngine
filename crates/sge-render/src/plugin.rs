@@ -172,7 +172,7 @@ fn material_descriptor() -> TypeDescriptor {
                 Ok(())
             },
         ))
-        .validator(|value| validate_color("base_color", value.base_color()))
+        .validator(validate_material)
         .scene_saveable()
         .build()
         .expect("static Material descriptor must be valid")
@@ -204,7 +204,7 @@ fn light_descriptor() -> TypeDescriptor {
         .expect("static Light descriptor must be valid")
 }
 
-fn validate_transform(value: &Transform) -> Result<(), ValidationErrors> {
+pub(crate) fn validate_transform(value: &Transform) -> Result<(), ValidationErrors> {
     if !value
         .translation
         .into_iter()
@@ -223,7 +223,7 @@ fn validate_transform(value: &Transform) -> Result<(), ValidationErrors> {
     Ok(())
 }
 
-fn validate_camera(value: &Camera) -> Result<(), ValidationErrors> {
+pub(crate) fn validate_camera(value: &Camera) -> Result<(), ValidationErrors> {
     let fields = [
         value.vertical_fov_radians(),
         value.orthographic_height(),
@@ -242,7 +242,11 @@ fn validate_camera(value: &Camera) -> Result<(), ValidationErrors> {
     Ok(())
 }
 
-fn validate_light(value: &Light) -> Result<(), ValidationErrors> {
+pub(crate) fn validate_material(value: &Material) -> Result<(), ValidationErrors> {
+    validate_color("base_color", value.base_color())
+}
+
+pub(crate) fn validate_light(value: &Light) -> Result<(), ValidationErrors> {
     validate_color("color", value.color())?;
     if !value.intensity().is_finite() || value.intensity() < 0.0 {
         return invalid("Light intensity must be finite and non-negative");

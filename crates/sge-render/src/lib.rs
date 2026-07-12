@@ -3,7 +3,13 @@
 //! Typed render components and runtime rendering products.
 
 mod components;
+mod extract;
 mod plugin;
+mod snapshot;
 
 pub use components::{Camera, Light, Material, MeshRenderer, Projection};
+pub use extract::{RenderComponentKind, RenderExtractionError, RenderItemKind, extract};
 pub use plugin::RenderPlugin;
+pub use snapshot::{
+    RenderCamera, RenderLight, RenderMeshInstance, RenderSnapshot, RenderView, RenderViewError,
+};
