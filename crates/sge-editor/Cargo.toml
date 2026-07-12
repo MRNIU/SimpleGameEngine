@@ -11,6 +11,7 @@ sge-app = { path = "../app" }
 sge-asset = { path = "../sge-asset" }
 sge-asset-pipeline = { path = "../sge-asset-pipeline" }
 sge-input = { path = "../input" }
+sge-math = { path = "../math" }
 sge-project = { path = "../project" }
 sge-render = { path = "../sge-render" }
 sge-reflect = { path = "../reflect" }
@@ -19,7 +20,6 @@ thiserror.workspace = true
 
 [dev-dependencies]
 demo-game = { path = "../../examples/demo_game/game" }
-sge-math = { path = "../math" }
 
 [lints]
 workspace = true

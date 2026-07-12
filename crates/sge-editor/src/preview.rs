@@ -113,10 +113,14 @@ pub(crate) fn install_renderer(
     Ok(())
 }
 
-pub(crate) fn paint(ui: &mut egui::Ui, frame: &PreviewFrame, probe: &PreviewProbe) {
+pub(crate) fn paint(
+    ui: &mut egui::Ui,
+    frame: &PreviewFrame,
+    probe: &PreviewProbe,
+) -> egui::Response {
     let available = ui.available_size_before_wrap();
     let size = egui::vec2(available.x.max(240.0), available.y.max(180.0));
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::focusable_noninteractive());
     ui.painter().rect_filled(rect, 0.0, egui::Color32::BLACK);
     ui.painter().add(egui_wgpu::Callback::new_paint_callback(
         rect,
@@ -126,6 +130,7 @@ pub(crate) fn paint(ui: &mut egui::Ui, frame: &PreviewFrame, probe: &PreviewProb
             probe: probe.clone(),
         },
     ));
+    response
 }
 
 fn logical_dimension(points: f32, pixels_per_point: f32) -> u32 {

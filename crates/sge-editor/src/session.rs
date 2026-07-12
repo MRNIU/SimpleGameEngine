@@ -13,7 +13,8 @@ use sge_scene::{
 };
 
 use crate::{
-    EditError, EditorOpenError, EditorPreviewError, InspectorComponent, PlaySession, PlayStartError,
+    EditError, EditorOpenError, EditorPreviewError, InspectorComponent, PlaySession,
+    PlayStartError, SceneComponentType,
 };
 
 pub struct EditSession {
@@ -157,6 +158,21 @@ impl EditSession {
                         ))
                     })?;
                 InspectorComponent::from_reflected(descriptor, component)
+            })
+            .collect()
+    }
+
+    #[must_use]
+    pub fn component_types(&self) -> Vec<SceneComponentType> {
+        self.app
+            .type_registry()
+            .descriptors()
+            .filter(|descriptor| descriptor.scene_saveable())
+            .map(|descriptor| {
+                SceneComponentType::new(
+                    descriptor.type_key().clone(),
+                    descriptor.display_name().to_owned(),
+                )
             })
             .collect()
     }
@@ -309,11 +325,6 @@ impl EditSession {
     #[must_use]
     pub const fn manifest(&self) -> &AuthoringAssetManifest {
         &self.manifest
-    }
-
-    #[must_use]
-    pub const fn project(&self) -> &ProjectRoot {
-        &self.project
     }
 
     pub(crate) const fn game(&self) -> GameDescriptor {

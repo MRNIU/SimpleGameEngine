@@ -19,6 +19,12 @@ pub struct InspectorField {
     value: Value,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneComponentType {
+    type_key: TypeKey,
+    display_name: String,
+}
+
 impl InspectorComponent {
     pub(crate) fn from_reflected(
         descriptor: &TypeDescriptor,
@@ -86,5 +92,24 @@ impl InspectorField {
     #[must_use]
     pub const fn value(&self) -> &Value {
         &self.value
+    }
+}
+
+impl SceneComponentType {
+    pub(crate) fn new(type_key: TypeKey, display_name: String) -> Self {
+        Self {
+            type_key,
+            display_name,
+        }
+    }
+
+    #[must_use]
+    pub const fn type_key(&self) -> &TypeKey {
+        &self.type_key
+    }
+
+    #[must_use]
+    pub fn display_name(&self) -> &str {
+        &self.display_name
     }
 }

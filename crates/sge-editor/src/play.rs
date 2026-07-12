@@ -11,7 +11,7 @@ use sge_scene::{
     SceneValidationError, build_runtime_scene, instantiate, prepare_runtime,
 };
 
-use crate::{EditError, EditSession, EditorPreviewError};
+use crate::{EditError, EditSession, EditorPreviewError, PreviewFrame};
 
 pub struct PlaySession {
     game_id: &'static str,
@@ -43,6 +43,15 @@ impl PlaySession {
         let snapshot = extract(self.app.world(), self.assets.as_ref())?;
         let view = RenderView::from_active_camera(&snapshot)?;
         Ok((snapshot, view))
+    }
+
+    pub(crate) fn preview_frame(&self) -> Result<PreviewFrame, EditorPreviewError> {
+        let (snapshot, view) = self.render_frame()?;
+        Ok(PreviewFrame {
+            snapshot,
+            view,
+            assets: Arc::clone(&self.assets),
+        })
     }
 
     #[must_use]

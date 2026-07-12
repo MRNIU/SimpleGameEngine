@@ -13,12 +13,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         arguments.project_root,
         EditorRunOptions {
             max_frames: arguments.max_frames,
+            start_in_play: arguments.start_in_play,
             ..EditorRunOptions::default()
         },
     )?;
     println!(
-        "preview_prepare={} preview_paint={}",
-        report.preview.prepare_count, report.preview.paint_count
+        "preview_prepare={} preview_paint={} play_frames={}",
+        report.preview.prepare_count, report.preview.paint_count, report.play_frames
     );
     Ok(())
 }
@@ -26,6 +27,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 struct Arguments {
     project_root: PathBuf,
     max_frames: Option<u64>,
+    start_in_play: bool,
 }
 
 fn arguments() -> Result<Option<Arguments>, String> {
@@ -39,7 +41,12 @@ fn arguments() -> Result<Option<Arguments>, String> {
     }
     let project_root = PathBuf::from(first);
     let mut max_frames = None;
+    let mut start_in_play = false;
     while let Some(argument) = values.next() {
+        if argument == "--play" {
+            start_in_play = true;
+            continue;
+        }
         if argument != "--max-frames" {
             return Err(usage(&format!(
                 "unknown argument: {}",
@@ -61,6 +68,7 @@ fn arguments() -> Result<Option<Arguments>, String> {
     Ok(Some(Arguments {
         project_root,
         max_frames,
+        start_in_play,
     }))
 }
 
@@ -70,5 +78,5 @@ fn usage(error: &str) -> String {
     } else {
         format!("{error}\n\n")
     };
-    format!("{prefix}Usage: demo-game-editor PROJECT_ROOT [--max-frames N]")
+    format!("{prefix}Usage: demo-game-editor PROJECT_ROOT [--play] [--max-frames N]")
 }

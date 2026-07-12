@@ -14,7 +14,7 @@ fn editor_cli_has_stable_help() -> Result<(), Box<dyn std::error::Error>> {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout)?,
-        "Usage: demo-game-editor PROJECT_ROOT [--max-frames N]\n"
+        "Usage: demo-game-editor PROJECT_ROOT [--play] [--max-frames N]\n"
     );
     assert!(output.stderr.is_empty());
     Ok(())
@@ -22,11 +22,11 @@ fn editor_cli_has_stable_help() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 #[ignore = "requires a window system; run with xvfb-run"]
-fn game_specific_editor_prepares_and_paints_preview() -> Result<(), Box<dyn std::error::Error>> {
+fn game_specific_editor_plays_and_paints_preview() -> Result<(), Box<dyn std::error::Error>> {
     let project = TestProject::new()?;
     let output = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
         .arg(project.path())
-        .args(["--max-frames", "6"])
+        .args(["--play", "--max-frames", "6"])
         .output()?;
     assert!(
         output.status.success(),
@@ -36,6 +36,12 @@ fn game_specific_editor_prepares_and_paints_preview() -> Result<(), Box<dyn std:
     let stdout = String::from_utf8(output.stdout)?;
     assert!(stdout.contains("preview_prepare="));
     assert!(stdout.contains("preview_paint="));
+    let play_frames = stdout
+        .split_whitespace()
+        .find_map(|field| field.strip_prefix("play_frames="))
+        .ok_or("missing play_frames report")?
+        .parse::<u64>()?;
+    assert!(play_frames > 0);
     Ok(())
 }
 
