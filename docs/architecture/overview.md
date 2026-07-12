@@ -2,7 +2,7 @@
 
 日期：2026-07-13
 
-本文描述当前 HEAD。目标与后续 M7 边界见 `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`。
+本文描述完成 M1–M7 目标架构的当前 HEAD。目标与延期边界见 `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`。
 
 ## 当前产品路径
 
@@ -70,7 +70,7 @@ Editor 与 Player 使用同一静态 game library、typed World、Reflect regist
 - `cargo build --workspace`
 - `scripts/audit-boundaries.sh`
 
-M4–M6 额外证据：
+M4–M7 额外证据：
 
 - 真实 adapter offscreen pixel readback，包含 direct、offscreen/composite、multi-asset batching、Light、non-unit rotation、non-uniform scale 与 index 65536。
 - source-free Player test删除 project/OBJ/cache后仍加载、advance、extract/view。
@@ -79,9 +79,12 @@ M4–M6 额外证据：
 - PlayWorld运行 Startup/FixedUpdate/Update/PostUpdate和WASD movement；drop后 EditWorld canonical RON不变。
 - game-specific Editor binary在 Xvfb 下聚焦 Play viewport、接收 X11 key event、真实 advance并执行 callback prepare与paint。
 - game-specific Build产品测试从clean Stage重复full Cook/Cargo build，复制Stage后不传source路径，向staged Player注入X11 key event并真实present。
+- 最终integration test在临时project中通过Inspector修改自定义component并创建hierarchy，save/reopen与isolated Play后执行真实`sge build`；删除source后从copied Stage验证cooked scene语义、加载Player并启动staged binary完成input/present。
 
 这些 Linux/Xvfb 证据不等于 Windows、macOS、其他 GPU、物理输入设备或人工视觉兼容性证明。
 
-## 下一边界
+## 完成边界与延期项
 
-M7 只组合并固化已实现能力完成最终 integration demo，不新增 demo-only engine shortcut。
+M1–M7 目标架构与独立 integration demo 已完成，没有新增 demo-only engine shortcut、第二 registry、第二 importer 或第二 WGPU backend。
+
+延期项包括但不限于：音频、物理、动画、Gameplay UI、脚本、网络、Prefab、Advanced Render/VFX、AI/Navigation、Asset Streaming/Hot Reload、Localization/Telemetry等待对应产品纵切；archive/Pak/compression/encryption/signing/installer/patch/DLC/chunk与远程/交叉编译矩阵等待发行需求；Play writeback、多实例/网络PIE、action remapping、gizmo等待编辑工作流需求；dynamic ABI、parallel ECS、RenderWorld、incremental Cook等待真实调用方或可测量的复杂度/性能触发。完整owner、触发条件与禁止占位边界见目标架构规格。当前仅有 Linux/Xvfb WGPU证据，不声明Windows、macOS、其他GPU或物理输入设备已验证。

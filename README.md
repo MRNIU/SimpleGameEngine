@@ -15,13 +15,13 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前实现
 
 ## 当前实现
 
-- M1–M6 已完成：typed ECS / Reflect / EngineApp、strict project/authoring data、canonical OBJ import/full Cook/runtime products、owned `RenderSnapshot`、唯一 WGPU backend、完整 Edit/Play target Editor，以及 game-specific Build/self-contained Stage 已形成一条产品路径。
+- M1–M7 已完成：typed ECS / Reflect / EngineApp、strict project/authoring data、canonical OBJ import/full Cook/runtime products、owned `RenderSnapshot`、唯一 WGPU backend、完整 Edit/Play target Editor、game-specific Build/self-contained Stage 和最终 integration demo 已形成一条产品路径。
 - `sge-render` 同时服务 eframe offscreen callback 与 winit surface；retained GPU cache 以 `AssetId` 为 key，store replacement 会清 cache，Player surface 只通过安全 `Arc<Window>` 创建。
 - `sge-player` 只读取 cooked root并把 winit event映射为逐帧 `InputFrame`；production dependency 不包含 project、source pipeline、OBJ parser、Editor 或 native dialog。
 - `sge-editor` identity-first 打开 target project；EditWorld 是唯一 live authoring truth，Reflect Inspector、entity/component mutation、Undo/Redo、atomic save与独立 PlaySession共用 scene validation/factory。
 - `examples/demo_game/` 包含固定 `AssetId` OBJ、带 `Rotator` / `PlayerController` 的 authoring scene、静态 game library 和薄 game-specific Editor/Player/Build targets；同一 plugin在 headless、Editor Play、Player与Cook validation运行。
 - bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与旧 sample 已删除，不保留第二套 schema、ECS 或 WGPU backend。
-- M7 尚需把已有能力固化为最终 integration demo gate；M6 不包含 archive/Pak、签名、installer、远程/交叉编译矩阵或完整 build settings UI。
+- 最终 integration demo 从临时 authoring project 经 Inspector edit、Play、真实 `sge build`、copied Stage 到 staged Player 串联同一公开产品路径。延期项包括但不限于 archive/Pak、签名、installer、远程/交叉编译矩阵和完整 build settings UI；完整清单与触发条件见目标架构规格。
 
 Canonical contracts：
 
@@ -31,6 +31,7 @@ Canonical contracts：
 - `docs/superpowers/specs/2026-07-12-render-and-hosts-m4-design.md`
 - `docs/superpowers/specs/2026-07-13-editor-play-m5-design.md`
 - `docs/superpowers/specs/2026-07-13-build-and-stage-m6-design.md`
+- `docs/superpowers/specs/2026-07-13-integration-demo-m7-design.md`
 
 ## 快速开始
 
@@ -82,6 +83,9 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p sge-build --bin sge -- b
 
 # M6 产品 smoke：重复完整Build、复制source-free Stage、注入窗口输入并由staged Player真实present
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-build --test stage_product game_build_produces_a_copied_source_free_stage_that_runs -- --ignored --exact'
+
+# M7 最终 gate：workspace gate/audit、Editor窗口smoke及完整authoring -> Play -> Build -> Stage -> Player单链
+docker exec "$DEVCONTAINER_NAME" bash -lc 'scripts/test-integration-demo.sh'
 ```
 
 真实窗口 smoke 证明 Linux/Xvfb 下的实际 WGPU callback/surface 路径、经 X11 注入的 host input 路径和确定性退出；它不等于 Windows、macOS、其他 GPU 或物理输入设备兼容性证明。
@@ -103,6 +107,7 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-b
 | `crates/build/` | `sge-build` library、通用 `sge build` launcher、Cargo artifact与atomic Stage publication |
 | `examples/demo_game/` | 独立 game library、Editor/Player/Build targets 与 project data |
 | `scripts/audit-boundaries.sh` | dependency、source ownership 与 prototype absence audit |
+| `scripts/test-integration-demo.sh` | M7 完整 workspace、Editor 与 staged Player 产品 gate |
 
 ## 文档入口
 

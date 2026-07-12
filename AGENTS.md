@@ -6,7 +6,7 @@
 
 - 项目名称：SimpleGameEngine
 - 当前定位：Rust 跨平台游戏引擎与 editor-first 产品实验仓库
-- 当前阶段：M1–M6 已完成；M7 Integration Demo 是下一里程碑
+- 当前阶段：M1–M7 目标架构已完成
 - 技术栈：Rust stable、Cargo workspace、egui/eframe、winit、wgpu
 - 默认开发环境：Dev Container / Docker
 - 迁移策略：不维护旧内部 API/格式兼容层；已替代的 prototype 通过 Git 历史参考
@@ -23,6 +23,7 @@
 | `docs/superpowers/specs/2026-07-12-render-and-hosts-m4-design.md` | M4 render、Player、Editor preview canonical 合同 |
 | `docs/superpowers/specs/2026-07-13-editor-play-m5-design.md` | M5 EditSession、Inspector/history、Play/input canonical 合同 |
 | `docs/superpowers/specs/2026-07-13-build-and-stage-m6-design.md` | M6 Cargo Build、immutable Stage、atomic current canonical 合同 |
+| `docs/superpowers/specs/2026-07-13-integration-demo-m7-design.md` | M7 独立 demo 单链与最终产品 gate canonical 合同 |
 | `.gitmessage` | commit message 模板 |
 
 ## 当前实现边界
@@ -82,8 +83,9 @@ bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `e
 
 最后审阅日期：2026-07-13
 
-- M1 Core Kernel、M2 Project And Data、M3 Asset Pipeline And Runtime Products、M4 Render And Hosts、M5 Editor Play、M6 Build And Stage 已完成。
+- M1 Core Kernel、M2 Project And Data、M3 Asset Pipeline And Runtime Products、M4 Render And Hosts、M5 Editor Play、M6 Build And Stage、M7 Integration Demo 已完成。
 - `demo-game-editor --play` 打开 target project、运行独立 PlayWorld/game systems并真实执行 WGPU prepare/paint；Stop isolation有 headless roundtrip证据。
 - `demo-game-player` 从 source-free cooked root加载，使用 winit input adapter、advance/extract并真实 present。
 - `sge build` 启动 game-specific Build，full Cook后只接受本次Cargo Player artifact，并以immutable generation + atomic manifest发布可复制Stage。
-- 下一里程碑：**M7 Integration Demo**，只组合并固化M1–M6公开能力，不增加demo-only engine shortcut。
+- `scripts/test-integration-demo.sh` 从 workspace gate/audit、game-specific Editor 窗口 smoke 到 authoring/Play/真实 Build/Cook/copied Stage/staged Player 单链闭合最终目标。
+- 当前目标架构不再有后续里程碑；延期项包括但不限于音频、物理、网络、archive/Pak/signing/installer、Play writeback、action remapping、gizmo/prefab、parallel ECS/RenderWorld/incremental Cook，完整清单与触发条件见目标架构规格，出现真实产品需求后另立目标。

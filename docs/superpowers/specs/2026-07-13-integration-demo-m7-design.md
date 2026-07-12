@@ -1,6 +1,7 @@
 # Integration Demo M7 Design
 
-状态：Approved
+状态：Complete
+实现状态：Complete
 日期：2026-07-13
 上位规格：`2026-07-11-rust-engine-target-architecture-design.md`
 
@@ -67,9 +68,10 @@ M7 integration test只补“同一个demo依次通过所有成功路径”的证
 `scripts/test-integration-demo.sh`作为README唯一完整demo gate入口。脚本只调用project documented Cargo/
 Xvfb命令，不安装host依赖、不创建第二实现。
 
-README、AGENTS、architecture overview和目标架构spec在M7 review通过后更新为M1–M7 Complete；明确延期项
-仍为audio/physics/network、archive/Pak/signing/installer、Play writeback、action remapping、gizmo/prefab、
-parallel ECS/RenderWorld/incremental Cook和跨平台声明。
+README、AGENTS、architecture overview和目标架构spec在M7 review通过后更新为M1–M7 Complete；延期项
+包括但不限于audio/physics/network、archive/Pak/signing/installer、Play writeback、action remapping、
+gizmo/prefab、parallel ECS/RenderWorld/incremental Cook，完整清单与触发条件以目标架构规格为准，并保留
+跨平台证据边界。
 
 ## 验证与完成条件
 
@@ -79,3 +81,16 @@ parallel ECS/RenderWorld/incremental Cook和跨平台声明。
 - full workspace gate和dependency/source audit通过。
 - 独立review确认M7没有新增demo-only engine API、重复validator或隐藏source依赖。
 - tracked docs、README、AGENTS、测试命令与HEAD一致，worktree无意外改动，所有coherent slices已提交。
+
+## 实现结果
+
+`examples/demo_game/build/tests/integration_demo.rs` 已按上述顺序运行同一临时project：通过public
+EditSession/Inspector完成hierarchy与自定义字段编辑，save/reopen并运行isolated Play，随后调用真实`sge build`。
+删除source后，测试从copied Stage的hash-verified runtime generation直接断言hierarchy、edited Rotator与
+PlayerController已进入cooked scene，再比较Editor Play与Player初始render语义，并启动staged Player完成X11
+input/WGPU present。子进程均有early-return清理，不会污染后续窗口gate。
+
+`scripts/test-integration-demo.sh` 是最终统一入口，覆盖workspace fmt/clippy/tests/build、boundary audit、
+game-specific Editor真实窗口smoke和上述完整单链。延期项包括但不限于audio/physics/network、archive/Pak/
+signing/installer、Play writeback、action remapping、gizmo/prefab、parallel ECS/RenderWorld/incremental Cook，
+完整清单与触发条件见目标架构规格；跨平台与其他GPU仍缺少实机证据。
