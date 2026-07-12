@@ -6,7 +6,9 @@
 
 mod mesh;
 mod runtime_catalog;
+mod runtime_content;
 mod runtime_path;
+mod runtime_store;
 
 use std::{
     cmp::Ordering,
@@ -26,9 +28,11 @@ pub use runtime_catalog::{
     RUNTIME_ASSET_CATALOG_FORMAT_VERSION, RuntimeAssetCatalog, RuntimeAssetRecord,
     RuntimeCatalogError,
 };
+pub use runtime_content::{RuntimeContentError, RuntimeContentRoot, RuntimeGeneration};
 pub use runtime_path::{
     RuntimeGenerationId, RuntimeGenerationIdError, RuntimeProductPath, RuntimeProductPathError,
 };
+pub use runtime_store::{RuntimeAssetStore, RuntimeAssetStoreError};
 
 pub const MESH_ASSET_TYPE_KEY: &str = "sge.mesh";
 
