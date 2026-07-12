@@ -2,9 +2,15 @@
 
 use std::{fs, path::PathBuf};
 
-use sge_project::{AuthoringAssetManifest, ProjectPath, ProjectRoot, SourceAssetRecord};
+use sge_asset::MeshAssetFormatError;
+use sge_project::{
+    AuthoringAssetManifest, ProjectPath, ProjectRoot, SourceAssetRecord, SourceImporter,
+};
 
-use super::{CacheEntryError, CacheStatus, decode_cache, import_obj};
+use super::{
+    CacheEntryError, CacheIssue, CacheStatus, ImportCacheError, cache_key, decode_cache,
+    digest_hex, import_obj, validate_metadata,
+};
 
 const TRIANGLE: &str = "\
 v 0 0 0
@@ -71,6 +77,29 @@ impl Drop for Fixture {
     }
 }
 
+fn assert_metadata_tamper_rebuilds(name: &str, from: &str, to: &str, expected_field: &'static str) {
+    let fixture = Fixture::new(name);
+    let record = fixture.record(false);
+    let imported = import_obj(&fixture.project, &record).expect("initial import must work");
+    let original =
+        String::from_utf8(fixture.cache_bytes(&imported.cache_path)).expect("cache must be UTF-8");
+    let tampered = original.replacen(from, to, 1);
+    assert_ne!(tampered, original, "tamper pattern must exist");
+    fixture.write_cache(&imported.cache_path, tampered.as_bytes());
+    let decoded = decode_cache(tampered.as_bytes()).expect("tampered wrapper must remain strict");
+    let SourceImporter::Obj(settings) = record.importer();
+    let mismatch = validate_metadata(decoded, &record, settings, &digest_hex(TRIANGLE.as_bytes()))
+        .expect_err("tampered metadata must mismatch");
+
+    let rebuilt = import_obj(&fixture.project, &record).expect("metadata mismatch must rebuild");
+
+    assert!(matches!(
+        mismatch,
+        CacheEntryError::MetadataMismatch(field) if field == expected_field
+    ));
+    assert_eq!(rebuilt.cache_status, CacheStatus::Rebuilt);
+}
+
 #[test]
 fn first_import_rebuilds_and_second_import_hits_strict_cache() {
     let fixture = Fixture::new("hit");
@@ -117,7 +146,7 @@ fn source_and_settings_changes_select_new_cache_keys() {
 }
 
 #[test]
-fn missing_corrupt_and_metadata_mismatched_cache_rebuild() {
+fn missing_and_corrupt_cache_rebuild() {
     let fixture = Fixture::new("rebuild");
     let record = fixture.record(false);
     let first = import_obj(&fixture.project, &record).expect("first import must work");
@@ -130,17 +159,46 @@ fn missing_corrupt_and_metadata_mismatched_cache_rebuild() {
     fixture.write_cache(&first.cache_path, b"not valid RON");
     let corrupt = import_obj(&fixture.project, &record).expect("corrupt cache must rebuild");
     assert_eq!(corrupt.cache_status, CacheStatus::Rebuilt);
+}
 
-    let bytes = String::from_utf8(fixture.cache_bytes(&first.cache_path))
-        .expect("cache must be UTF-8")
-        .replace(
-            "10000000-0000-4000-8000-000000000001",
-            "20000000-0000-4000-8000-000000000002",
-        );
-    fixture.write_cache(&first.cache_path, bytes.as_bytes());
-    let mismatch = import_obj(&fixture.project, &record).expect("mismatch must rebuild");
-    assert_eq!(mismatch.cache_status, CacheStatus::Rebuilt);
-    assert!(decode_cache(&fixture.cache_bytes(&first.cache_path)).is_ok());
+#[test]
+fn importer_version_mismatch_rebuilds() {
+    assert_metadata_tamper_rebuilds(
+        "importer_version_mismatch",
+        "importer_version: 1",
+        "importer_version: 99",
+        "importer_version",
+    );
+}
+
+#[test]
+fn asset_type_mismatch_rebuilds() {
+    assert_metadata_tamper_rebuilds(
+        "asset_type_mismatch",
+        "asset_type: \"sge.mesh\"",
+        "asset_type: \"sge.other\"",
+        "asset_type",
+    );
+}
+
+#[test]
+fn source_digest_mismatch_rebuilds() {
+    assert_metadata_tamper_rebuilds(
+        "source_digest_mismatch",
+        "5f32296497f0c937569f9eac6a5ca28cf3e8123206d765f81c5bf3076ca0ee73",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "source_digest",
+    );
+}
+
+#[test]
+fn settings_mismatch_rebuilds() {
+    assert_metadata_tamper_rebuilds(
+        "settings_mismatch",
+        "flip_texcoord_v: false",
+        "flip_texcoord_v: true",
+        "settings",
+    );
 }
 
 #[test]
@@ -182,4 +240,66 @@ fn cache_wrapper_reports_version_before_missing_v1_fields() {
             found: 99
         }
     ));
+}
+
+#[test]
+fn nested_mesh_reports_version_before_missing_v1_fields() {
+    let input = br#"(
+        format_version: 1,
+        importer_version: 1,
+        asset_id: "10000000-0000-4000-8000-000000000001",
+        asset_type: "sge.mesh",
+        source_digest: "0000000000000000000000000000000000000000000000000000000000000000",
+        settings: (flip_texcoord_v: false),
+        product: (format_version: 99),
+    )"#;
+
+    let error = decode_cache(input).expect_err("wrong nested version must fail");
+
+    assert!(matches!(
+        error,
+        CacheEntryError::ProductDecode(MeshAssetFormatError::VersionMismatch {
+            expected: 1,
+            found: 99
+        })
+    ));
+}
+
+#[test]
+fn corrupt_cache_and_invalid_obj_preserve_both_typed_sources() {
+    const INVALID_OBJ: &[u8] = b"v invalid 0 0\n";
+    let fixture = Fixture::new("rebuild_context");
+    let record = fixture.record(false);
+    fixture.write_source("v invalid 0 0\n");
+    let SourceImporter::Obj(settings) = record.importer();
+    let key = cache_key(INVALID_OBJ, settings);
+    let directory = ProjectPath::new(format!("Cache/Imported/{}", record.id()))
+        .expect("cache directory must be valid");
+    fixture
+        .project
+        .ensure_directory(&directory)
+        .expect("cache directory must be safe");
+    let cache_path = ProjectPath::new(format!("{directory}/v1-{key}.import.ron"))
+        .expect("cache path must be valid");
+    fixture.write_cache(&cache_path, b"not valid RON");
+
+    let error = import_obj(&fixture.project, &record).expect_err("rebuild must fail");
+
+    match error {
+        ImportCacheError::Rebuild {
+            cache_issue,
+            source,
+            ..
+        } => {
+            assert!(matches!(
+                *cache_issue,
+                CacheIssue::Invalid(CacheEntryError::Parse { .. })
+            ));
+            assert_eq!(
+                source.parser_source(),
+                Some(tobj::LoadError::PositionParseError)
+            );
+        }
+        other => panic!("expected typed rebuild error, got {other:?}"),
+    }
 }

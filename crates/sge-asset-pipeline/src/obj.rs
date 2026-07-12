@@ -169,6 +169,14 @@ impl ObjImportError {
             kind,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) const fn parser_source(&self) -> Option<tobj::LoadError> {
+        match &self.kind {
+            ObjImportErrorKind::Parse(source) => Some(*source),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
