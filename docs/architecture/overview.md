@@ -53,7 +53,7 @@ M3 focused/headless 证据：
 - source-free integration 只复制 catalog/current generation，再删除 project、authoring scene、OBJ 与 Cache；public runtime path先按 `game_id` identity-first 拒绝错误游戏，再完成 catalog/store/RuntimeScene/Ready candidate/typed instantiate 与 mesh lookup。
 - 边界审计证明 pipeline production closure 不含 App/Editor/Player/render/bare/UI/GPU，runtime product owners 不含 project/pipeline/tobj/source importer；旧 OBJ loader 的剩余 caller 精确限定为 Editor、runtime 与 upstream example test。
 
-M2 是 headless milestone，不需要新增 GUI smoke；workspace 中现有 Editor tests 只证明 prototype 产品路径未回归。本轮 M2 closure 未重跑以下既有 runtime/Xvfb/host-native smoke：
+M3 是 headless milestone，不需要新增 GUI smoke；workspace 中现有 Editor tests 只证明 prototype 产品路径未回归。本轮 M3 closure 未重跑以下既有 runtime/Xvfb/host-native smoke：
 
 - `cargo run -p runtime -- examples/editor_smoke/scenes/main.scene.ron examples/editor_smoke`
 - `xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron`

@@ -77,31 +77,19 @@ pub(crate) fn import_obj(
         Err(source) => CacheIssue::Read(source),
     };
 
-    let mesh = parse_obj(record, &raw_bytes).map_err(|source| ImportCacheError::Rebuild {
+    let mesh = rebuild_cache(
+        project,
+        record,
+        settings,
+        &source_digest,
+        &raw_bytes,
+        &cache_path,
+    )
+    .map_err(|source| ImportCacheError::Rebuild {
         cache_path: cache_path.clone(),
         cache_issue: Box::new(cache_issue),
-        source,
+        source: Box::new(source),
     })?;
-    let encoded = encode_cache(record, settings, &source_digest, &mesh)?;
-    project
-        .write_atomic(&cache_path, &encoded)
-        .map_err(|source| ImportCacheError::CacheWrite {
-            path: cache_path.clone(),
-            source,
-        })?;
-    let readback =
-        project
-            .read(&cache_path)
-            .map_err(|source| ImportCacheError::CacheReadbackIo {
-                path: cache_path.clone(),
-                source,
-            })?;
-    let mesh = decode_cache(&readback)
-        .and_then(|cache| validate_metadata(cache, record, settings, &source_digest))
-        .map_err(|source| ImportCacheError::CacheReadback {
-            path: cache_path.clone(),
-            source,
-        })?;
 
     Ok(ImportedMesh {
         asset_id: record.id(),
@@ -110,6 +98,37 @@ pub(crate) fn import_obj(
         cache_path,
         cache_status: CacheStatus::Rebuilt,
     })
+}
+
+fn rebuild_cache(
+    project: &ProjectRoot,
+    record: &SourceAssetRecord,
+    settings: &ObjImportSettings,
+    source_digest: &str,
+    raw_bytes: &[u8],
+    cache_path: &ProjectPath,
+) -> Result<MeshAsset, CacheRebuildError> {
+    let mesh = parse_obj(record, raw_bytes).map_err(CacheRebuildError::Import)?;
+    let encoded = encode_cache(record, settings, source_digest, &mesh)?;
+    project
+        .write_atomic(cache_path, &encoded)
+        .map_err(|source| CacheRebuildError::Write {
+            path: cache_path.clone(),
+            source,
+        })?;
+    let readback = project
+        .read(cache_path)
+        .map_err(|source| CacheRebuildError::ReadbackIo {
+            path: cache_path.clone(),
+            source,
+        })?;
+    let mesh = decode_cache(&readback)
+        .and_then(|cache| validate_metadata(cache, record, settings, source_digest))
+        .map_err(|source| CacheRebuildError::Readback {
+            path: cache_path.clone(),
+            source,
+        })?;
+    Ok(mesh)
 }
 
 fn cache_key(raw_bytes: &[u8], settings: &ObjImportSettings) -> String {
@@ -149,6 +168,7 @@ struct CacheWire {
     asset_id: AssetId,
     asset_type: String,
     source_digest: String,
+    product_digest: String,
     settings: SettingsWire,
     product: Box<RawValue>,
 }
@@ -181,6 +201,7 @@ fn encode_cache(
     mesh: &MeshAsset,
 ) -> Result<Vec<u8>, CacheEntryError> {
     let product_ron = mesh.to_ron().map_err(CacheEntryError::ProductEncode)?;
+    let product_digest = digest_hex(product_ron.as_bytes());
     let product = RawValue::from_boxed_ron(product_ron.into_boxed_str()).map_err(|source| {
         CacheEntryError::ProductValue {
             source: Box::new(source),
@@ -192,6 +213,7 @@ fn encode_cache(
         asset_id: record.id(),
         asset_type: record.asset_type().to_string(),
         source_digest: source_digest.to_owned(),
+        product_digest,
         settings: SettingsWire {
             flip_texcoord_v: settings.flip_texcoord_v(),
         },
@@ -222,8 +244,15 @@ fn decode_cache(input: &[u8]) -> Result<DecodedCache, CacheEntryError> {
     if !is_digest(&wire.source_digest) {
         return Err(CacheEntryError::InvalidSourceDigest);
     }
+    if !is_digest(&wire.product_digest) {
+        return Err(CacheEntryError::InvalidProductDigest);
+    }
     let mesh =
         MeshAsset::from_ron(wire.product.get_ron()).map_err(CacheEntryError::ProductDecode)?;
+    let canonical_product = mesh.to_ron().map_err(CacheEntryError::ProductEncode)?;
+    if digest_hex(canonical_product.as_bytes()) != wire.product_digest {
+        return Err(CacheEntryError::ProductDigestMismatch);
+    }
     Ok(DecodedCache {
         importer_version: wire.importer_version,
         asset_id: wire.asset_id,
@@ -304,24 +333,30 @@ pub enum ImportCacheError {
         cache_path: ProjectPath,
         cache_issue: Box<CacheIssue>,
         #[source]
-        source: ObjImportError,
+        source: Box<CacheRebuildError>,
     },
-    #[error("cannot encode cache entry: {0}")]
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CacheRebuildError {
+    #[error("cannot import OBJ product: {0}")]
+    Import(#[source] ObjImportError),
+    #[error("cannot encode rebuilt cache entry: {0}")]
     Encode(#[from] CacheEntryError),
     #[error("cannot write cache {path}: {source}")]
-    CacheWrite {
+    Write {
         path: ProjectPath,
         #[source]
         source: ProjectIoError,
     },
     #[error("cannot read back cache {path}: {source}")]
-    CacheReadbackIo {
+    ReadbackIo {
         path: ProjectPath,
         #[source]
         source: ProjectIoError,
     },
     #[error("cache {path} failed strict readback: {source}")]
-    CacheReadback {
+    Readback {
         path: ProjectPath,
         #[source]
         source: CacheEntryError,
@@ -339,6 +374,10 @@ pub enum CacheEntryError {
     VersionMismatch { expected: u32, found: u32 },
     #[error("import cache source digest must be lowercase 64-character SHA-256")]
     InvalidSourceDigest,
+    #[error("import cache product digest must be lowercase 64-character SHA-256")]
+    InvalidProductDigest,
+    #[error("cached MeshAsset bytes do not match product digest")]
+    ProductDigestMismatch,
     #[error("cannot encode MeshAsset for cache: {0}")]
     ProductEncode(#[source] MeshAssetFormatError),
     #[error("cannot convert MeshAsset to nested cache value: {source}")]

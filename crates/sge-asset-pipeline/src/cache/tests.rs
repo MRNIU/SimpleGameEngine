@@ -2,14 +2,14 @@
 
 use std::{fs, path::PathBuf};
 
-use sge_asset::MeshAssetFormatError;
+use sge_asset::{MeshAsset, MeshAssetFormatError, MeshVertex};
 use sge_project::{
     AuthoringAssetManifest, ProjectPath, ProjectRoot, SourceAssetRecord, SourceImporter,
 };
 
 use super::{
-    CacheEntryError, CacheIssue, CacheStatus, ImportCacheError, cache_key, decode_cache,
-    digest_hex, import_obj, validate_metadata,
+    CacheEntryError, CacheIssue, CacheRebuildError, CacheStatus, ImportCacheError, cache_key,
+    decode_cache, digest_hex, import_obj, validate_metadata,
 };
 
 const TRIANGLE: &str = "\
@@ -162,6 +162,58 @@ fn missing_and_corrupt_cache_rebuild() {
 }
 
 #[test]
+fn structurally_valid_product_tamper_rebuilds_matching_cache() {
+    let fixture = Fixture::new("product_digest");
+    let record = fixture.record(false);
+    let first = import_obj(&fixture.project, &record).expect("initial import must work");
+    let original =
+        String::from_utf8(fixture.cache_bytes(&first.cache_path)).expect("cache must be UTF-8");
+    let decoded = decode_cache(original.as_bytes()).expect("cache must decode");
+    let original_product = decoded.mesh.to_ron().expect("cached mesh must encode");
+    let mut vertices = decoded.mesh.vertices().to_vec();
+    vertices[0] = MeshVertex::new([7.0, 8.0, 9.0], None, Some([0.0, 0.0]))
+        .expect("tampered vertex must remain structurally valid");
+    let tampered_product = MeshAsset::new(vertices, decoded.mesh.indices().to_vec())
+        .expect("tampered mesh must remain structurally valid")
+        .to_ron()
+        .expect("tampered mesh must encode");
+    let tampered = original.replacen(&original_product, &tampered_product, 1);
+    assert_ne!(tampered, original, "nested product must be replaced");
+    fixture.write_cache(&first.cache_path, tampered.as_bytes());
+
+    let rebuilt = import_obj(&fixture.project, &record).expect("tampered cache must rebuild");
+
+    assert_eq!(rebuilt.cache_status, CacheStatus::Rebuilt);
+    assert_eq!(rebuilt.mesh, first.mesh);
+}
+
+#[test]
+fn write_failure_preserves_the_cache_issue_that_triggered_rebuild() {
+    let fixture = Fixture::new("write_context");
+    let record = fixture.record(false);
+    let SourceImporter::Obj(settings) = record.importer();
+    let key = cache_key(TRIANGLE.as_bytes(), settings);
+    let directory = fixture
+        .root_path
+        .join(format!("Cache/Imported/{}", record.id()));
+    fs::create_dir_all(directory.join(format!("v1-{key}.import.ron")))
+        .expect("directory-shaped cache entry must be created");
+
+    let error = import_obj(&fixture.project, &record).expect_err("cache write must fail");
+
+    let ImportCacheError::Rebuild {
+        cache_issue,
+        source,
+        ..
+    } = error
+    else {
+        panic!("expected typed rebuild failure");
+    };
+    assert!(matches!(*cache_issue, CacheIssue::Read(_)));
+    assert!(matches!(*source, CacheRebuildError::Write { .. }));
+}
+
+#[test]
 fn importer_version_mismatch_rebuilds() {
     assert_metadata_tamper_rebuilds(
         "importer_version_mismatch",
@@ -250,6 +302,7 @@ fn nested_mesh_reports_version_before_missing_v1_fields() {
         asset_id: "10000000-0000-4000-8000-000000000001",
         asset_type: "sge.mesh",
         source_digest: "0000000000000000000000000000000000000000000000000000000000000000",
+        product_digest: "0000000000000000000000000000000000000000000000000000000000000000",
         settings: (flip_texcoord_v: false),
         product: (format_version: 99),
     )"#;
@@ -295,6 +348,9 @@ fn corrupt_cache_and_invalid_obj_preserve_both_typed_sources() {
                 *cache_issue,
                 CacheIssue::Invalid(CacheEntryError::Parse { .. })
             ));
+            let CacheRebuildError::Import(source) = *source else {
+                panic!("expected OBJ import source");
+            };
             assert_eq!(
                 source.parser_source(),
                 Some(tobj::LoadError::PositionParseError)

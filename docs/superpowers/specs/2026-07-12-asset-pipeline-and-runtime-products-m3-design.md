@@ -310,15 +310,19 @@ importer_version: 1
 asset_id
 asset_type
 source_digest
+product_digest
 settings
 product: MeshAsset v1
 ```
 
+`product_digest`绑定 canonical nested `MeshAsset` bytes，使结构合法但被改写的 cache product也必须
+rebuild；它与 `source_digest`、content-keyed path共同形成 wrapper自洽检查，不把 Cache升级为真源。
+
 Cache flow：
 
 1. 总是先读取 source并计算 digest/key；source缺失时即使旧 cache存在也 fail。
-2. matching path存在时 strict decode wrapper和 nested MeshAsset，核对 ID/type/source digest/settings/
-   importer version。
+2. matching path存在时 strict decode wrapper和 nested MeshAsset，核对 ID/type/source digest/product
+   digest/settings/importer version。
 3. matching cache missing、corrupt或metadata mismatch时，以当前 source显式重新 parse/validate，
    atomic write新 wrapper并 strict readback。
 4. Rebuild outcome在 `ImportOutcome` / `CookReport`中标为 hit或rebuilt，不能伪装成 default success。
