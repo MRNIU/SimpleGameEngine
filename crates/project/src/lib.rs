@@ -9,7 +9,7 @@ mod path;
 
 pub use descriptor::{
     PROJECT_DESCRIPTOR_PATH, PROJECT_FORMAT_VERSION, PackageName, PackageNameError,
-    ProjectDescriptor, ProjectFormatError,
+    ProjectBootstrap, ProjectDescriptor, ProjectFormatError,
 };
 pub use io::{ProjectIoError, ProjectRoot};
 pub use manifest::{

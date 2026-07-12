@@ -62,6 +62,39 @@ struct ProjectDescriptorWire {
     default_authoring_scene: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectBootstrap {
+    build_package: PackageName,
+}
+
+impl ProjectBootstrap {
+    pub fn from_ron(input: &str) -> Result<Self, ProjectFormatError> {
+        Self::from_bytes(input.as_bytes())
+    }
+
+    pub fn load(root: &ProjectRoot) -> Result<Self, ProjectFormatError> {
+        let path = ProjectPath::new(PROJECT_DESCRIPTOR_PATH)?;
+        Self::from_bytes(&root.read(&path)?)
+    }
+
+    #[must_use]
+    pub fn build_package(&self) -> &PackageName {
+        &self.build_package
+    }
+
+    fn from_bytes(input: &[u8]) -> Result<Self, ProjectFormatError> {
+        let (path, wire) = parse_wire(input)?;
+        let build_package =
+            checked_package("build_package", wire.build_package).map_err(|source| {
+                ProjectFormatError::AtPath {
+                    path,
+                    source: Box::new(source),
+                }
+            })?;
+        Ok(Self { build_package })
+    }
+}
+
 impl ProjectDescriptor {
     pub fn new(
         game_id: impl Into<String>,
@@ -139,19 +172,7 @@ impl ProjectDescriptor {
     }
 
     fn from_bytes(input: &[u8]) -> Result<Self, ProjectFormatError> {
-        let path = ProjectPath::new(PROJECT_DESCRIPTOR_PATH)?;
-        let wire: ProjectDescriptorWire =
-            ron::de::from_bytes(input).map_err(|source| ProjectFormatError::Parse {
-                path: path.clone(),
-                source: Box::new(source),
-            })?;
-        if wire.format_version != PROJECT_FORMAT_VERSION {
-            return Err(ProjectFormatError::VersionMismatch {
-                path,
-                expected: PROJECT_FORMAT_VERSION,
-                found: wire.format_version,
-            });
-        }
+        let (path, wire) = parse_wire(input)?;
         let default_authoring_scene =
             ProjectPath::new(&wire.default_authoring_scene).map_err(|source| {
                 ProjectFormatError::AtPath {
@@ -216,6 +237,23 @@ impl ProjectDescriptor {
         )
         .map(|_| ())
     }
+}
+
+fn parse_wire(input: &[u8]) -> Result<(ProjectPath, ProjectDescriptorWire), ProjectFormatError> {
+    let path = ProjectPath::new(PROJECT_DESCRIPTOR_PATH)?;
+    let wire: ProjectDescriptorWire =
+        ron::de::from_bytes(input).map_err(|source| ProjectFormatError::Parse {
+            path: path.clone(),
+            source: Box::new(source),
+        })?;
+    if wire.format_version != PROJECT_FORMAT_VERSION {
+        return Err(ProjectFormatError::VersionMismatch {
+            path,
+            expected: PROJECT_FORMAT_VERSION,
+            found: wire.format_version,
+        });
+    }
+    Ok((path, wire))
 }
 
 fn checked_package(field: &'static str, value: String) -> Result<PackageName, ProjectFormatError> {
