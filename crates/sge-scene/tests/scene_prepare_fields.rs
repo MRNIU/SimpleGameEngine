@@ -3,7 +3,10 @@
 mod support;
 
 use sge_asset::{AssetId, AssetRef};
-use sge_reflect::{FieldKey, ReflectedValue, Value, ValueKind};
+use sge_reflect::{
+    FieldKey, FieldValues, ReflectedValue, TypeDescriptor, TypeKey, TypeRegistry, ValidationErrors,
+    ValidationIssue, Value, ValueKind,
+};
 use sge_scene::{AuthoringEntity, AuthoringScene, SceneValidationError, prepare};
 
 use support::{Assets, MeshAsset, Probe, probe_registry, scene_id};
@@ -168,5 +171,161 @@ fn prepared_scene_owns_decoded_values_after_sources_are_dropped()
     drop(registry);
     drop(assets);
     drop(prepared);
+    Ok(())
+}
+
+#[test]
+fn prepare_selects_the_lowest_field_key_across_shape_and_kind_errors()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (scene, registry, assets, _) = encoded_probe(1)?;
+    let original = scene
+        .entities()
+        .next()
+        .and_then(|entity| entity.components().next())
+        .ok_or("example scene must contain a component")?;
+    let entity_id = scene_id(1)?;
+
+    let mut unexpected_before_missing = original.fields().clone();
+    assert!(matches!(
+        unexpected_before_missing.remove("target"),
+        Some(Value::Reference(_))
+    ));
+    assert_eq!(
+        unexpected_before_missing.insert(FieldKey::new("alpha")?, Value::Bool(true)),
+        None
+    );
+    let unexpected_scene = AuthoringScene::new(vec![AuthoringEntity::new(
+        entity_id,
+        None,
+        vec![ReflectedValue::new(
+            original.type_key().clone(),
+            1,
+            unexpected_before_missing,
+        )],
+    )?])?;
+    assert!(matches!(
+        prepare(&unexpected_scene, &registry, &assets),
+        Err(SceneValidationError::UnexpectedComponentField {
+            entity,
+            component,
+            field,
+        }) if entity == entity_id
+            && component.as_str() == "demo.probe"
+            && field.as_str() == "alpha"
+    ));
+
+    let mut wrong_kind_before_missing = original.fields().clone();
+    assert!(matches!(
+        wrong_kind_before_missing.remove("target"),
+        Some(Value::Reference(_))
+    ));
+    assert_eq!(
+        wrong_kind_before_missing.insert(FieldKey::new("count")?, Value::String("one".to_owned()),),
+        Some(Value::I64(1))
+    );
+    let wrong_kind_scene = AuthoringScene::new(vec![AuthoringEntity::new(
+        entity_id,
+        None,
+        vec![ReflectedValue::new(
+            original.type_key().clone(),
+            1,
+            wrong_kind_before_missing,
+        )],
+    )?])?;
+    assert!(matches!(
+        prepare(&wrong_kind_scene, &registry, &assets),
+        Err(SceneValidationError::ComponentValueKindMismatch {
+            entity,
+            component,
+            field,
+            expected: ValueKind::I64,
+            actual: ValueKind::String,
+        }) if entity == entity_id
+            && component.as_str() == "demo.probe"
+            && field.as_str() == "count"
+    ));
+    Ok(())
+}
+
+#[derive(Clone)]
+struct ForwardIssues;
+
+#[derive(Clone)]
+struct ReverseIssues;
+
+fn issue(field: &str, message: &str) -> ValidationIssue {
+    match FieldKey::new(field) {
+        Ok(field) => ValidationIssue::field(field, message),
+        Err(error) => ValidationIssue::component(error.to_string()),
+    }
+}
+
+fn forward_issues(_value: &ForwardIssues) -> Result<(), ValidationErrors> {
+    Err(ValidationErrors::new(vec![
+        ValidationIssue::component("component issue"),
+        issue("zeta", "zeta issue"),
+        issue("alpha", "second alpha issue"),
+        issue("alpha", "first alpha issue"),
+    ]))
+}
+
+fn reverse_issues(_value: &ReverseIssues) -> Result<(), ValidationErrors> {
+    Err(ValidationErrors::new(vec![
+        issue("alpha", "first alpha issue"),
+        issue("alpha", "second alpha issue"),
+        issue("zeta", "zeta issue"),
+        ValidationIssue::component("component issue"),
+    ]))
+}
+
+fn issue_registry<T: Clone + 'static>(
+    type_key: &str,
+    constructor: fn() -> T,
+    validator: fn(&T) -> Result<(), ValidationErrors>,
+) -> Result<TypeRegistry, Box<dyn std::error::Error>> {
+    let descriptor =
+        TypeDescriptor::builder::<T>(TypeKey::new(type_key)?, 1, "Issue ordering", constructor)
+            .validator(validator)
+            .scene_saveable()
+            .build()?;
+    let mut registry = TypeRegistry::new();
+    registry.register(descriptor)?;
+    registry.freeze()?;
+    Ok(registry)
+}
+
+fn issue_scene(type_key: &str) -> Result<AuthoringScene, Box<dyn std::error::Error>> {
+    let component = ReflectedValue::new(TypeKey::new(type_key)?, 1, FieldValues::default());
+    Ok(AuthoringScene::new(vec![AuthoringEntity::new(
+        scene_id(1)?,
+        None,
+        vec![component],
+    )?])?)
+}
+
+#[test]
+fn prepare_canonicalizes_multiple_validation_issues_independent_of_insertion_order()
+-> Result<(), Box<dyn std::error::Error>> {
+    let cases = [
+        (
+            issue_scene("demo.forward_issues")?,
+            issue_registry("demo.forward_issues", || ForwardIssues, forward_issues)?,
+        ),
+        (
+            issue_scene("demo.reverse_issues")?,
+            issue_registry("demo.reverse_issues", || ReverseIssues, reverse_issues)?,
+        ),
+    ];
+
+    for (scene, registry) in cases {
+        assert!(matches!(
+            prepare(&scene, &registry, &Assets::default()),
+            Err(SceneValidationError::ComponentValidation {
+                field: Some(field),
+                message,
+                ..
+            }) if field.as_str() == "alpha" && message == "first alpha issue"
+        ));
+    }
     Ok(())
 }

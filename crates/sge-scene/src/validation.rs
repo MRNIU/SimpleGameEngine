@@ -2,13 +2,14 @@
 
 use std::{
     any::{Any, TypeId},
+    cmp::Ordering,
     collections::{BTreeMap, BTreeSet},
 };
 
 use sge_asset::{AssetId, AssetIdError, AssetLookup};
 use sge_reflect::{
     FieldKey, FieldKind, ReferenceSemantic, ReflectError, TypeDescriptor, TypeKey, TypeRegistry,
-    Value, ValueKind,
+    ValidationIssue, Value, ValueKind,
 };
 
 use crate::{AuthoringScene, SceneEntityId, SceneEntityIdError};
@@ -108,30 +109,24 @@ fn validate_fields(
     entity_ids: &BTreeSet<SceneEntityId>,
     assets: &impl AssetLookup,
 ) -> Result<(), SceneValidationError> {
-    for (field, _) in descriptor.fields() {
-        if !component.fields().contains_key(field.as_str()) {
-            return Err(SceneValidationError::MissingComponentField {
-                entity,
-                component: component.type_key().clone(),
-                field: field.clone(),
-            });
-        }
-    }
-    for (field, _) in component.fields().iter() {
-        if descriptor.field(field.as_str()).is_none() {
+    let fields = descriptor
+        .fields()
+        .map(|(field, _)| field.clone())
+        .chain(component.fields().iter().map(|(field, _)| field.clone()))
+        .collect::<BTreeSet<_>>();
+    for field in fields {
+        let Some(metadata) = descriptor.field(field.as_str()) else {
             return Err(SceneValidationError::UnexpectedComponentField {
                 entity,
                 component: component.type_key().clone(),
-                field: field.clone(),
+                field,
             });
-        }
-    }
-    for (field, metadata) in descriptor.fields() {
+        };
         let Some(value) = component.fields().get(field.as_str()) else {
             return Err(SceneValidationError::MissingComponentField {
                 entity,
                 component: component.type_key().clone(),
-                field: field.clone(),
+                field,
             });
         };
         let expected = metadata.kind().value_kind();
@@ -140,7 +135,7 @@ fn validate_fields(
             return Err(SceneValidationError::ComponentValueKindMismatch {
                 entity,
                 component: component.type_key().clone(),
-                field: field.clone(),
+                field,
                 expected,
                 actual,
             });
@@ -148,7 +143,7 @@ fn validate_fields(
         validate_reference(
             entity,
             component.type_key(),
-            field,
+            &field,
             metadata.kind(),
             value,
             entity_ids,
@@ -230,26 +225,43 @@ fn decode_error(
     component: &TypeKey,
     source: ReflectError,
 ) -> SceneValidationError {
-    if let ReflectError::Validation(errors) = source {
-        if let Some(issue) = errors.issues().first() {
-            return SceneValidationError::ComponentValidation {
+    match source {
+        ReflectError::Validation(errors) => {
+            if let Some(issue) = errors
+                .issues()
+                .iter()
+                .min_by(|left, right| validation_issue_order(left, right))
+            {
+                return SceneValidationError::ComponentValidation {
+                    entity,
+                    component: component.clone(),
+                    field: issue.field_key().cloned(),
+                    message: issue.message().to_owned(),
+                };
+            }
+            SceneValidationError::ComponentValidation {
                 entity,
                 component: component.clone(),
-                field: issue.field_key().cloned(),
-                message: issue.message().to_owned(),
-            };
+                field: None,
+                message: "component validation failed without an issue".to_owned(),
+            }
         }
-        return SceneValidationError::ComponentValidation {
+        source => SceneValidationError::ComponentDecode {
             entity,
             component: component.clone(),
-            field: None,
-            message: "component validation failed without an issue".to_owned(),
-        };
+            source,
+        },
     }
-    SceneValidationError::ComponentDecode {
-        entity,
-        component: component.clone(),
-        source,
+}
+
+fn validation_issue_order(left: &ValidationIssue, right: &ValidationIssue) -> Ordering {
+    match (left.field_key(), right.field_key()) {
+        (Some(left_field), Some(right_field)) => left_field
+            .cmp(right_field)
+            .then_with(|| left.message().cmp(right.message())),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => left.message().cmp(right.message()),
     }
 }
 
