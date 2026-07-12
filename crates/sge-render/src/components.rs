@@ -110,6 +110,12 @@ impl MeshRenderer {
     }
 }
 
+impl Default for MeshRenderer {
+    fn default() -> Self {
+        Self::new(AssetRef::new(sge_asset::AssetId::nil()))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Material {
     pub(crate) base_color: [f32; 4],

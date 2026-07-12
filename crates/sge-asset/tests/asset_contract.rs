@@ -34,6 +34,15 @@ fn generated_asset_id_is_uuid_v4() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
+fn nil_asset_id_is_stable_and_canonical() {
+    assert_eq!(
+        AssetId::nil().to_string(),
+        "00000000-0000-0000-0000-000000000000"
+    );
+    assert_eq!(AssetId::nil(), AssetId::nil());
+}
+
+#[test]
 fn asset_id_accepts_canonical_lowercase_uuid() -> Result<(), Box<dyn std::error::Error>> {
     let id: AssetId = "550e8400-e29b-41d4-a716-446655440000".parse()?;
 

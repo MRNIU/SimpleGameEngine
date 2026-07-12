@@ -1,7 +1,6 @@
 // Copyright The SimpleGameEngine Contributors
 
 use sge_app::{EngineApp, Plugin, RegistrationError};
-use sge_asset::{AssetId, AssetRef};
 use sge_math::{Quat, Transform, Vec3};
 use sge_reflect::{
     FieldKey, FieldKind, FieldMetadata, FieldRegistration, ReflectError, TypeDescriptor, TypeKey,
@@ -142,9 +141,12 @@ fn camera_descriptor() -> TypeDescriptor {
 }
 
 fn mesh_renderer_descriptor() -> TypeDescriptor {
-    TypeDescriptor::builder::<MeshRenderer>(key("sge.mesh_renderer"), 1, "Mesh Renderer", || {
-        MeshRenderer::new(AssetRef::new(AssetId::new_v4()))
-    })
+    TypeDescriptor::builder::<MeshRenderer>(
+        key("sge.mesh_renderer"),
+        1,
+        "Mesh Renderer",
+        MeshRenderer::default,
+    )
     .field(
         FieldRegistration::reference(
             field("mesh"),

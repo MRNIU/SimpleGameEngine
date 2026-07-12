@@ -3,7 +3,7 @@
 use sge_app::{EngineApp, RegistrationError};
 use sge_asset::{AssetId, AssetRef, MeshAsset};
 use sge_math::Transform;
-use sge_reflect::{FieldKind, ReflectError};
+use sge_reflect::{FieldKind, ReferenceSemantic, ReflectError};
 use sge_render::{Camera, Light, Material, MeshRenderer, Projection, RenderPlugin};
 
 fn ready_app() -> Result<EngineApp, RegistrationError> {
@@ -54,7 +54,8 @@ fn plugin_registers_exact_scene_saveable_schema() -> Result<(), Box<dyn std::err
             .descriptor("sge.mesh_renderer")
             .and_then(|descriptor| descriptor.field("mesh"))
             .map(|metadata| metadata.kind()),
-        Some(FieldKind::Reference(_))
+        Some(FieldKind::Reference(ReferenceSemantic::Asset { asset_type }))
+            if asset_type.as_str() == "sge.mesh"
     ));
     Ok(())
 }

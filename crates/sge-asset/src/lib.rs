@@ -121,6 +121,12 @@ impl<T: AssetType> ReferenceValue for AssetRef<T> {
 }
 
 impl AssetId {
+    /// Returns the stable nil UUID used only for an unassigned typed reference candidate.
+    #[must_use]
+    pub const fn nil() -> Self {
+        Self(uuid::Uuid::nil())
+    }
+
     #[must_use]
     pub fn new_v4() -> Self {
         Self(uuid::Uuid::new_v4())

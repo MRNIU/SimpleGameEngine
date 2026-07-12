@@ -5,18 +5,23 @@ use sge_asset::{AssetId, AssetRef, MeshAsset, MeshVertex, RuntimeAssetStore};
 use sge_math::Transform;
 use sge_render::{Camera, Light, Material, MeshRenderer, Projection, RenderPlugin};
 use sge_scene::{
-    AuthoringEntity, AuthoringScene, Parent, SceneEntityId, instantiate, parent_descriptor,
-    prepare, scene_entity_id_descriptor,
+    AuthoringEntity, AuthoringScene, Parent, SceneEntityId, SceneValidationError, instantiate,
+    parent_descriptor, prepare, scene_entity_id_descriptor,
 };
 
-#[test]
-fn reflected_render_components_survive_scene_reopen_and_instantiate()
--> Result<(), Box<dyn std::error::Error>> {
+fn ready_app() -> Result<EngineApp, Box<dyn std::error::Error>> {
     let mut app = EngineApp::new();
     app.register_reflected_component::<SceneEntityId>(scene_entity_id_descriptor()?)?;
     app.register_reflected_component::<Parent>(parent_descriptor()?)?;
     app.add_plugin(RenderPlugin)?;
     app.finish()?;
+    Ok(app)
+}
+
+#[test]
+fn reflected_render_components_survive_scene_reopen_and_instantiate()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut app = ready_app()?;
 
     let asset = AssetId::new_v4();
     let store = RuntimeAssetStore::from_meshes([(asset, triangle_mesh()?)])?;
@@ -48,6 +53,31 @@ fn reflected_render_components_survive_scene_reopen_and_instantiate()
     assert_eq!(app.world().get::<MeshRenderer>(entity), Some(&mesh));
     assert_eq!(app.world().get::<Material>(entity), Some(&material));
     assert_eq!(app.world().get::<Light>(entity), Some(&light));
+    Ok(())
+}
+
+#[test]
+fn default_mesh_reference_is_stable_and_rejected_until_assigned()
+-> Result<(), Box<dyn std::error::Error>> {
+    let app = ready_app()?;
+    let first = MeshRenderer::default();
+    let second = MeshRenderer::default();
+    assert_eq!(first, second);
+    assert_eq!(first.mesh().id(), &AssetId::nil());
+
+    let entity = SceneEntityId::new_v4();
+    let scene = AuthoringScene::new(vec![AuthoringEntity::new(
+        entity,
+        None,
+        vec![app.type_registry().encode(&first)?],
+    )?])?;
+    let store = RuntimeAssetStore::from_meshes([])?;
+
+    assert!(matches!(
+        prepare(&scene, app.type_registry(), &store),
+        Err(SceneValidationError::MissingAssetReference { asset, .. })
+            if asset == AssetId::nil()
+    ));
     Ok(())
 }
 
