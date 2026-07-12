@@ -2,7 +2,7 @@
 
 use sge_project::{AuthoringAssetManifest, SourceAssetRecord};
 
-use super::{ObjImportErrorKind, checked_rebase, parse_obj};
+use super::{ObjImportErrorKind, parse_obj, rebase_index};
 
 const TRIANGLE: &str = "\
 o Triangle
@@ -208,6 +208,18 @@ f 2 3
 }
 
 #[test]
-fn checked_rebase_rejects_u32_overflow() {
-    assert!(checked_rebase(u32::MAX as usize, 1).is_none());
+fn rebase_overflow_preserves_typed_asset_and_model_context() {
+    let record = record(false);
+    let error = rebase_index(&record, 7, u32::MAX as usize, 1).expect_err("overflow must fail");
+
+    assert_eq!(error.asset_id, record.id());
+    assert_eq!(&error.source_path, record.source());
+    assert!(matches!(
+        error.kind,
+        ObjImportErrorKind::IndexRebaseOverflow {
+            model: 7,
+            base,
+            index: 1,
+        } if base == u32::MAX as usize
+    ));
 }

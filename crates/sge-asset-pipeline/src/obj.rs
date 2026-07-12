@@ -125,16 +125,7 @@ pub(crate) fn parse_obj(
                     },
                 ));
             }
-            let rebased = checked_rebase(base_vertex, local_index).ok_or_else(|| {
-                ObjImportError::new(
-                    record,
-                    ObjImportErrorKind::IndexRebaseOverflow {
-                        model: model_index,
-                        base: base_vertex,
-                        index: local_index,
-                    },
-                )
-            })?;
+            let rebased = rebase_index(record, model_index, base_vertex, local_index)?;
             indices.push(rebased);
         }
     }
@@ -145,6 +136,20 @@ pub(crate) fn parse_obj(
 
 fn checked_rebase(base: usize, index: u32) -> Option<u32> {
     u32::try_from(base).ok()?.checked_add(index)
+}
+
+fn rebase_index(
+    record: &SourceAssetRecord,
+    model: usize,
+    base: usize,
+    index: u32,
+) -> Result<u32, ObjImportError> {
+    checked_rebase(base, index).ok_or_else(|| {
+        ObjImportError::new(
+            record,
+            ObjImportErrorKind::IndexRebaseOverflow { model, base, index },
+        )
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
