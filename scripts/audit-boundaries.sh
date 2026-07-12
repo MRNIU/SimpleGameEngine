@@ -59,8 +59,12 @@ audit_exact_files() {
     :
   else
     status=$?
-    echo "$label producer failed with status $status" >&2
-    return "$status"
+    if ((status == 1)); then
+      actual=""
+    else
+      echo "$label producer failed with status $status" >&2
+      return "$status"
+    fi
   fi
 
   if [[ "$actual" != "$expected" ]]; then
@@ -68,6 +72,16 @@ audit_exact_files() {
     diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2 || true
     return 1
   fi
+}
+
+audit_absent() {
+  local path
+  for path in "$@"; do
+    if [[ -e "$path" ]]; then
+      echo "retired prototype path still exists: $path" >&2
+      return 1
+    fi
+  done
 }
 
 audit_tree sge-app \
@@ -80,6 +94,16 @@ audit_tree sge-scene \
   '^(asset|ecs|scene|runtime|sge-project|sge-app|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe|winit|wgpu) v'
 audit_tree sge-asset-pipeline \
   '^(asset|ecs|scene|runtime|sge-app|sge-build|editor|render|rfd|eframe|winit|wgpu) v'
+audit_tree sge-render \
+  '^(asset|ecs|scene|runtime|sge-project|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe|winit) v'
+audit_tree sge-player \
+  '^(asset|ecs|scene|runtime|sge-project|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe) v'
+audit_tree demo-game-player \
+  '^(asset|ecs|scene|runtime|sge-project|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe) v'
+audit_tree sge-editor \
+  '^(asset|ecs|scene|runtime|editor|render|rfd) v'
+audit_tree demo-game-editor \
+  '^(asset|ecs|scene|runtime|editor|render|rfd) v'
 
 target_sources=(
   crates/app/src
@@ -88,6 +112,9 @@ target_sources=(
   crates/sge-ecs/src
   crates/sge-scene/src
   crates/project/src
+  crates/sge-render/src
+  crates/player/src
+  crates/sge-editor/src
 )
 audit_source 'target production source' \
   'EntityRecord|AssetUuid|asset:<|tobj|load_obj' "${target_sources[@]}"
@@ -97,10 +124,19 @@ audit_source 'durable Data recovery' 'unwrap_or_default' \
   crates/sge-asset/src crates/project/src crates/sge-scene/src
 audit_source 'runtime product source ownership' \
   'ProjectRoot|SourceAssetRecord|ObjImportSettings|tobj|load_obj' \
-  crates/sge-asset/src crates/sge-scene/src
+  crates/sge-asset/src crates/sge-scene/src crates/player/src
+audit_source 'safe surface creation' 'create_surface_unsafe|SurfaceTargetUnsafe' \
+  crates/sge-render/src crates/player/src
+audit_source 'Player direct WGPU ownership' 'wgpu(\.workspace)?[[:space:]]*=' \
+  crates/player/Cargo.toml examples/demo_game/player/Cargo.toml
 
 audit_exact_files 'canonical OBJ importer owner' 'tobj::load_obj_buf' \
   'crates/sge-asset-pipeline/src/obj.rs' crates/sge-asset-pipeline/src
+audit_exact_files 'canonical WGPU pipeline owner' 'create_render_pipeline' \
+  'crates/sge-render/src/gpu/pipeline.rs' crates examples
 audit_exact_files 'retained bare OBJ callers' 'asset::load_obj_mesh' \
-  $'crates/asset/tests/upstream_examples.rs\ncrates/editor/src/app/file_workflow.rs\ncrates/runtime/src/lib.rs' \
-  crates/asset/tests crates/editor/src crates/render/src crates/runtime/src
+  '' crates examples
+
+audit_absent \
+  crates/asset crates/ecs crates/editor crates/render crates/runtime crates/scene \
+  examples/editor_smoke assets

@@ -1,17 +1,11 @@
 [workspace]
 members = [
   "crates/app",
-  "crates/asset",
-  "crates/ecs",
-  "crates/editor",
   "crates/input",
   "crates/math",
   "crates/player",
   "crates/project",
   "crates/reflect",
-  "crates/render",
-  "crates/runtime",
-  "crates/scene",
   "crates/sge-asset",
   "crates/sge-asset-pipeline",
   "crates/sge-ecs",
@@ -30,21 +24,16 @@ license = "MIT"
 repository = "https://github.com/MRNIU/SimpleGameEngine"
 
 [workspace.dependencies]
-anyhow = "1"
 atomic-write-file = "0.3.0"
 eframe = { version = "0.35.0", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
-egui = "0.35.0"
 glam = { version = "0.33.2", features = ["serde"] }
 ron = "0.12.2"
 pollster = "0.4.0"
 raw-window-handle = "0.6.2"
-rfd = "0.17.2"
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
 thiserror = "2.0.18"
 tobj = "4.0.4"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
 wgpu = "29.0.4"
 winit = "0.30.13"

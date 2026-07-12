@@ -1,5 +1,0 @@
-(
-  version: 1,
-  name: "editor_smoke",
-  default_scene: "scenes/main.scene.ron",
-)

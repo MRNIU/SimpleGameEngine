@@ -2,8 +2,13 @@
 
 日期：2026-07-12
 
-状态：已批准的 M4 实现合同。本文是 M4 的 canonical truth surface；实现与 review 不得把
+状态：已实现并验证。本文是 M4 的 canonical truth surface；实现与 review 不得把
 preview host、headless candidate 或 Cook root 冒充 M5 Play、M6 Stage 或最终 demo closure。
+
+实现收口：`sge-render`、`sge-player`、`sge-editor` 与 `demo-game` 的 Editor/Player targets 已落地；
+bare prototype crates和旧 sample已删除。headless gates、真实 adapter pixel readback、source-free Player、
+game-specific Player Xvfb present与 Editor callback prepare/paint均通过。M5 从 EditSession/PlaySession继续，
+不恢复 M4 已删除的兼容路径。
 
 上位规格：`docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`。
 

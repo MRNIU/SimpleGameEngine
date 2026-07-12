@@ -3,36 +3,26 @@
 [![build](https://github.com/MRNIU/SimpleGameEngine/actions/workflows/workflow.yml/badge.svg)](https://github.com/MRNIU/SimpleGameEngine/actions/workflows/workflow.yml)
 [![license](https://img.shields.io/github/license/MRNIU/SimpleGameEngine)](LICENSE)
 
-SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线已经切到 editor-first 的 Rust engine/editor workspace；旧 C++ 软件渲染实现只通过 Git 历史作为参考。
+SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前实现按 editor-first 目标架构推进；旧 C++ 和 bare Rust prototype 只通过 Git 历史参考。
 
 ## 当前边界
 
 - 语言：Rust stable channel
 - 构建系统：Cargo workspace
-- 入口：`crates/`、`assets/`、`examples/`
-- 首个 MVP：editor-first scene editor
-- 自动化测试：crate 内 unit tests 和对应 crate 的 `tests/` integration tests
-- 旧实现参考：通过 Git 历史查看，不作为当前目录保留边界
+- 目标平台：Windows、macOS、Linux；目标架构：x86_64、aarch64
+- 默认开发环境：Dev Container / Docker
+- 示例产品真源：`examples/demo_game/`
 
 ## 当前实现
 
-- Cargo workspace 当前包含目标 package `sge-app`、`sge-asset`、`sge-asset-pipeline`、`sge-ecs`、`sge-editor`、`sge-input`、`sge-math`、`sge-player`、`sge-project`、`sge-reflect`、`sge-render`、`sge-scene`，game-specific package `demo-game` / `demo-game-editor` / `demo-game-player`，以及仍服务当前产品路径的 prototype package `asset`、`ecs`、`editor`、`render`、`runtime`、`scene`。M2/M3 数据与产品目录分别是 `crates/sge-asset/`、`crates/project/`、`crates/sge-scene/` 和 `crates/sge-asset-pipeline/`；M4 已落地 owned render snapshot、共享 WGPU backend、source-free `PlayerSession`、winit surface host 与 preview-only target Editor。旧 `app`、`input`、`math` package 名和独立 `window` crate 已删除。
-- Core Kernel M1 已实现并通过 headless 自动化验证：`sge-math` 是当前 prototype 与目标 Core 共用的 math leaf；`sge-ecs` 提供 typed runtime World、只读 erased component seam 和受限 `WorldInitializer`；`sge-reflect` 提供冻结后的 metadata、codec、clone、validation、scene-saveable opt-in 与 typed reference seam；`sge-input` 提供平台无关 `InputFrame`，尚无 winit/egui adapter；`sge-app` 提供 `EngineApp`、`Plugin`、固定 schedules 和 `GameDescriptor`。运行期 host 仍只能不可变检查 World，只有已完成注册且尚未启动的 Ready app 可以取得受限 initializer 来装载 scene。
-- Project And Data M2 已完成独立 headless 纵切：`sge-asset` 拥有正式 UUID `AssetId`、`AssetRef<T>` 和 `AssetLookup`；`sge-project` 拥有 strict `ProjectDescriptor`、portable `ProjectPath`、`ProjectRoot`、authoring manifest 和单文件 atomic replace；`sge-scene` 拥有 strict authoring DTO、`SceneEntityId` / `Parent`、共享 `prepare`、`instantiate` / `SceneInstance` 与 `snapshot`。同一 `GameDescriptor` 的 Ready candidate 已覆盖 project/manifest/scene load、typed instantiate/query、snapshot/reopen/save/readback 和 second candidate；失败路径验证 open/reload 不替换 live aggregate，commit 前失败保留旧 scene bytes。
-- Asset Pipeline And Runtime Products M3 已完成 headless product 纵切：manifest v2 import settings、canonical `MeshAsset`、strict runtime catalog/content/store、distinct `RuntimeScene`、canonical OBJ importer、可重建 import cache 与 deterministic full Cook 已实现。Cook 以 immutable generation 加 atomic catalog 作为发布边界，并在 commit 前从 exact disk bytes 完成 store/scene/World preflight；source-free integration 删除 project、OBJ 和 cache 后仍能按 `game_id` identity-first 加载并完成 typed instantiate/store lookup。
-- bare `asset` 仍负责当前 Editor 的 `assets/asset_manifest.ron`、UUID、OBJ loader、导入目标路径和 imported CPU mesh；临时 bare `ecs` 仍保存固定 `EntityRecord` prototype，并只被当前 bare `scene`、`render`、`editor` 直接依赖。bare `scene` 仍直接序列化 `EntityRecord`，bare `render` 仍从 prototype World 抽取 viewport 数据并保留 `wgpu` viewport pipeline 边界。当前 Editor 写入的 `scenes/`、`assets/` 和旧 manifest/scene 格式尚未迁移为 M2 target package 的产品调用方。
-- `editor` 使用 `eframe::Renderer::Wgpu`，提供 Unreal-like 左 Hierarchy / 中央 Viewport / 右 Inspector 布局，顶部菜单栏、分组 toolbar、底部状态栏、固定快捷键、material color、light 参数、camera projection 的即时 Inspector 编辑，以及 editor-only `Pilot Camera` 预览开关。
-- `editor` viewport 使用 `Z-up` editor camera、自适应十进制 world grid、XYZ axis、随 camera rotation 更新并可点击 orthographic preset 的 ViewCube、camera speed/FOV/distance hint 和 Move/Rotate/Scale gizmo。Perspective 默认水平 FOV 为 `90°`，按实际 viewport aspect 换算垂直 FOV，并使用随相机移动/高度扩展的 world-plane material grid；Orthographic preset 使用对应的 `XY` / `XZ` / `YZ` 自适应 line grid。两条 grid 路径与 scene mesh 在同一个 WGPU depth pass 中渲染，不作为覆盖物遮挡 mesh。
-- viewport 导航对齐 UE Level Editor 默认语义：`RMB` look、`RMB + WASD/QE` fly、`RMB + wheel` 切换 1–8 档速度、普通 wheel 前后移动、`MMB` 或 `LMB + RMB` pan、`Alt + LMB/MMB/RMB` orbit/track/dolly、`F` frame。Option/Alt orbit、track、dolly 和普通 LMB navigation 在手势开始时锁存，直到对应鼠标键释放，中途 modifier 变化不会切换模式。toolbar 可调整速度档位和 `0.1..10.0` 倍率；正交 RMB pan 和 wheel/`LMB + RMB` zoom 不切回 Perspective，Pilot Camera 时禁用 editor camera 修改。
-- `editor` 启动时没有隐式用户 project。用户可以创建 project，或通过 `Open Project...` 选择已有 `project.sge.ron`；project-scoped scene 保存和 OBJ 导入在 project 打开前禁用。
-- `editor` 尚未使用 `EngineApp`，也没有 `PlaySession`；现有 eframe/egui 编辑路径仍运行在 prototype World 上。
-- 用户 project 在自身根目录下使用 `scenes/main.scene.ron`、`assets/asset_manifest.ron` 和 `assets/imported/`。仓库根 `assets/` 只保存 engine-owned primitive/default material 资源；OBJ loader sample inputs 位于 `examples/editor_smoke/assets/obj/`。
-- 默认 runtime/editor sample project 位于 `examples/editor_smoke/`。
-- `editor` 还保留 toolbar、`render::ViewportRenderer` viewport、editor-only viewport camera controls、viewport reference aids、viewport click selection、Move/Rotate/Scale transform gizmo、Undo/Redo、内置 Cube/Sphere/Cone/Cylinder primitive 创建、系统文件对话框 New/Open Project、New/Open/Save/Save As scene 和 Import OBJ 文件工作流、Assets 区和 imported OBJ viewport 显示；用户工作流不再保留可编辑 path input。
-- `runtime` 仍是一次性 loader smoke：可以按显式 project root 加载 scene + manifest + imported OBJ，并生成 viewport draw call；它不是持续运行的 Player。
-- 当前发布版 `eframe/egui-wgpu 0.35.0` 仍依赖 `wgpu 29`；workspace 统一到 `wgpu 29.0.4`，避免 editor/render 跨版本共享 GPU 类型。
+- M1–M4 已完成：typed ECS / Reflect / EngineApp、strict project/authoring data、canonical OBJ import/full Cook/runtime products、owned `RenderSnapshot`、唯一 WGPU backend、source-free Player 与 preview-only target Editor 已形成一条产品路径。
+- `sge-render` 同时服务 eframe offscreen callback 与 winit surface；retained GPU cache 以 `AssetId` 为 key，store replacement 会清 cache，Player surface 只通过安全 `Arc<Window>` 创建。
+- `sge-player` 只读取 cooked root；production dependency 不包含 project、source pipeline、OBJ parser、Editor 或 native dialog。`sge-editor` identity-first 打开 target project，导入 source、实例化独立 Ready World并显示 scene preview。
+- `examples/demo_game/` 包含固定 `AssetId` OBJ、authoring scene、静态 `demo-game` library 和薄 `demo-game-editor` / `demo-game-player` targets。
+- bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与旧 sample 已删除，不保留第二套 schema、ECS 或 WGPU backend。
+- M4 不包含编辑 mutation、Inspector/Undo/Redo、`PlaySession`、gameplay input、Build/Stage；这些由 M5–M7 继续实现。
 
-已批准目标架构、M2 实现合同、M3 canonical 合同及 M4 合同见下列文档。M1 Core Kernel、M2 Project And Data 与 M3 Asset Pipeline And Runtime Products 已完成；**Render And Hosts (M4)** 的 target render、Player、Editor preview 与 game-specific demo hosts 已实现，剩余 prototype cutover 与最终 M4 文档审计尚未闭合。`PlaySession`、Build/Stage 和最终 integration demo 属于后续 M5–M7。本节以上的 workspace 和功能描述仍是当前代码真源：
+Canonical contracts：
 
 - `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`
 - `docs/superpowers/specs/2026-07-12-project-and-data-m2-design.md`
@@ -53,88 +43,53 @@ docker build -t simple-game-engine-devcontainer:latest .devcontainer
 docker inspect "$DEVCONTAINER_NAME" >/dev/null 2>&1 || \
   docker run -d --name "$DEVCONTAINER_NAME" -v "$PWD:/workspace" -w /workspace simple-game-engine-devcontainer:latest sleep infinity
 docker start "$DEVCONTAINER_NAME" >/dev/null 2>&1 || true
-```
-
-容器 Git 安全目录初始化：
-
-```bash
 docker exec "$DEVCONTAINER_NAME" bash -lc 'git config --global --add safe.directory /workspace'
 ```
-
-CI gate：
-
-```bash
-docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo fmt --all --check'
-docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo clippy --workspace --all-targets -- -D warnings'
-docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo test --workspace --all-targets'
-docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo build --workspace'
-docker exec "$DEVCONTAINER_NAME" bash -lc 'scripts/audit-boundaries.sh'
-```
-
-CI 还在 Linux job 内执行 target dependency、production source 与 retained bare OBJ caller audit；本地和 CI 共用 `scripts/audit-boundaries.sh` 作为规则真源。
-
-可选虚拟 X editor smoke：
-
-```bash
-docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron'
-```
-
-支持 Dev Container 的编辑器也使用同一个容器名。打开项目前先导出 `DEVCONTAINER_NAME`。
 
 ## 常用命令
 
 以下命令是项目真值源：
 
 ```bash
-# 格式化检查
+# 完整 CI gate
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo fmt --all --check'
-
-# 静态检查
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo clippy --workspace --all-targets -- -D warnings'
-
-# 运行测试
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo test --workspace --all-targets'
-
-# 构建 workspace
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo build --workspace'
-
-# 架构依赖、production source 与 retained prototype caller 审计
 docker exec "$DEVCONTAINER_NAME" bash -lc 'scripts/audit-boundaries.sh'
 
-# target Player 真实 Xvfb/WGPU 两帧 smoke（删除 source project 后运行）
+# target Player：删除 source project 后真实 WGPU present 两帧
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p sge-player --test player_session real_window_advances_extracts_renders_and_presents_before_exit -- --ignored --exact'
 
-# game-specific demo Player：从 tracked project Cook 临时产品、删除 source 后真实 present 两帧
+# game-specific demo Player：Cook、删除 source、启动真实 binary并 present 两帧
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-player --test demo_product game_specific_player_presents_two_frames_from_cooked_content -- --ignored --exact'
 
-# game-specific demo Editor：candidate-first 打开临时 project 并真实执行 WGPU preview prepare/paint
+# game-specific demo Editor：candidate-first 打开 project并执行真实 WGPU preview prepare/paint
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-editor --test editor_product game_specific_editor_prepares_and_paints_preview -- --ignored --exact'
 
-# 运行 runtime sample project
-cargo run -p runtime -- examples/editor_smoke/scenes/main.scene.ron examples/editor_smoke
-
-# 运行 editor；host-native 是 opt-in，GUI smoke 不属于默认 Dev Container gate
-cargo run -p editor
-
-# 虚拟 X editor smoke；通过退出码和 summary log 验证临时 project、文件工作流 save/open、OBJ import、manifest/cache、Move/Rotate/Scale gizmo semantic preview/commit/Undo/Redo、material/light/camera 内容编辑、editor-only state 清理、非方形 viewport projection、自适应 grid、camera reset、depth pipeline 和 ViewportRenderer prepare/paint
-docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron'
-
-# host-native 自动 smoke；opt-in，只使用已存在的宿主 Rust 环境
-cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron
+# 查看 game-specific host 参数
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p demo-game-player -- --help'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p demo-game-editor -- --help'
 ```
 
-虚拟 X 和 host-native `--smoke` 会在 smoke 输出 seed 目录下创建临时 project，并证明 editor 文件工作流 save/open 闭环、内部 OBJ import、manifest/cache、`asset:<uuid>` reopen、imported mesh viewport span、Move/Rotate/Scale gizmo semantic preview/commit/Undo/Redo、material/light/camera 参数 smoke、editor-only history/gizmo/Pilot 清理、非方形 viewport projection、自适应 grid、camera reset、depth pipeline，以及真实 `ViewportRenderer` prepare/paint 触达；它们仍不等于人工确认真实窗口像素、真实 OS 鼠标坐标自动化、真实系统文件对话框或跨平台 GPU 兼容性证明。
+真实窗口 smoke 证明 Linux/Xvfb 下的实际 WGPU callback/surface 路径和确定性退出；它不等于 Windows、macOS、其他 GPU 或真实 OS 输入兼容性证明。
 
 ## 代码结构
 
 | 路径 | 职责 |
 |------|------|
-| `crates/` | Rust engine/editor workspace crates |
-| `assets/` | engine-owned primitive 和默认材质资源 |
-| `examples/` | 示例 project 和 smoke 入口 |
-| `crates/*/tests/` | Rust integration tests |
-| `scripts/audit-boundaries.sh` | 本地与 CI 共用的 fail-closed 架构边界审计 |
-| `docs/` | 项目约定 |
+| `crates/app/` | `sge-app` EngineApp / Plugin / schedules |
+| `crates/sge-ecs/` | typed runtime World |
+| `crates/reflect/` | reflection metadata、codec、validation |
+| `crates/sge-asset/` | AssetId、MeshAsset、runtime catalog/content/store |
+| `crates/project/` | project identity、portable paths、authoring manifest |
+| `crates/sge-scene/` | authoring/runtime scene、prepare/instantiate/snapshot |
+| `crates/sge-asset-pipeline/` | OBJ import、cache、full Cook |
+| `crates/sge-render/` | render components、snapshot、WGPU backend/surface |
+| `crates/player/` | source-free PlayerSession 与 winit host |
+| `crates/sge-editor/` | candidate-first preview-only eframe host |
+| `examples/demo_game/` | 独立 game library、Editor/Player targets 与 project data |
+| `scripts/audit-boundaries.sh` | dependency、source ownership 与 prototype absence audit |
 
 ## 文档入口
 
@@ -142,7 +97,3 @@ cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron
 - `docs/conventions.md`：代码、文档、测试和环境约定
 - `docs/architecture/overview.md`：当前 Rust workspace 架构边界
 - `.gitmessage`：commit message 模板
-
-## 许可证
-
-本项目继承 MIT License。详见 `LICENSE`。
