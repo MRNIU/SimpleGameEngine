@@ -1,5 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
+#![allow(dead_code, reason = "shared by multiple integration test crates")]
+
 use std::{
     error::Error,
     fs,
@@ -14,7 +16,9 @@ use sge_project::{
     AuthoringAssetManifest, ObjImportSettings, ProjectDescriptor, ProjectPath, ProjectRoot,
     SourceAssetRecord, SourceImporter,
 };
-use sge_reflect::{FieldKey, FieldRegistration, TypeDescriptor, TypeKey, TypeRegistry};
+use sge_reflect::{
+    FieldKey, FieldRegistration, FieldValues, ReflectedValue, TypeDescriptor, TypeKey, TypeRegistry,
+};
 use sge_scene::{AuthoringEntity, AuthoringScene, Parent, SceneEntityId};
 
 pub const GAME_ID: &str = "demo.game";
@@ -103,6 +107,53 @@ impl FullCookFixture {
         fs::write(self.root.join("Content/asset_manifest.ron"), b"not ron")?;
         fs::remove_file(self.root.join("Content/used.obj"))?;
         Ok(())
+    }
+
+    pub fn corrupt_manifest(&self) -> Result<(), Box<dyn Error>> {
+        fs::write(self.root.join("Content/asset_manifest.ron"), b"not ron")?;
+        Ok(())
+    }
+
+    pub fn corrupt_scene(&self) -> Result<(), Box<dyn Error>> {
+        fs::write(self.root.join("Scenes/main.scene.ron"), b"not ron")?;
+        Ok(())
+    }
+
+    pub fn remove_used_source(&self) -> Result<(), Box<dyn Error>> {
+        fs::remove_file(self.root.join("Content/used.obj"))?;
+        Ok(())
+    }
+
+    pub fn change_used_source(&self) -> Result<(), Box<dyn Error>> {
+        fs::write(
+            self.root.join("Content/used.obj"),
+            triangle_obj("used", 3.0),
+        )?;
+        Ok(())
+    }
+
+    pub fn write_reserved_alias_scene(&self) -> Result<TypeRegistry, Box<dyn Error>> {
+        let alias_key = TypeKey::new("demo.identity_alias")?;
+        let alias = TypeDescriptor::builder::<SceneEntityId>(
+            alias_key.clone(),
+            1,
+            "Identity alias",
+            SceneEntityId::new_v4,
+        )
+        .scene_saveable()
+        .build()?;
+        let mut registry = TypeRegistry::new();
+        registry.register(mesh_consumer_descriptor()?)?;
+        registry.register(alias)?;
+        registry.freeze()?;
+        let entity = scene_id(1)?;
+        let scene = AuthoringScene::new(vec![AuthoringEntity::new(
+            entity,
+            None,
+            vec![ReflectedValue::new(alias_key, 1, FieldValues::default())],
+        )?])?;
+        fs::write(self.root.join("Scenes/main.scene.ron"), scene.to_ron()?)?;
+        Ok(registry)
     }
 
     pub fn corrupt_unused_source(&self) -> Result<(), Box<dyn Error>> {

@@ -27,6 +27,29 @@ pub(crate) fn publish(
     registry: &TypeRegistry,
     world: &World,
 ) -> Result<(), CookPublishError> {
+    publish_with_commit(
+        output,
+        catalog,
+        entry_scene_bytes,
+        product_bytes,
+        registry,
+        world,
+        commit_catalog,
+    )
+}
+
+fn publish_with_commit<F>(
+    output: &CookOutputRoot,
+    catalog: &RuntimeAssetCatalog,
+    entry_scene_bytes: &[u8],
+    product_bytes: &BTreeMap<AssetId, Vec<u8>>,
+    registry: &TypeRegistry,
+    world: &World,
+    commit: F,
+) -> Result<(), CookPublishError>
+where
+    F: FnOnce(&Path, &[u8]) -> Result<(), CookPublishError>,
+{
     let generations = output.path().join("generations");
     let generations_created = ensure_directory(&generations)?;
     let _generation_directory = CreatedDirectory::new(generations.clone(), generations_created);
@@ -43,7 +66,7 @@ pub(crate) fn publish(
 
     let expected = expected_files(catalog, entry_scene_bytes, product_bytes);
     write_files(temp.path(), &expected)?;
-    let readback = read_exact_tree(temp.path(), &expected)?;
+    let readback = verify_unpublished_tree(temp.path(), &expected)?;
     let entry_relative = runtime_path(catalog.entry_scene());
     let readback_scene =
         readback
@@ -92,8 +115,7 @@ pub(crate) fn publish(
     temp.disarm();
 
     let catalog_bytes = canonical_catalog(catalog, entry_scene_bytes, product_bytes)?;
-    commit_catalog(output.path(), &catalog_bytes)?;
-    Ok(())
+    commit(output.path(), &catalog_bytes)
 }
 
 fn ensure_directory(path: &Path) -> Result<bool, CookPublishError> {
@@ -154,7 +176,7 @@ fn write_files(root: &Path, files: &BTreeMap<PathBuf, Vec<u8>>) -> Result<(), Co
     Ok(())
 }
 
-fn read_exact_tree(
+pub(crate) fn verify_unpublished_tree(
     root: &Path,
     expected: &BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<BTreeMap<PathBuf, Vec<u8>>, CookPublishError> {
@@ -325,3 +347,6 @@ impl Drop for TempGeneration {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
