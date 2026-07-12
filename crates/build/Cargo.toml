@@ -1,0 +1,22 @@
+[package]
+name = "sge-build"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+atomic-write-file.workspace = true
+ron.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+sge-app = { path = "../app" }
+sge-asset = { path = "../sge-asset" }
+sge-asset-pipeline = { path = "../sge-asset-pipeline" }
+sge-project = { path = "../project" }
+sge-reflect = { path = "../reflect" }
+
+[lints]
+workspace = true

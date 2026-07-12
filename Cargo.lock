@@ -1295,6 +1295,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "itoa"
+version = "1.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
 name = "jni"
 version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2441,6 +2447,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_json"
+version = "1.0.150"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
+dependencies = [
+ "itoa",
+ "memchr",
+ "serde",
+ "serde_core",
+ "zmij",
+]
+
+[[package]]
 name = "sge-app"
 version = "0.1.0"
 dependencies = [
@@ -2478,6 +2497,23 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "tobj",
+]
+
+[[package]]
+name = "sge-build"
+version = "0.1.0"
+dependencies = [
+ "atomic-write-file",
+ "ron",
+ "serde",
+ "serde_json",
+ "sge-app",
+ "sge-asset",
+ "sge-asset-pipeline",
+ "sge-project",
+ "sge-reflect",
+ "sha2",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -3992,6 +4028,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "zmij"
+version = "1.0.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd2f034a4bebf216c9e4b7083603e024cf930873fd67830cfb083c9fa33129d9"
 
 [[package]]
 name = "zune-core"

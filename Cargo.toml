@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/app",
+  "crates/build",
   "crates/input",
   "crates/math",
   "crates/player",
@@ -32,6 +33,7 @@ pollster = "0.4.0"
 raw-window-handle = "0.6.2"
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
+serde_json = "1"
 thiserror = "2.0.18"
 tobj = "4.0.4"
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
