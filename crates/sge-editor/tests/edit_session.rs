@@ -22,44 +22,39 @@ fn inspector_field_edit_is_validated_and_undoable() -> Result<(), Box<dyn std::e
     session.select(Some(mesh))?;
 
     let inspector = session.inspector()?;
-    let transform = inspector
+    let rotator = inspector
         .iter()
-        .find(|component| component.type_key().as_str() == "sge.transform")
-        .ok_or("missing Transform inspector")?;
-    assert_eq!(transform.display_name(), "Transform");
-    let translation = transform
+        .find(|component| component.type_key().as_str() == "demo.rotator")
+        .ok_or("missing Rotator inspector")?;
+    assert_eq!(rotator.display_name(), "Rotator");
+    let speed = rotator
         .fields()
         .iter()
-        .find(|field| field.field_key().as_str() == "translation")
-        .ok_or("missing translation field")?;
-    assert_eq!(translation.display_name(), "Translation");
-    assert_eq!(translation.kind(), &FieldKind::Vec3);
+        .find(|field| field.field_key().as_str() == "radians_per_second")
+        .ok_or("missing Rotator speed field")?;
+    assert_eq!(speed.display_name(), "Radians Per Second");
+    assert_eq!(speed.kind(), &FieldKind::F32);
 
-    session.set_field(
-        mesh,
-        "sge.transform",
-        "translation",
-        Value::Vec3([2.0, 0.0, 2.0].into()),
-    )?;
+    session.set_field(mesh, "demo.rotator", "radians_per_second", Value::F32(2.5))?;
     assert!(session.is_dirty());
     assert_eq!(session.history_cursor(), 1);
     assert_eq!(
-        field(&session, mesh, "sge.transform", "translation")?,
-        Value::Vec3([2.0, 0.0, 2.0].into())
+        field(&session, mesh, "demo.rotator", "radians_per_second")?,
+        Value::F32(2.5)
     );
 
     session.undo()?;
     assert!(!session.is_dirty());
     assert_eq!(session.history_cursor(), 0);
     assert_eq!(
-        field(&session, mesh, "sge.transform", "translation")?,
-        Value::Vec3([0.0, 0.0, 2.0].into())
+        field(&session, mesh, "demo.rotator", "radians_per_second")?,
+        Value::F32(1.0)
     );
 
     session.redo()?;
     assert_eq!(
-        field(&session, mesh, "sge.transform", "translation")?,
-        Value::Vec3([2.0, 0.0, 2.0].into())
+        field(&session, mesh, "demo.rotator", "radians_per_second")?,
+        Value::F32(2.5)
     );
     let before = session.snapshot()?.to_ron()?;
     let cursor = session.history_cursor();
@@ -67,9 +62,9 @@ fn inspector_field_edit_is_validated_and_undoable() -> Result<(), Box<dyn std::e
         session
             .set_field(
                 mesh,
-                "sge.transform",
-                "scale",
-                Value::Vec3([0.0, 1.0, 1.0].into()),
+                "demo.player_controller",
+                "movement_speed",
+                Value::F32(0.0),
             )
             .is_err()
     );
@@ -123,12 +118,7 @@ fn saved_cursor_and_atomic_save_follow_committed_history() -> Result<(), Box<dyn
     let project = TestProject::new("save")?;
     let mesh = id(MESH)?;
     let mut session = EditSession::open(demo_game::GAME, project.path())?;
-    session.set_field(
-        mesh,
-        "sge.material",
-        "base_color",
-        Value::Color([0.1, 0.2, 0.3, 1.0]),
-    )?;
+    session.set_field(mesh, "demo.rotator", "radians_per_second", Value::F32(4.0))?;
     session.save()?;
     assert!(!session.is_dirty());
     assert_eq!(session.saved_cursor(), Some(1));
@@ -144,15 +134,10 @@ fn saved_cursor_and_atomic_save_follow_committed_history() -> Result<(), Box<dyn
 
     let mut reopened = EditSession::open(demo_game::GAME, project.path())?;
     assert_eq!(
-        field(&reopened, mesh, "sge.material", "base_color")?,
-        Value::Color([0.1, 0.2, 0.3, 1.0])
+        field(&reopened, mesh, "demo.rotator", "radians_per_second")?,
+        Value::F32(4.0)
     );
-    reopened.set_field(
-        mesh,
-        "sge.material",
-        "base_color",
-        Value::Color([0.3, 0.4, 0.5, 1.0]),
-    )?;
+    reopened.set_field(mesh, "demo.rotator", "radians_per_second", Value::F32(5.0))?;
     assert_eq!(reopened.saved_cursor(), Some(0));
 
     fs::remove_dir_all(project.path().join("Scenes"))?;

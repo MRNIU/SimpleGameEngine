@@ -33,6 +33,20 @@
             parent: None,
             components: [
                 (
+                    type_key: "demo.player_controller",
+                    schema_version: 1,
+                    fields: ({
+                        "movement_speed": F32(3.0),
+                    }),
+                ),
+                (
+                    type_key: "demo.rotator",
+                    schema_version: 1,
+                    fields: ({
+                        "radians_per_second": F32(1.0),
+                    }),
+                ),
+                (
                     type_key: "sge.material",
                     schema_version: 1,
                     fields: ({

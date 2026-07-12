@@ -483,6 +483,9 @@ name = "demo-game"
 version = "0.1.0"
 dependencies = [
  "sge-app",
+ "sge-input",
+ "sge-math",
+ "sge-reflect",
  "sge-render",
  "sge-scene",
 ]

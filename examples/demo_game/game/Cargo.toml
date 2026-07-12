@@ -7,6 +7,9 @@ repository.workspace = true
 
 [dependencies]
 sge-app = { path = "../../../crates/app" }
+sge-input = { path = "../../../crates/input" }
+sge-math = { path = "../../../crates/math" }
+sge-reflect = { path = "../../../crates/reflect" }
 sge-render = { path = "../../../crates/sge-render" }
 sge-scene = { path = "../../../crates/sge-scene" }
 
