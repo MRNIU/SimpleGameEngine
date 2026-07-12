@@ -7,7 +7,7 @@ use std::{
 
 use ecs::{Camera, EntityId, Light, LightKind, MaterialOverride, Projection};
 use eframe::egui;
-use math::Transform;
+use sge_math::Transform;
 
 use crate::{
     model::{EditorModel, PrimitiveKind},

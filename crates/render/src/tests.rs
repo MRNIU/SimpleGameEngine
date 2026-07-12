@@ -8,7 +8,7 @@ use super::{
 };
 use asset::{AssetUuid, ImportedMesh, ImportedVertex};
 use ecs::{Camera, EntityId, Light, LightKind, MaterialOverride, MeshRef, Projection, World};
-use math::Transform;
+use sge_math::Transform;
 
 fn world_with_camera() -> World {
     let mut world = World::new();

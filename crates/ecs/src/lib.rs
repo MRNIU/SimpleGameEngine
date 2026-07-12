@@ -7,8 +7,8 @@ use std::{
     collections::{BTreeMap, BTreeSet},
 };
 
-use math::Transform;
 use serde::{Deserialize, Serialize};
+use sge_math::Transform;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -356,7 +356,7 @@ pub enum EcsError {
 #[cfg(test)]
 mod tests {
     use super::{EcsError, EntityId, EntityRecord, World};
-    use math::Transform;
+    use sge_math::Transform;
 
     #[test]
     fn rebuilds_children_from_parent_components() {

@@ -27,14 +27,18 @@
 
 | 模块/目录 | 职责 | 不负责 |
 |-----------|------|--------|
-| `crates/app/` | 仅有薄 `Engine`/tick 实验；当前没有 Editor/Runtime 产品调用方 | 目标 EngineApp、Editor lifecycle |
-| `crates/ecs/` | 当前固定 `EntityRecord`、entity map 和层级操作 | 开放 typed component storage、scene 序列化、渲染和 UI |
-| `crates/scene/` | 当前 `.scene.ron` 与固定 entity records 的 save/load | 目标 Reflect scene product、GPU、editor session |
-| `crates/asset/` | 当前 Asset UUID/manifest、OBJ source loader、imported CPU mesh | 目标 source/runtime 分层 |
-| `crates/render/` | 当前 ECS extraction、viewport draw data 和唯一 WGPU viewport renderer | editor 数据结构所有权 |
-| `crates/editor/` | 当前 eframe/egui host、project workflow、panels、Inspector、viewport、history 和 gizmo | 目标 Play World、底层 ECS 存储实现 |
-| `crates/runtime/` | 当前一次性 scene/manifest/OBJ loader smoke | 持续 Player loop、game plugin、cooked-only runtime |
-| `crates/input/`、`crates/window/` | 当前只被薄 `app` 使用的实验 API | Editor 的 eframe window/input 所有权 |
+| `crates/app/` | Cargo package `sge-app`；headless-verified `EngineApp` / `Plugin` / fixed schedules / `GameDescriptor` kernel，使用 token-gated `SystemContext`，host 仅可不可变检查 World | Editor/Player host、`PlaySession`、平台或 renderer 所有权 |
+| `crates/math/` | Cargo package `sge-math`；当前 prototype 与目标 Core 共用的 math leaf，提供 `Transform` 和 glam 类型 re-export | Reflect metadata、ECS storage |
+| `crates/ecs/` | 临时固定 `EntityRecord` prototype、entity map 和层级操作；只被当前 Scene/Render/Editor 直接依赖 | typed runtime World、目标 scene DTO、兼容 adapter 或 mirrored writes |
+| `crates/sge-ecs/` | 供 `sge-app` 和 headless tests 使用的串行 typed runtime World、显式类型注册、opaque Entity 和单组件 query | 现有 prototype adapter、Reflect、scene/render/editor 集成 |
+| `crates/reflect/` | Cargo package `sge-reflect`；冻结后的 type/field metadata、codec、clone 和 validation registry | ECS、scene/asset ID 所有权、egui drawer |
+| `crates/input/` | Cargo package `sge-input`；平台无关的逐帧 `InputFrame` | winit/egui adapter、窗口所有权 |
+| `window` package（已删除） | 不再存在独立 window crate；未来 winit window 所有权属于 Player | 当前 Editor eframe lifecycle、预建 `sge-window` |
+| `crates/scene/` | 当前 `.scene.ron` 直接序列化固定 `EntityRecord` 的 save/load | 目标 Reflect authoring/runtime scene product、GPU、editor session |
+| `crates/asset/` | 当前 Asset UUID/manifest、OBJ source loader、imported CPU mesh | 目标 Asset source/runtime 分层与 Cook |
+| `crates/render/` | 当前 prototype ECS extraction、viewport draw data 和唯一 WGPU viewport renderer | 目标 `RenderSnapshot`、editor 数据结构所有权 |
+| `crates/editor/` | 当前 eframe/egui host、project workflow、panels、Inspector、viewport、history 和 gizmo；仍使用 prototype World | `EngineApp` / `PlaySession` 接入、目标 Play World、底层 ECS 存储实现 |
+| `crates/runtime/` | 当前一次性 scene/manifest/OBJ loader smoke | Player、持续 loop、game plugin、cooked-only runtime |
 | `assets/` | engine-owned primitive 和默认材质资源 | 用户 project 资源、运行时生成缓存 |
 | `crates/*/tests/` | Rust integration tests | 依赖人工 GUI 的唯一验证 |
 
@@ -73,10 +77,11 @@
 
 ## 项目状态
 
-最后审阅日期：2026-07-11
+最后审阅日期：2026-07-12
 
 - 当前阶段：editor 使用显式 project 工作上下文；Open Project 选择已有 `project.sge.ron`，不把空文件夹初始化为 project；用户 scene 和 imported OBJ 只能写入当前 project。
 - 示例 project 真源：`examples/editor_smoke/`。
 - 已通过证据：人工 host-native editor smoke 已确认真实窗口像素输出、两次 `New Cube`、手动移动第二个 cube、保存并重新打开 `.scene.ron`
 - 已完成收口：editor 已按现有 `model` / `app` / `viewport` 边界拆薄，文件 IO 留在 `editor::app`，`crates/editor/src/lib.rs` 只保留模块入口和 re-export
-- 下一个里程碑：目标架构规格已批准；先为 Core Kernel（Reflect、typed ECS、最小 InputFrame、EngineApp、headless game plugin）编写独立 implementation plan，不直接创建完整目标 crate 空壳或进入最终 demo
+- Core Kernel M1 已完成并通过 headless 自动化验证：`sge-math`、`sge-ecs`、`sge-reflect`、`sge-input` 和 `sge-app` 已实现；现有 Editor/Scene/Render/runtime 产品路径仍保持上述 prototype 边界。
+- 下一个里程碑：**Project And Data**。Asset Pipeline、Cook、`RenderSnapshot`、Editor Play、Player、Build/Stage 和最终 integration demo 不属于当前已完成范围。

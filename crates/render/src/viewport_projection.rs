@@ -1,7 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
 use ecs::Projection;
-use math::{Mat4, Quat, Vec3, Vec4};
+use sge_math::{Mat4, Quat, Vec3, Vec4};
 
 use crate::ViewportView;
 

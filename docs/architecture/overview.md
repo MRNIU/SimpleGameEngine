@@ -1,25 +1,29 @@
 # Rust Engine Architecture Overview
 
-日期：2026-07-11
+日期：2026-07-12
 
 SimpleGameEngine 当前主线是 editor-first 的 Rust engine/editor workspace。本文只描述当前 HEAD 已实现的 crate、运行路径和验证证据。
 
-目标架构见 `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`。该规格中的 `sge-*` crates、EngineApp、Reflect、Play World、Player、Cook 和 Stage 是待实施目标，不能从本文的当前实现表中推断为已经存在。
+目标架构见 `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`。Core Kernel M1 已完成五个 Core package 的 headless 实现与验证；当前 Editor/Scene/Render/runtime 产品路径仍使用 prototype 数据流，尚未接入 `sge-app`、`sge-ecs`、`sge-reflect` 和 `sge-input` runtime path。
 
 ## 当前 crate 边界
 
 | crate | 当前职责 |
 | --- | --- |
-| `app` | engine lifecycle、tick、render extraction glue |
-| `ecs` | entity/component 真源、parent cache rebuild |
-| `math` | `Transform` 和 glam re-export |
+| `sge-app`（`crates/app/`） | headless-verified `EngineApp` / `Plugin` / fixed schedules / `GameDescriptor` kernel；`SystemContext` 使用同 system token 访问数据，host 只能不可变检查 World；尚无 Editor/Player 调用方 |
+| `sge-ecs` | 供 `sge-app` 和 headless tests 使用的独立串行 typed runtime World、显式 component/resource 注册、opaque Entity 和单组件 query |
+| `sge-reflect`（`crates/reflect/`） | 冻结后的 type/field metadata、codec、clone 和 validation registry |
+| `sge-input`（`crates/input/`） | 平台无关的逐帧 `InputFrame`；尚无 winit/egui adapter |
+| `sge-math`（`crates/math/`） | 当前 prototype 与目标 Core 共用的 math leaf，提供 `Transform` 和 glam re-export |
+| `ecs` | 临时固定 `EntityRecord` prototype、entity/component 真源和 parent cache rebuild；只被当前 Scene/Render/Editor 直接依赖 |
 | `asset` | asset id、稳定 UUID、`assets/asset_manifest.ron` load/save、OBJ loader、imported CPU mesh、导入路径 helper |
-| `scene` | `.scene.ron` save/load |
-| `render` | ECS render extraction、`wgpu 29` viewport pipeline、world-space primitive/imported mesh draw call、标准 `ViewportProjection`、offscreen color/depth pass、mesh span world metrics |
-| `window` | winit window config |
-| `input` | keyboard/mouse state |
-| `editor` | egui shell、显式 project workflow、已有 `project.sge.ron` 打开、project-scoped scene file workflow、OBJ import、Assets UI、session imported mesh cache、Undo/Redo、editor-only `Z-up` viewport input/camera、自适应 world grid/axis、camera-aware ViewCube、camera hint 和 Move/Rotate/Scale transform gizmo |
-| `runtime` | scene load、显式 project-root manifest/OBJ 解析、sample project smoke |
+| `scene` | `.scene.ron` save/load；仍直接序列化 prototype `EntityRecord` |
+| `render` | prototype ECS extraction、`wgpu 29` viewport pipeline、world-space primitive/imported mesh draw call、标准 `ViewportProjection`、offscreen color/depth pass、mesh span world metrics；目标 `RenderSnapshot` 尚未实现 |
+| `editor` | egui shell、显式 project workflow、已有 `project.sge.ron` 打开、project-scoped scene file workflow、OBJ import、Assets UI、session imported mesh cache、Undo/Redo、editor-only `Z-up` viewport input/camera、自适应 world grid/axis、camera-aware ViewCube、camera hint 和 Move/Rotate/Scale transform gizmo；仍使用 prototype World，尚未使用 `EngineApp` 或 `PlaySession` |
+| `runtime` | 一次性 scene load、显式 project-root manifest/OBJ 解析和 sample project loader smoke；不是 Player |
+| `window` package（已删除） | 不再存在独立 window crate；未来 winit window 所有权属于尚未实现的 Player |
+
+目标 Asset source/runtime 分层、Cook、`RenderSnapshot`、Editor Play、Player、Build/Stage 和最终 integration demo 均未实现；下一里程碑只进入 **Project And Data**。
 
 ## 验证分层
 
@@ -39,6 +43,8 @@ CI gate 只包含：
 - `xvfb-run -a cargo run -p editor -- --smoke target/tmp/editor_smoke.scene.ron`
 - `cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron`
 - 人工 host-native editor smoke 已确认真实窗口像素输出、两次 `New Cube`、手动移动第二个 cube、保存并重新打开 `.scene.ron`
+
+Core Kernel M1 的当前集成证据仅为 `sge-app` headless tests。当前 HEAD 已通过上述 CI gate、workspace build、runtime sample smoke 和 Xvfb Editor smoke；这些结果不代表 Editor/Player 已接入 `EngineApp`，也不证明 Player、最终 demo 或新增平台 GUI 行为。
 
 ## Viewport 入口结论
 

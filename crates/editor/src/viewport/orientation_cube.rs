@@ -1,7 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
 use eframe::egui;
-use math::{Quat, Vec3};
+use sge_math::{Quat, Vec3};
 
 use super::{ViewPreset, ViewportAction};
 

@@ -4,8 +4,8 @@
 
 use ecs::EntityId;
 use editor::{EditorError, EditorModel};
-use math::Transform;
 use render::ViewportView;
+use sge_math::Transform;
 
 #[test]
 fn editor_model_can_create_save_and_reopen_a_cube_scene() {

@@ -16,19 +16,21 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 
 ## 当前实现
 
-- Cargo workspace 包含 `app`、`ecs`、`math`、`asset`、`scene`、`render`、`window`、`input`、`editor`、`runtime`。
-- `asset` 负责 `assets/asset_manifest.ron`、稳定 UUID、OBJ loader、导入目标路径和 imported CPU mesh 数据；`ecs` 保存 entity/component 真源，`scene` 负责 `.scene.ron` roundtrip，`render` 从 ECS 抽取 viewport 数据并保留 `wgpu` viewport pipeline 边界。
+- Cargo workspace 当前包含 `sge-app`、`asset`、`ecs`、`editor`、`sge-input`、`sge-math`、`sge-reflect`、`render`、`runtime`、`scene` 和 `sge-ecs`。其中 `sge-app`、`sge-input`、`sge-math`、`sge-reflect` 的目录仍分别为 `crates/app/`、`crates/input/`、`crates/math/`、`crates/reflect/`；旧 `app`、`input`、`math` package 名和独立 `window` crate 已删除，未来 winit window 所有权属于尚未实现的 Player。
+- Core Kernel M1 已实现并通过 headless 自动化验证：`sge-math` 是当前 prototype 与目标 Core 共用的 math leaf；`sge-ecs` 是供 `sge-app` 和 headless tests 使用的 typed runtime World；`sge-reflect` 提供冻结后的 type/field metadata、codec、clone 和 validation registry；`sge-input` 提供平台无关 `InputFrame`，尚无 winit/egui adapter；`sge-app` 提供 `EngineApp`、`Plugin`、固定 schedules 和 `GameDescriptor`，system data access 由同 system token 限制，host 只能不可变检查 World。
+- `asset` 仍负责 `assets/asset_manifest.ron`、稳定 UUID、OBJ loader、导入目标路径和 imported CPU mesh 数据；临时 `ecs` 仍保存固定 `EntityRecord` prototype，并只被当前 `scene`、`render`、`editor` 直接依赖。`scene` 仍直接序列化 `EntityRecord`，`render` 仍从 prototype World 抽取 viewport 数据并保留 `wgpu` viewport pipeline 边界。
 - `editor` 使用 `eframe::Renderer::Wgpu`，提供 Unreal-like 左 Hierarchy / 中央 Viewport / 右 Inspector 布局，顶部菜单栏、分组 toolbar、底部状态栏、固定快捷键、material color、light 参数、camera projection 的即时 Inspector 编辑，以及 editor-only `Pilot Camera` 预览开关。
 - `editor` viewport 使用 `Z-up` editor camera、自适应十进制 world grid、XYZ axis、随 camera rotation 更新并可点击 orthographic preset 的 ViewCube、camera speed/FOV/distance hint 和 Move/Rotate/Scale gizmo。Perspective 默认水平 FOV 为 `90°`，按实际 viewport aspect 换算垂直 FOV，并使用随相机移动/高度扩展的 world-plane material grid；Orthographic preset 使用对应的 `XY` / `XZ` / `YZ` 自适应 line grid。两条 grid 路径与 scene mesh 在同一个 WGPU depth pass 中渲染，不作为覆盖物遮挡 mesh。
 - viewport 导航对齐 UE Level Editor 默认语义：`RMB` look、`RMB + WASD/QE` fly、`RMB + wheel` 切换 1–8 档速度、普通 wheel 前后移动、`MMB` 或 `LMB + RMB` pan、`Alt + LMB/MMB/RMB` orbit/track/dolly、`F` frame。Option/Alt orbit、track、dolly 和普通 LMB navigation 在手势开始时锁存，直到对应鼠标键释放，中途 modifier 变化不会切换模式。toolbar 可调整速度档位和 `0.1..10.0` 倍率；正交 RMB pan 和 wheel/`LMB + RMB` zoom 不切回 Perspective，Pilot Camera 时禁用 editor camera 修改。
 - `editor` 启动时没有隐式用户 project。用户可以创建 project，或通过 `Open Project...` 选择已有 `project.sge.ron`；project-scoped scene 保存和 OBJ 导入在 project 打开前禁用。
+- `editor` 尚未使用 `EngineApp`，也没有 `PlaySession`；现有 eframe/egui 编辑路径仍运行在 prototype World 上。
 - 用户 project 在自身根目录下使用 `scenes/main.scene.ron`、`assets/asset_manifest.ron` 和 `assets/imported/`。仓库根 `assets/` 只保存 engine-owned primitive/default material 资源；OBJ loader sample inputs 位于 `examples/editor_smoke/assets/obj/`。
 - 默认 runtime/editor sample project 位于 `examples/editor_smoke/`。
 - `editor` 还保留 toolbar、`render::ViewportRenderer` viewport、editor-only viewport camera controls、viewport reference aids、viewport click selection、Move/Rotate/Scale transform gizmo、Undo/Redo、内置 Cube/Sphere/Cone/Cylinder primitive 创建、系统文件对话框 New/Open Project、New/Open/Save/Save As scene 和 Import OBJ 文件工作流、Assets 区和 imported OBJ viewport 显示；用户工作流不再保留可编辑 path input。
-- `runtime` 可以按显式 project root 加载 scene + manifest + imported OBJ，并生成 viewport draw call。
+- `runtime` 仍是一次性 loader smoke：可以按显式 project root 加载 scene + manifest + imported OBJ，并生成 viewport draw call；它不是持续运行的 Player。
 - 当前发布版 `eframe/egui-wgpu 0.35.0` 仍依赖 `wgpu 29`；workspace 统一到 `wgpu 29.0.4`，避免 editor/render 跨版本共享 GPU 类型。
 
-已批准目标架构见下列文档。目标架构尚未实现；本节以上的 workspace 和功能描述仍是当前代码真源：
+已批准目标架构见下列文档。Core Kernel M1 已完成上述五个 Core package 的 headless 实现与验证；目标 Asset source/runtime 分层、Cook、`RenderSnapshot`、Editor Play、Player、Build/Stage 和最终 integration demo 均尚未实现。本节以上的 workspace 和功能描述仍是当前代码真源：
 
 - `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`
 

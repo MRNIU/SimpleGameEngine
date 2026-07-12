@@ -6,11 +6,11 @@ use super::{
     screen_position_for_vertex,
 };
 use ecs::{EntityId, Projection};
-use math::{Quat, Transform, Vec3};
 use render::{
     ViewportClipPlanes, ViewportDrawCall, ViewportMeshSpan, ViewportProjection, ViewportSize,
     ViewportVertex, ViewportView,
 };
+use sge_math::{Quat, Transform, Vec3};
 
 use super::grid::{
     GridPlane, adaptive_grid_lines, grid_plane_for_preset, grid_step_for_spacing,
@@ -133,7 +133,7 @@ fn perspective_grid_survives_when_one_plane_axis_is_behind_camera() {
     let forward = Vec3::new(-1.0, 0.0, -1.0).normalize();
     let right = Vec3::NEG_Y;
     let up = forward.cross(right).normalize();
-    let rotation = Quat::from_mat3(&math::Mat3::from_cols(right, up, forward));
+    let rotation = Quat::from_mat3(&sge_math::Mat3::from_cols(right, up, forward));
     let view = ViewportView::new(
         EntityId::new("low_camera"),
         Transform {
@@ -888,7 +888,7 @@ fn close_camera_gizmo_keeps_axis_when_positive_endpoint_is_behind() {
     let forward = Vec3::new(-1.0, 0.0, -0.5).normalize();
     let right = Vec3::NEG_Y;
     let up = forward.cross(right).normalize();
-    let rotation = Quat::from_mat3(&math::Mat3::from_cols(right, up, forward));
+    let rotation = Quat::from_mat3(&sge_math::Mat3::from_cols(right, up, forward));
     let view = ViewportView::new(
         EntityId::new("close_camera"),
         Transform {

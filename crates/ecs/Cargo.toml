@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-math = { path = "../math" }
+sge-math = { path = "../math" }
 serde.workspace = true
 thiserror.workspace = true
 

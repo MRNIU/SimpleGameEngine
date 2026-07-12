@@ -2,8 +2,8 @@
 
 use ecs::EntityId;
 use eframe::egui;
-use math::{Quat, Transform, Vec3};
 use render::{ViewportDrawCall, ViewportProjection};
+use sge_math::{Quat, Transform, Vec3};
 
 use super::screen_position_for_vertex;
 

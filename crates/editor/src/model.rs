@@ -1,11 +1,11 @@
 // Copyright The SimpleGameEngine Contributors
 
 use ecs::{Camera, EntityId, Light, LightKind, MaterialOverride, MeshRef, Projection, World};
-use math::Transform;
 use render::{
     RenderScene, ViewportDrawCall, ViewportView, extract_render_scene,
     viewport_draw_call_with_selection, viewport_draw_call_with_view,
 };
+use sge_math::Transform;
 use thiserror::Error;
 
 mod validation;
