@@ -6,7 +6,7 @@ use sge_asset::{AssetRef, RuntimeAssetStore, RuntimeContentRoot};
 use sge_asset_pipeline::{CacheStatus, CookError, CookOutputRoot, CookPublishError, full_cook};
 use sge_scene::{RuntimeScene, prepare_runtime};
 
-use support::{FullCookFixture, GAME_ID, registry, world};
+use support::{FullCookFixture, GAME_ID, registry, world, world_without_scene_identity};
 
 #[test]
 fn full_cook_imports_every_source_and_publishes_only_the_entry_closure()
@@ -162,6 +162,31 @@ fn finished_world_missing_custom_registration_fails_consumer_preflight_without_p
         &output,
     )
     .expect_err("missing component registration passed consumer preflight");
+
+    assert!(matches!(
+        error,
+        CookError::Publish(source)
+            if matches!(*source, CookPublishError::ScenePreflight(_))
+    ));
+    fixture.assert_output_untouched()?;
+    Ok(())
+}
+
+#[test]
+fn finished_world_missing_structural_registration_fails_before_publication()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = FullCookFixture::new("missing-scene-identity-registration")?;
+    fixture.seed_prior_catalog()?;
+    let output = CookOutputRoot::open(fixture.output_path())?;
+
+    let error = full_cook(
+        &fixture.project()?,
+        GAME_ID,
+        &registry(true)?,
+        &world_without_scene_identity()?,
+        &output,
+    )
+    .expect_err("missing SceneEntityId registration passed consumer preflight");
 
     assert!(matches!(
         error,

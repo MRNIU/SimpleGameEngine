@@ -9,6 +9,7 @@ mod obj;
 mod output;
 mod publish;
 
-pub use cache::CacheStatus;
+pub use cache::{CacheEntryError, CacheIssue, CacheStatus, ImportCacheError};
 pub use cook::{CookError, CookReport, full_cook};
+pub use obj::ObjImportError;
 pub use output::{CookOutputRoot, CookPublishError};

@@ -157,6 +157,14 @@ pub fn world(include_consumer: bool, finished: bool) -> Result<World, Box<dyn Er
     Ok(world)
 }
 
+pub fn world_without_scene_identity() -> Result<World, Box<dyn Error>> {
+    let mut world = World::new();
+    world.register_component::<Parent>()?;
+    world.register_component::<MeshConsumer>()?;
+    world.finish_registration();
+    Ok(world)
+}
+
 fn mesh_consumer_descriptor() -> Result<TypeDescriptor, Box<dyn Error>> {
     Ok(TypeDescriptor::builder::<MeshConsumer>(
         TypeKey::new("demo.mesh_consumer")?,
