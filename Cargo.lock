@@ -491,6 +491,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "demo-game-build"
+version = "0.1.0"
+dependencies = [
+ "demo-game",
+ "sge-build",
+]
+
+[[package]]
 name = "demo-game-editor"
 version = "0.1.0"
 dependencies = [

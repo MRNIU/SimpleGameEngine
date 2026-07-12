@@ -1,0 +1,13 @@
+[package]
+name = "demo-game-build"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+demo-game = { path = "../game" }
+sge-build = { path = "../../../crates/build" }
+
+[lints]
+workspace = true

@@ -9,5 +9,6 @@
 .codex/
 .superpowers/
 /docs/superpowers/plans/
+/examples/demo_game/Cache/
 .worktrees/
 .aider*
