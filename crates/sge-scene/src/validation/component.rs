@@ -18,6 +18,7 @@ pub(super) fn prepare_component(
     registry: &TypeRegistry,
     entity_ids: &BTreeSet<SceneEntityId>,
     assets: &impl AssetLookup,
+    root_assets: &mut BTreeSet<AssetId>,
 ) -> Result<PreparedComponent, SceneValidationError> {
     let Some(descriptor) = registry.descriptor(component.type_key().as_str()) else {
         return Err(SceneValidationError::UnknownComponent {
@@ -48,7 +49,14 @@ pub(super) fn prepare_component(
             actual: component.schema_version(),
         });
     }
-    validate_fields(entity, component, descriptor, entity_ids, assets)?;
+    validate_fields(
+        entity,
+        component,
+        descriptor,
+        entity_ids,
+        assets,
+        root_assets,
+    )?;
     let value = registry
         .decode(component)
         .map_err(|source| decode_error(entity, component.type_key(), source))?;
@@ -65,6 +73,7 @@ fn validate_fields(
     descriptor: &TypeDescriptor,
     entity_ids: &BTreeSet<SceneEntityId>,
     assets: &impl AssetLookup,
+    root_assets: &mut BTreeSet<AssetId>,
 ) -> Result<(), SceneValidationError> {
     let fields = descriptor
         .fields()
@@ -97,7 +106,7 @@ fn validate_fields(
                 actual,
             });
         }
-        validate_reference(
+        if let Some(asset) = validate_reference(
             entity,
             component.type_key(),
             &field,
@@ -105,7 +114,9 @@ fn validate_fields(
             value,
             entity_ids,
             assets,
-        )?;
+        )? {
+            root_assets.insert(asset);
+        }
     }
     Ok(())
 }
@@ -118,9 +129,9 @@ fn validate_reference(
     value: &Value,
     entity_ids: &BTreeSet<SceneEntityId>,
     assets: &impl AssetLookup,
-) -> Result<(), SceneValidationError> {
+) -> Result<Option<AssetId>, SceneValidationError> {
     let (FieldKind::Reference(semantic), Value::Reference(value)) = (kind, value) else {
-        return Ok(());
+        return Ok(None);
     };
     match semantic {
         ReferenceSemantic::Entity => {
@@ -172,9 +183,10 @@ fn validate_reference(
                     actual: Box::new(actual.clone()),
                 });
             }
+            return Ok(Some(asset));
         }
     }
-    Ok(())
+    Ok(None)
 }
 
 fn decode_error(

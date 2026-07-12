@@ -2,15 +2,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{AuthoringScene, SceneEntityId};
+use crate::SceneEntityId;
 
 use super::SceneValidationError;
 
-pub(super) fn validate_parent_graph(scene: &AuthoringScene) -> Result<(), SceneValidationError> {
-    let parents = scene
-        .entities()
-        .map(|entity| (entity.id(), entity.parent()))
-        .collect::<BTreeMap<_, _>>();
+pub(super) fn validate_parent_graph(
+    entities: impl Iterator<Item = (SceneEntityId, Option<SceneEntityId>)>,
+) -> Result<(), SceneValidationError> {
+    let parents = entities.collect::<BTreeMap<_, _>>();
 
     for (entity, parent) in &parents {
         if parent == &Some(*entity) {

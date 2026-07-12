@@ -70,6 +70,10 @@ impl AuthoringEntity {
     pub fn components(&self) -> impl Iterator<Item = &ReflectedValue> {
         self.components.iter()
     }
+
+    pub(crate) fn components_slice(&self) -> &[ReflectedValue] {
+        &self.components
+    }
 }
 
 impl AuthoringScene {
