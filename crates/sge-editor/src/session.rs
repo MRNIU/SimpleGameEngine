@@ -17,6 +17,8 @@ use crate::{
     PlayStartError, SceneComponentType,
 };
 
+mod mutation;
+
 pub struct EditSession {
     game: GameDescriptor,
     project: ProjectRoot,
@@ -201,75 +203,6 @@ impl EditSession {
             field,
             before,
             after: value,
-        })
-    }
-
-    pub fn add_component(
-        &mut self,
-        entity: SceneEntityId,
-        component: &str,
-    ) -> Result<(), EditError> {
-        let scene = self.snapshot()?;
-        let authoring_entity = find_entity(&scene, entity)?;
-        if authoring_entity
-            .components()
-            .any(|value| value.type_key().as_str() == component)
-        {
-            return Err(EditError::DuplicateComponent {
-                entity,
-                component: component.to_owned(),
-            });
-        }
-        let value = self.app.type_registry().default_scene_value(component)?;
-        self.execute(HistoryCommand::Component {
-            entity,
-            component: value.type_key().clone(),
-            before: None,
-            after: Some(value),
-        })
-    }
-
-    pub fn remove_component(
-        &mut self,
-        entity: SceneEntityId,
-        component: &str,
-    ) -> Result<(), EditError> {
-        let scene = self.snapshot()?;
-        let value = find_component(find_entity(&scene, entity)?, component)?.clone();
-        self.execute(HistoryCommand::Component {
-            entity,
-            component: value.type_key().clone(),
-            before: Some(value),
-            after: None,
-        })
-    }
-
-    pub fn add_entity(&mut self, entity: AuthoringEntity) -> Result<(), EditError> {
-        let id = entity.id();
-        let scene = self.snapshot()?;
-        if scene.entities().any(|candidate| candidate.id() == id) {
-            return Err(EditError::DuplicateEntity { entity: id });
-        }
-        self.execute(HistoryCommand::Entity {
-            entity: id,
-            before: None,
-            after: Some(entity),
-        })
-    }
-
-    pub fn remove_entity(&mut self, entity: SceneEntityId) -> Result<(), EditError> {
-        let scene = self.snapshot()?;
-        let value = find_entity(&scene, entity)?.clone();
-        if scene
-            .entities()
-            .any(|candidate| candidate.parent() == Some(entity))
-        {
-            return Err(EditError::EntityHasChildren { entity });
-        }
-        self.execute(HistoryCommand::Entity {
-            entity,
-            before: Some(value),
-            after: None,
         })
     }
 

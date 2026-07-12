@@ -129,6 +129,8 @@ audit_source 'safe surface creation' 'create_surface_unsafe|SurfaceTargetUnsafe'
   crates/sge-render/src crates/player/src
 audit_source 'Player direct WGPU ownership' 'wgpu(\.workspace)?[[:space:]]*=' \
   crates/player/Cargo.toml examples/demo_game/player/Cargo.toml
+audit_source 'Editor second native event loop' 'EventLoop|run_app|create_window' \
+  crates/sge-editor/src
 
 audit_exact_files 'canonical OBJ importer owner' 'tobj::load_obj_buf' \
   'crates/sge-asset-pipeline/src/obj.rs' crates/sge-asset-pipeline/src

@@ -21,8 +21,10 @@ RUN apt-get update \
       libxkbcommon-x11-dev \
       libxrandr-dev \
       mesa-vulkan-drivers \
+      openbox \
       pkg-config \
       xauth \
+      xdotool \
       xvfb \
     && ln -sf /usr/local/cargo/bin/cargo /usr/local/bin/cargo \
     && ln -sf /usr/local/cargo/bin/cargo-clippy /usr/local/bin/cargo-clippy \

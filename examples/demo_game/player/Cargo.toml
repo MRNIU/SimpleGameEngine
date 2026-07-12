@@ -12,6 +12,7 @@ sge-player = { path = "../../../crates/player" }
 [dev-dependencies]
 sge-asset = { path = "../../../crates/sge-asset" }
 sge-asset-pipeline = { path = "../../../crates/sge-asset-pipeline" }
+sge-input = { path = "../../../crates/input" }
 sge-project = { path = "../../../crates/project" }
 
 [lints]

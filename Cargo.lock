@@ -505,6 +505,7 @@ dependencies = [
  "demo-game",
  "sge-asset",
  "sge-asset-pipeline",
+ "sge-input",
  "sge-player",
  "sge-project",
 ]

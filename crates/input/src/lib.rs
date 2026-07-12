@@ -87,6 +87,15 @@ impl InputFrame {
     pub const fn wheel_delta(&self) -> [f32; 2] {
         self.wheel_delta
     }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.held.is_empty()
+            && self.pressed.is_empty()
+            && self.released.is_empty()
+            && self.pointer_delta == [0.0; 2]
+            && self.wheel_delta == [0.0; 2]
+    }
 }
 
 #[cfg(test)]
@@ -118,5 +127,7 @@ mod tests {
         assert!(!input.is_pressed(primary));
         assert_eq!(input.pointer_delta(), [3.0, -2.0]);
         assert_eq!(input.wheel_delta(), [0.0, 1.5]);
+        assert!(!input.is_empty());
+        assert!(InputFrame::new().is_empty());
     }
 }

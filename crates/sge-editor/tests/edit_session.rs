@@ -15,6 +15,7 @@ const CAMERA: &str = "50000000-0000-4000-8000-000000000001";
 const MESH: &str = "50000000-0000-4000-8000-000000000002";
 const NEW_PARENT: &str = "60000000-0000-4000-8000-000000000001";
 const NEW_CHILD: &str = "60000000-0000-4000-8000-000000000002";
+const DEMO_ASSET: &str = "40000000-0000-4000-8000-000000000001";
 
 #[test]
 fn inspector_field_edit_is_validated_and_undoable() -> Result<(), Box<dyn std::error::Error>> {
@@ -95,6 +96,20 @@ fn component_and_leaf_entity_snapshots_share_generic_history()
     let parent = id(NEW_PARENT)?;
     let child = id(NEW_CHILD)?;
     session.add_entity(AuthoringEntity::new(parent, None, Vec::new())?)?;
+    let cursor = session.history_cursor();
+    assert!(session.add_component(parent, "sge.mesh_renderer").is_err());
+    assert_eq!(session.history_cursor(), cursor);
+    let draft = session.component_draft("sge.mesh_renderer")?;
+    let draft = session.set_component_draft_field(
+        &draft,
+        "mesh",
+        Value::Reference(DEMO_ASSET.to_owned()),
+    )?;
+    session.add_component_value(parent, draft)?;
+    assert!(has_component(&session, parent, "sge.mesh_renderer")?);
+    session.undo()?;
+    assert!(!has_component(&session, parent, "sge.mesh_renderer")?);
+    session.redo()?;
     session.add_entity(AuthoringEntity::new(child, Some(parent), Vec::new())?)?;
     session.select(Some(parent))?;
     let cursor = session.history_cursor();

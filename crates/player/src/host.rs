@@ -32,12 +32,18 @@ impl Default for RunOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RunReport {
     presented_frames: u64,
+    input_frames: u64,
 }
 
 impl RunReport {
     #[must_use]
     pub const fn presented_frames(self) -> u64 {
         self.presented_frames
+    }
+
+    #[must_use]
+    pub const fn input_frames(self) -> u64 {
+        self.input_frames
     }
 }
 
@@ -65,6 +71,7 @@ pub fn run_session(
     }
     Ok(RunReport {
         presented_frames: host.presented_frames,
+        input_frames: host.input_frames,
     })
 }
 
@@ -85,6 +92,7 @@ struct PlayerHost {
     surface: Option<SurfaceRenderer<Window>>,
     last_redraw: Instant,
     presented_frames: u64,
+    input_frames: u64,
     occluded: bool,
     error: Option<PlayerRunError>,
     input: InputAccumulator,
@@ -99,6 +107,7 @@ impl PlayerHost {
             surface: None,
             last_redraw: Instant::now(),
             presented_frames: 0,
+            input_frames: 0,
             occluded: false,
             error: None,
             input: InputAccumulator::default(),
@@ -117,7 +126,11 @@ impl PlayerHost {
         let now = Instant::now();
         let delta = now.saturating_duration_since(self.last_redraw);
         self.last_redraw = now;
-        if let Err(error) = self.session.advance(delta, self.input.take_frame()) {
+        let input = self.input.take_frame();
+        if !input.is_empty() {
+            self.input_frames = self.input_frames.saturating_add(1);
+        }
+        if let Err(error) = self.session.advance(delta, input) {
             self.fail(event_loop, error);
             return;
         }

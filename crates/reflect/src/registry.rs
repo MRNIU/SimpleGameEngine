@@ -201,6 +201,73 @@ impl TypeRegistry {
         self.encode(decoded.as_ref())
     }
 
+    /// Builds a transient scene-component draft from the registered constructor.
+    ///
+    /// Drafts preserve the descriptor's canonical field shape and value kinds, but intentionally
+    /// defer field-payload and component validation until the caller supplies every required
+    /// value. They must pass normal `decode`/scene validation before becoming durable authoring
+    /// data.
+    pub fn scene_value_draft(&self, type_key: &str) -> Result<ReflectedValue, ReflectError> {
+        self.require_frozen()?;
+        let descriptor = self.descriptor_for_key(type_key)?;
+        if !descriptor.scene_saveable() {
+            return Err(ReflectError::TypeNotSceneSaveable(
+                descriptor.type_key().clone(),
+            ));
+        }
+
+        let value = (descriptor.construct)();
+        let mut fields = FieldValues::default();
+        for (field_key, field) in &descriptor.fields {
+            let field_value = (field.get)(value.as_ref())?;
+            ensure_metadata_value(field_key, &field.metadata, &field_value)?;
+            let _previous = fields.insert(field_key.clone(), field_value);
+        }
+        Ok(ReflectedValue::new(
+            descriptor.type_key().clone(),
+            descriptor.schema_version(),
+            fields,
+        ))
+    }
+
+    /// Replaces one transient draft field through its registered setter/codec.
+    ///
+    /// Other incomplete fields remain deferred; the selected field still has to satisfy its kind,
+    /// typed codec, and field validator before the returned draft is produced.
+    pub fn with_draft_field_value(
+        &self,
+        draft: &ReflectedValue,
+        field_key: &FieldKey,
+        new_value: &Value,
+    ) -> Result<ReflectedValue, ReflectError> {
+        self.require_frozen()?;
+        let descriptor = self.descriptor_for_key(draft.type_key().as_str())?;
+        ensure_draft_shape(descriptor, draft)?;
+        let field = descriptor
+            .fields
+            .get(field_key)
+            .ok_or_else(|| ReflectError::UnknownField(field_key.clone()))?;
+        ensure_metadata_value(field_key, &field.metadata, new_value)?;
+
+        let mut candidate = (descriptor.construct)();
+        (field.set)(candidate.as_mut(), new_value)?;
+        let normalized = (field.get)(candidate.as_ref())?;
+        ensure_metadata_value(field_key, &field.metadata, &normalized)?;
+        if let Some(validate) = field.validate
+            && let Err(issue) = validate(&normalized)
+        {
+            return Err(ReflectError::Validation(ValidationErrors::one(issue)));
+        }
+
+        let mut fields = draft.fields().clone();
+        let _previous = fields.insert(field_key.clone(), normalized);
+        Ok(ReflectedValue::new(
+            descriptor.type_key().clone(),
+            descriptor.schema_version(),
+            fields,
+        ))
+    }
+
     pub fn default_scene_value(&self, type_key: &str) -> Result<ReflectedValue, ReflectError> {
         self.require_frozen()?;
         let descriptor = self.descriptor_for_key(type_key)?;
@@ -210,7 +277,9 @@ impl TypeRegistry {
             ));
         }
         let value = (descriptor.construct)();
-        self.encode(value.as_ref())
+        let encoded = self.encode(value.as_ref())?;
+        let _validated = self.decode(&encoded)?;
+        Ok(encoded)
     }
 
     fn require_frozen(&self) -> Result<(), ReflectError> {
@@ -276,6 +345,32 @@ fn reflected_fields(
     } else {
         Ok(values)
     }
+}
+
+fn ensure_draft_shape(
+    descriptor: &TypeDescriptor,
+    draft: &ReflectedValue,
+) -> Result<(), ReflectError> {
+    if draft.schema_version() != descriptor.schema_version() {
+        return Err(ReflectError::SchemaVersionMismatch {
+            type_key: descriptor.type_key().clone(),
+            expected: descriptor.schema_version(),
+            actual: draft.schema_version(),
+        });
+    }
+    for (field_key, field) in &descriptor.fields {
+        let value = draft
+            .fields()
+            .get(field_key.as_str())
+            .ok_or_else(|| ReflectError::MissingField(field_key.clone()))?;
+        ensure_metadata_value(field_key, &field.metadata, value)?;
+    }
+    for (field_key, _) in draft.fields().iter() {
+        if !descriptor.fields.contains_key(field_key) {
+            return Err(ReflectError::UnexpectedField(field_key.clone()));
+        }
+    }
+    Ok(())
 }
 
 fn ensure_metadata_value(

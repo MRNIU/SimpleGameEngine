@@ -502,6 +502,69 @@ fn default_scene_value_is_registry_owned_and_fails_closed() {
 }
 
 #[test]
+fn scene_draft_defers_incomplete_reference_but_validates_each_replacement() {
+    let descriptor = TypeDescriptor::builder::<ReferenceComponent>(
+        TypeKey::new("demo.reference-draft").unwrap(),
+        1,
+        "Reference Draft",
+        || ReferenceComponent {
+            target: BoundReference(String::new()),
+        },
+    )
+    .field(
+        FieldRegistration::reference(
+            FieldKey::new("target").unwrap(),
+            "Target",
+            |value: &ReferenceComponent| &value.target,
+            |value: &mut ReferenceComponent, target| value.target = target,
+        )
+        .unwrap(),
+    )
+    .scene_saveable()
+    .build()
+    .unwrap();
+    let mut registry = TypeRegistry::new();
+    registry.register(descriptor).unwrap();
+    registry.freeze().unwrap();
+
+    assert!(matches!(
+        registry.default_scene_value("demo.reference-draft"),
+        Err(ReflectError::InvalidReferencePayload { .. })
+    ));
+    let draft = registry.scene_value_draft("demo.reference-draft").unwrap();
+    assert!(matches!(
+        registry.decode(&draft),
+        Err(ReflectError::InvalidReferencePayload { .. })
+    ));
+    let target = FieldKey::new("target").unwrap();
+    assert!(matches!(
+        registry.with_draft_field_value(&draft, &target, &Value::Reference(String::new())),
+        Err(ReflectError::InvalidReferencePayload { .. })
+    ));
+    assert_eq!(
+        draft.fields().get("target"),
+        Some(&Value::Reference(String::new()))
+    );
+
+    let completed = registry
+        .with_draft_field_value(
+            &draft,
+            &target,
+            &Value::Reference(String::from("entity:root")),
+        )
+        .unwrap();
+    assert_eq!(
+        registry
+            .decode(&completed)
+            .unwrap()
+            .downcast::<ReferenceComponent>()
+            .unwrap()
+            .target,
+        BoundReference(String::from("entity:root"))
+    );
+}
+
+#[test]
 fn encode_rejects_getter_values_that_disagree_with_metadata() {
     let descriptor = TypeDescriptor::builder::<Rotator>(
         TypeKey::new("demo.bad-rotator").unwrap(),

@@ -18,8 +18,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
     )?;
     println!(
-        "preview_prepare={} preview_paint={} play_frames={}",
-        report.preview.prepare_count, report.preview.paint_count, report.play_frames
+        "preview_prepare={} preview_paint={} play_frames={} gameplay_input_frames={} gameplay_key_w_frames={}",
+        report.preview.prepare_count,
+        report.preview.paint_count,
+        report.play_frames,
+        report.gameplay_input_frames,
+        report.gameplay_key_w_frames
     );
     Ok(())
 }

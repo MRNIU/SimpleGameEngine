@@ -16,7 +16,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             ..RunOptions::default()
         },
     )?;
-    println!("presented_frames={}", report.presented_frames());
+    println!(
+        "presented_frames={} input_frames={}",
+        report.presented_frames(),
+        report.input_frames()
+    );
     Ok(())
 }
 

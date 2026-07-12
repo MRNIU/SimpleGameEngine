@@ -1,6 +1,7 @@
 # Editor Play M5 Design
 
 状态：Approved
+实现状态：Complete
 日期：2026-07-13
 上位规格：`2026-07-11-rust-engine-target-architecture-design.md`
 
@@ -200,3 +201,14 @@ Player Xvfb smoke
 
 独立 review 必须确认：没有任意 `world_mut()`、第二 registry/backend/event loop、mirrored
 authoring/runtime writes或 demo-only shortcut；M5 文档、README、AGENTS、tests和实际产品路径一致。
+
+## 实现结果
+
+M5 已按本规格实现：EditWorld唯一真源、registry-owned DTO mutation/default、Reflect Inspector、
+field/entity/component history与 saved cursor、atomic save、非破坏性 preview diagnostic、fresh
+PlaySession/Stop isolation、Player winit input与 Editor egui capture routing均由自动测试覆盖。
+
+`demo-game` 的 `Rotator` / `PlayerController` 与四阶段 systems由同一 GameDescriptor服务 headless、
+Editor Play和Player。game-specific Editor Xvfb smoke聚焦 Play viewport、注入 X11 key event并真实
+执行 Play advance及 WGPU prepare/paint；game-specific Player Xvfb smoke从 source-free cooked
+content接收 X11 key event并真实 present。

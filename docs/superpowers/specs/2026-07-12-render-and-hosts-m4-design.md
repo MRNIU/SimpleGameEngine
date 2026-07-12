@@ -307,7 +307,7 @@ examples/demo_game/
 ```
 
 M4 demo library公开一个静态 `GameDescriptor`，factory注册 scene structural descriptors、RenderPlugin，
-然后 finish。M4不提前创建最终 `Rotator` / `PlayerController`空壳；它们在 M7出现真实 gameplay caller时
+然后 finish。M4不提前创建最终 `Rotator` / `PlayerController`空壳；它们在 M5出现真实 gameplay caller时
 加入同一 game library。
 
 authoring scene至少包含 active Camera、一个 OBJ MeshRenderer + Material和一个 Light。OBJ AssetId固定，

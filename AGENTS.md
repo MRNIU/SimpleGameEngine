@@ -6,7 +6,7 @@
 
 - 项目名称：SimpleGameEngine
 - 当前定位：Rust 跨平台游戏引擎与 editor-first 产品实验仓库
-- 当前阶段：M1–M4 已完成；M5 Editor Play 是下一里程碑
+- 当前阶段：M1–M5 已完成；M6 Build And Stage 是下一里程碑
 - 技术栈：Rust stable、Cargo workspace、egui/eframe、winit、wgpu
 - 默认开发环境：Dev Container / Docker
 - 迁移策略：不维护旧内部 API/格式兼容层；已替代的 prototype 通过 Git 历史参考
@@ -21,6 +21,7 @@
 | `docs/superpowers/specs/2026-07-12-project-and-data-m2-design.md` | M2 Project/Data canonical 合同 |
 | `docs/superpowers/specs/2026-07-12-asset-pipeline-and-runtime-products-m3-design.md` | M3 import/cache/Cook/runtime product canonical 合同 |
 | `docs/superpowers/specs/2026-07-12-render-and-hosts-m4-design.md` | M4 render、Player、Editor preview canonical 合同 |
+| `docs/superpowers/specs/2026-07-13-editor-play-m5-design.md` | M5 EditSession、Inspector/history、Play/input canonical 合同 |
 | `.gitmessage` | commit message 模板 |
 
 ## 当前实现边界
@@ -37,9 +38,9 @@
 | `crates/sge-scene/` | authoring/runtime scene、SceneEntityId/Parent、prepare/instantiate/snapshot | project/Cook I/O、GPU |
 | `crates/sge-asset-pipeline/` | canonical OBJ importer、cache、dependency closure、deterministic full Cook/publication | Editor/Player host、GPU、Cargo build |
 | `crates/sge-render/` | reflected render components、owned RenderSnapshot、retained WGPU backend、safe surface | source/project ownership、egui ownership、多 backend facade |
-| `crates/player/` | source-free PlayerSession、winit loop、resize/occlusion/surface policy | project、OBJ parser、Editor、native dialog |
-| `crates/sge-editor/` | identity-first candidate open、source import、preview-only eframe/WGPU host | mutation、Inspector/Undo/Redo、PlaySession |
-| `examples/demo_game/` | 固定 AssetId project、静态 game library、薄 game-specific Editor/Player | demo-only engine shortcuts |
+| `crates/player/` | source-free PlayerSession、winit loop、input mapping、resize/occlusion/surface policy | project、OBJ parser、Editor、native dialog |
+| `crates/sge-editor/` | candidate open、EditSession、Reflect Inspector/history/save、独立 PlaySession、egui input routing与 eframe/WGPU host | arbitrary World mutation、第二 registry/backend/event loop、Play writeback |
+| `examples/demo_game/` | 固定 AssetId project、Rotator/PlayerController game plugin、薄 game-specific Editor/Player | demo-only engine shortcuts |
 
 bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `examples/editor_smoke/` 已删除。不得恢复兼容 adapter、第二 registry、mirrored writes 或第二 WGPU backend。
 
@@ -77,9 +78,9 @@ bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `e
 
 ## 项目状态
 
-最后审阅日期：2026-07-12
+最后审阅日期：2026-07-13
 
-- M1 Core Kernel、M2 Project And Data、M3 Asset Pipeline And Runtime Products、M4 Render And Hosts 已完成。
-- `demo-game-editor` identity-first 打开 target project并真实执行 WGPU preview prepare/paint。
-- `demo-game-player` 从 source-free cooked root加载、advance/extract并真实 present。
-- 下一里程碑：**M5 Editor Play**，包括 EditSession mutation、Reflect Inspector、通用 history、PlaySession/Stop isolation 与 gameplay input routing。
+- M1 Core Kernel、M2 Project And Data、M3 Asset Pipeline And Runtime Products、M4 Render And Hosts、M5 Editor Play 已完成。
+- `demo-game-editor --play` 打开 target project、运行独立 PlayWorld/game systems并真实执行 WGPU prepare/paint；Stop isolation有 headless roundtrip证据。
+- `demo-game-player` 从 source-free cooked root加载，使用 winit input adapter、advance/extract并真实 present。
+- 下一里程碑：**M6 Build And Stage**，包括 Cargo build orchestration、game-specific Build target与 self-contained loose Stage。
