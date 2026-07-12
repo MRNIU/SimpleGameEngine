@@ -514,6 +514,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "demo-game-editor"
+version = "0.1.0"
+dependencies = [
+ "demo-game",
+ "sge-editor",
+]
+
+[[package]]
 name = "demo-game-player"
 version = "0.1.0"
 dependencies = [
@@ -2631,6 +2639,21 @@ dependencies = [
 name = "sge-ecs"
 version = "0.1.0"
 dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "sge-editor"
+version = "0.1.0"
+dependencies = [
+ "demo-game",
+ "eframe",
+ "sge-app",
+ "sge-asset",
+ "sge-asset-pipeline",
+ "sge-project",
+ "sge-render",
+ "sge-scene",
  "thiserror 2.0.18",
 ]
 

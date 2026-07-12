@@ -15,9 +15,11 @@ members = [
   "crates/sge-asset",
   "crates/sge-asset-pipeline",
   "crates/sge-ecs",
+  "crates/sge-editor",
   "crates/sge-render",
   "crates/sge-scene",
   "examples/demo_game/game",
+  "examples/demo_game/editor",
   "examples/demo_game/player",
 ]
 resolver = "3"

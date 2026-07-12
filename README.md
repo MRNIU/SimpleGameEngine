@@ -16,7 +16,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 
 ## 当前实现
 
-- Cargo workspace 当前包含目标 package `sge-app`、`sge-asset`、`sge-asset-pipeline`、`sge-ecs`、`sge-input`、`sge-math`、`sge-player`、`sge-project`、`sge-reflect`、`sge-render`、`sge-scene`，game-specific package `demo-game` / `demo-game-player`，以及仍服务当前产品路径的 prototype package `asset`、`ecs`、`editor`、`render`、`runtime`、`scene`。M2/M3 数据与产品目录分别是 `crates/sge-asset/`、`crates/project/`、`crates/sge-scene/` 和 `crates/sge-asset-pipeline/`；M4 已落地 owned render snapshot、共享 WGPU backend、source-free `PlayerSession` 与安全拥有窗口 target 的 winit surface host。旧 `app`、`input`、`math` package 名和独立 `window` crate 已删除。
+- Cargo workspace 当前包含目标 package `sge-app`、`sge-asset`、`sge-asset-pipeline`、`sge-ecs`、`sge-editor`、`sge-input`、`sge-math`、`sge-player`、`sge-project`、`sge-reflect`、`sge-render`、`sge-scene`，game-specific package `demo-game` / `demo-game-editor` / `demo-game-player`，以及仍服务当前产品路径的 prototype package `asset`、`ecs`、`editor`、`render`、`runtime`、`scene`。M2/M3 数据与产品目录分别是 `crates/sge-asset/`、`crates/project/`、`crates/sge-scene/` 和 `crates/sge-asset-pipeline/`；M4 已落地 owned render snapshot、共享 WGPU backend、source-free `PlayerSession`、winit surface host 与 preview-only target Editor。旧 `app`、`input`、`math` package 名和独立 `window` crate 已删除。
 - Core Kernel M1 已实现并通过 headless 自动化验证：`sge-math` 是当前 prototype 与目标 Core 共用的 math leaf；`sge-ecs` 提供 typed runtime World、只读 erased component seam 和受限 `WorldInitializer`；`sge-reflect` 提供冻结后的 metadata、codec、clone、validation、scene-saveable opt-in 与 typed reference seam；`sge-input` 提供平台无关 `InputFrame`，尚无 winit/egui adapter；`sge-app` 提供 `EngineApp`、`Plugin`、固定 schedules 和 `GameDescriptor`。运行期 host 仍只能不可变检查 World，只有已完成注册且尚未启动的 Ready app 可以取得受限 initializer 来装载 scene。
 - Project And Data M2 已完成独立 headless 纵切：`sge-asset` 拥有正式 UUID `AssetId`、`AssetRef<T>` 和 `AssetLookup`；`sge-project` 拥有 strict `ProjectDescriptor`、portable `ProjectPath`、`ProjectRoot`、authoring manifest 和单文件 atomic replace；`sge-scene` 拥有 strict authoring DTO、`SceneEntityId` / `Parent`、共享 `prepare`、`instantiate` / `SceneInstance` 与 `snapshot`。同一 `GameDescriptor` 的 Ready candidate 已覆盖 project/manifest/scene load、typed instantiate/query、snapshot/reopen/save/readback 和 second candidate；失败路径验证 open/reload 不替换 live aggregate，commit 前失败保留旧 scene bytes。
 - Asset Pipeline And Runtime Products M3 已完成 headless product 纵切：manifest v2 import settings、canonical `MeshAsset`、strict runtime catalog/content/store、distinct `RuntimeScene`、canonical OBJ importer、可重建 import cache 与 deterministic full Cook 已实现。Cook 以 immutable generation 加 atomic catalog 作为发布边界，并在 commit 前从 exact disk bytes 完成 store/scene/World preflight；source-free integration 删除 project、OBJ 和 cache 后仍能按 `game_id` identity-first 加载并完成 typed instantiate/store lookup。
@@ -32,7 +32,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 - `runtime` 仍是一次性 loader smoke：可以按显式 project root 加载 scene + manifest + imported OBJ，并生成 viewport draw call；它不是持续运行的 Player。
 - 当前发布版 `eframe/egui-wgpu 0.35.0` 仍依赖 `wgpu 29`；workspace 统一到 `wgpu 29.0.4`，避免 editor/render 跨版本共享 GPU 类型。
 
-已批准目标架构、M2 实现合同、M3 canonical 合同及 M4 合同见下列文档。M1 Core Kernel、M2 Project And Data 与 M3 Asset Pipeline And Runtime Products 已完成；**Render And Hosts (M4)** 正在实施，当前已完成 reflected render components、owned `RenderSnapshot`、共享 WGPU backend、source-free `PlayerSession`、winit surface host 和 game-specific demo Player。target Editor preview、`PlaySession`、Build/Stage 和最终 integration demo 尚未闭合。本节以上的 workspace 和功能描述仍是当前代码真源：
+已批准目标架构、M2 实现合同、M3 canonical 合同及 M4 合同见下列文档。M1 Core Kernel、M2 Project And Data 与 M3 Asset Pipeline And Runtime Products 已完成；**Render And Hosts (M4)** 的 target render、Player、Editor preview 与 game-specific demo hosts 已实现，剩余 prototype cutover 与最终 M4 文档审计尚未闭合。`PlaySession`、Build/Stage 和最终 integration demo 属于后续 M5–M7。本节以上的 workspace 和功能描述仍是当前代码真源：
 
 - `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`
 - `docs/superpowers/specs/2026-07-12-project-and-data-m2-design.md`
@@ -106,6 +106,9 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p sge-player 
 
 # game-specific demo Player：从 tracked project Cook 临时产品、删除 source 后真实 present 两帧
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-player --test demo_product game_specific_player_presents_two_frames_from_cooked_content -- --ignored --exact'
+
+# game-specific demo Editor：candidate-first 打开临时 project 并真实执行 WGPU preview prepare/paint
+docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-editor --test editor_product game_specific_editor_prepares_and_paints_preview -- --ignored --exact'
 
 # 运行 runtime sample project
 cargo run -p runtime -- examples/editor_smoke/scenes/main.scene.ron examples/editor_smoke

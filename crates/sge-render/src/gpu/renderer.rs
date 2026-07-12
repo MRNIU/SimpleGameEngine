@@ -292,10 +292,7 @@ impl WgpuRenderer {
         result
     }
 
-    pub fn composite<'pass>(
-        &'pass self,
-        pass: &mut wgpu::RenderPass<'pass>,
-    ) -> Result<(), RenderTargetError> {
+    pub fn composite(&self, pass: &mut wgpu::RenderPass<'_>) -> Result<(), RenderTargetError> {
         let target = self
             .offscreen
             .as_ref()
