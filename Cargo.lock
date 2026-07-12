@@ -2583,6 +2583,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sge-player"
+version = "0.1.0"
+dependencies = [
+ "sge-app",
+ "sge-asset",
+ "sge-asset-pipeline",
+ "sge-input",
+ "sge-math",
+ "sge-project",
+ "sge-reflect",
+ "sge-render",
+ "sge-scene",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "sge-project"
 version = "0.1.0"
 dependencies = [
