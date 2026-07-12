@@ -103,6 +103,7 @@ fn canonical_workspace(path: &Path) -> Result<PathBuf, CargoBuildError> {
 #[derive(Deserialize)]
 struct CargoMessage {
     reason: String,
+    package_id: Option<String>,
     target: Option<CargoTarget>,
     executable: Option<PathBuf>,
 }
@@ -126,6 +127,11 @@ fn matching_artifact(output: &[u8], expected: &str) -> Result<PathBuf, CargoBuil
             continue;
         };
         if message.reason == "compiler-artifact"
+            && message
+                .package_id
+                .as_deref()
+                .and_then(package_name)
+                .is_some_and(|package| package == expected)
             && target.name == expected
             && target.kind.iter().any(|kind| kind == "bin")
             && let Some(executable) = message.executable
@@ -141,6 +147,17 @@ fn matching_artifact(output: &[u8], expected: &str) -> Result<PathBuf, CargoBuil
             paths: matches,
         }),
     }
+}
+
+fn package_name(package_id: &str) -> Option<&str> {
+    let fragment = package_id
+        .rsplit_once('#')
+        .map_or(package_id, |(_, tail)| tail);
+    fragment
+        .split_once('@')
+        .map_or(fragment, |(name, _)| name)
+        .split_whitespace()
+        .next()
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -27,7 +27,7 @@ pub struct StageRoot {
 }
 
 impl StageRoot {
-    pub fn create(path: impl AsRef<Path>) -> Result<Self, StageRootError> {
+    pub(crate) fn create(path: impl AsRef<Path>) -> Result<Self, StageRootError> {
         let requested = path.as_ref();
         ensure_directory_tree(requested)?;
         let root = Self::open(requested)?;
@@ -53,7 +53,7 @@ impl StageRoot {
         Ok(Self { root })
     }
 
-    pub fn begin(&self) -> Result<UnpublishedStage, StagePublishError> {
+    pub(crate) fn begin(&self) -> Result<UnpublishedStage, StagePublishError> {
         let generations = self.ensure_generations()?;
         let temp = generations.join(format!(
             ".unpublished-{}-{}",
@@ -154,7 +154,7 @@ fn ensure_directory_tree(path: &Path) -> Result<(), StageRootError> {
     }
 }
 
-pub struct UnpublishedStage {
+pub(crate) struct UnpublishedStage {
     stage_root: PathBuf,
     temp: PathBuf,
     runtime: PathBuf,
@@ -163,11 +163,14 @@ pub struct UnpublishedStage {
 
 impl UnpublishedStage {
     #[must_use]
-    pub fn runtime_root(&self) -> &Path {
+    pub(crate) fn runtime_root(&self) -> &Path {
         &self.runtime
     }
 
-    pub fn publish(self, request: StagePublishRequest) -> Result<StageManifest, StagePublishError> {
+    pub(crate) fn publish(
+        self,
+        request: StagePublishRequest,
+    ) -> Result<StageManifest, StagePublishError> {
         self.publish_with_commit(request, commit_manifest)
     }
 
@@ -272,7 +275,7 @@ impl Drop for UnpublishedStage {
     }
 }
 
-pub struct StagePublishRequest {
+pub(crate) struct StagePublishRequest {
     game_id: String,
     player_package: String,
     profile: BuildProfile,
@@ -282,7 +285,7 @@ pub struct StagePublishRequest {
 
 impl StagePublishRequest {
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         game_id: impl Into<String>,
         player_package: impl Into<String>,
         profile: BuildProfile,

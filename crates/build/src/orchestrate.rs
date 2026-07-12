@@ -7,8 +7,8 @@ use sge_asset_pipeline::{CookError, CookOutputRoot, CookPublishError, CookReport
 use sge_project::{ProjectDescriptor, ProjectFormatError, ProjectIoError, ProjectRoot};
 
 use crate::{
-    BuildProfile, CargoBuildError, CargoTool, StageManifest, StagePublishError,
-    StagePublishRequest, StageRoot, StageRootError,
+    BuildProfile, CargoBuildError, CargoTool, StageManifest, StagePublishError, StageRoot,
+    StageRootError, stage::StagePublishRequest,
 };
 
 pub struct BuildRequest {

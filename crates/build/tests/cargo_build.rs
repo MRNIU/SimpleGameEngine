@@ -15,6 +15,7 @@ fn cargo_build_uses_workspace_and_accepts_only_the_matching_artifact()
     fs::write(&artifact, b"player")?;
     let json = serde_json::json!({
         "reason": "compiler-artifact",
+        "package_id": "path+file:///workspace/demo#demo-game-player@0.1.0",
         "target": { "kind": ["bin"], "name": "demo-game-player" },
         "executable": artifact,
     });
@@ -49,13 +50,13 @@ fn cargo_build_rejects_failure_missing_multiple_and_wrong_artifacts()
         ("missing", "printf '%s\\n' '{\"reason\":\"build-finished\",\"success\":true}'\n".to_owned()),
         (
             "wrong",
-            "printf '%s\\n' '{\"reason\":\"compiler-artifact\",\"target\":{\"kind\":[\"lib\"],\"name\":\"demo-game-player\"},\"executable\":\"/tmp/wrong\"}'\n".to_owned(),
+            "printf '%s\\n' '{\"reason\":\"compiler-artifact\",\"package_id\":\"path+file:///workspace/other#other-player@0.1.0\",\"target\":{\"kind\":[\"bin\"],\"name\":\"demo-game-player\"},\"executable\":\"/tmp/wrong\"}'\n".to_owned(),
         ),
         (
             "multiple",
             concat!(
-                "printf '%s\\n' '{\"reason\":\"compiler-artifact\",\"target\":{\"kind\":[\"bin\"],\"name\":\"demo-game-player\"},\"executable\":\"/tmp/one\"}'\n",
-                "printf '%s\\n' '{\"reason\":\"compiler-artifact\",\"target\":{\"kind\":[\"bin\"],\"name\":\"demo-game-player\"},\"executable\":\"/tmp/two\"}'\n",
+                "printf '%s\\n' '{\"reason\":\"compiler-artifact\",\"package_id\":\"path+file:///workspace/demo#demo-game-player@0.1.0\",\"target\":{\"kind\":[\"bin\"],\"name\":\"demo-game-player\"},\"executable\":\"/tmp/one\"}'\n",
+                "printf '%s\\n' '{\"reason\":\"compiler-artifact\",\"package_id\":\"path+file:///workspace/demo#demo-game-player@0.1.0\",\"target\":{\"kind\":[\"bin\"],\"name\":\"demo-game-player\"},\"executable\":\"/tmp/two\"}'\n",
             )
             .to_owned(),
         ),
