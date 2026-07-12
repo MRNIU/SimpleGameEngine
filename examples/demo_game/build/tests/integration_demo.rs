@@ -12,6 +12,7 @@ use std::{
 };
 
 use demo_game::{GameRuntimeState, PlayerController, Rotator};
+use sge_asset::RuntimeContentRoot;
 use sge_build::StageRoot;
 use sge_editor::EditSession;
 use sge_input::{Button, InputFrame, KeyCode};
@@ -19,7 +20,7 @@ use sge_math::Transform;
 use sge_player::PlayerSession;
 use sge_reflect::Value;
 use sge_render::{Camera, Light, MeshRenderer, RenderSnapshot};
-use sge_scene::{AuthoringEntity, SceneEntityId};
+use sge_scene::{AuthoringEntity, RuntimeScene, SceneEntityId};
 
 const ASSET_ID: &str = "40000000-0000-4000-8000-000000000001";
 const CAMERA_ID: &str = "50000000-0000-4000-8000-000000000001";
@@ -137,7 +138,8 @@ fn independent_demo_closes_the_complete_engine_spine() -> Result<(), Box<dyn std
 
     let manifest = StageRoot::open(&fixture.copied_stage)?.load_current(demo_game::GAME_ID)?;
     let runtime = fixture.copied_stage.join(manifest.runtime_root().as_str());
-    let player = PlayerSession::load(demo_game::GAME, runtime)?;
+    assert_cooked_authoring_changes(&runtime, child, mesh, edited_speed)?;
+    let player = PlayerSession::load(demo_game::GAME, &runtime)?;
     let (player_snapshot, player_view) = player.render_frame()?;
     assert!(player_view.camera().active());
     assert_semantic_snapshot_eq(&play_initial, &player_snapshot);
@@ -146,6 +148,40 @@ fn independent_demo_closes_the_complete_engine_spine() -> Result<(), Box<dyn std
         .copied_stage
         .join(manifest.executable_path().as_str());
     run_staged_player_with_input(&executable)?;
+    Ok(())
+}
+
+fn assert_cooked_authoring_changes(
+    runtime_root: &Path,
+    child: SceneEntityId,
+    mesh: SceneEntityId,
+    edited_speed: f32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let content = RuntimeContentRoot::open(runtime_root)?;
+    let generation = content.load_current(demo_game::GAME_ID)?;
+    let scene = RuntimeScene::from_ron(std::str::from_utf8(generation.entry_scene_bytes())?)?;
+    assert!(
+        scene
+            .entities()
+            .any(|entity| entity.id() == child && entity.parent() == Some(mesh))
+    );
+    let mesh_entity = scene
+        .entities()
+        .find(|entity| entity.id() == mesh)
+        .ok_or("cooked scene is missing mesh entity")?;
+    let rotator = mesh_entity
+        .components()
+        .find(|component| component.type_key().as_str() == "demo.rotator")
+        .ok_or("cooked scene is missing Rotator")?;
+    assert_eq!(
+        rotator.fields().get("radians_per_second"),
+        Some(&Value::F32(edited_speed))
+    );
+    assert!(
+        mesh_entity
+            .components()
+            .any(|component| component.type_key().as_str() == "demo.player_controller")
+    );
     Ok(())
 }
 
@@ -287,11 +323,13 @@ fn any_path(root: &Path, predicate: &dyn Fn(&Path) -> bool) -> Result<bool, std:
 
 fn run_staged_player_with_input(executable: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let _window_manager = WindowManager::start()?;
-    let child = Command::new(executable)
-        .args(["--max-frames", "300"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+    let child = ChildGuard::new(
+        Command::new(executable)
+            .args(["--max-frames", "300"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?,
+    );
     let window = find_window(demo_game::GAME_ID)?;
     let injection = Command::new("xdotool")
         .args([
@@ -325,6 +363,30 @@ fn run_staged_player_with_input(executable: &Path) -> Result<(), Box<dyn std::er
     assert!(report_value(&stdout, "presented_frames")? > 0);
     assert!(report_value(&stdout, "input_frames")? > 0);
     Ok(())
+}
+
+struct ChildGuard(Option<std::process::Child>);
+
+impl ChildGuard {
+    fn new(child: std::process::Child) -> Self {
+        Self(Some(child))
+    }
+
+    fn wait_with_output(mut self) -> Result<std::process::Output, std::io::Error> {
+        self.0
+            .take()
+            .ok_or_else(|| std::io::Error::other("child process was already consumed"))?
+            .wait_with_output()
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if let Some(child) = self.0.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
 }
 
 struct WindowManager(std::process::Child);

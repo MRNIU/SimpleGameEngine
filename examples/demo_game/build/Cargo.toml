@@ -10,6 +10,7 @@ demo-game = { path = "../game" }
 sge-build = { path = "../../../crates/build" }
 
 [dev-dependencies]
+sge-asset = { path = "../../../crates/sge-asset" }
 sge-editor = { path = "../../../crates/sge-editor" }
 sge-input = { path = "../../../crates/input" }
 sge-math = { path = "../../../crates/math" }
