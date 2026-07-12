@@ -2,15 +2,19 @@
 
 use std::{error::Error, path::PathBuf};
 
-use sge_player::{RunOptions, run};
+use sge_player::{RunOptions, run, staged_runtime_root};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let Some(arguments) = arguments()? else {
         return Ok(());
     };
+    let cooked_root = match arguments.cooked_root {
+        Some(path) => path,
+        None => staged_runtime_root()?,
+    };
     let report = run(
         demo_game::GAME,
-        arguments.cooked_root,
+        cooked_root,
         RunOptions {
             max_frames: arguments.max_frames,
             ..RunOptions::default()
@@ -25,22 +29,30 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 struct Arguments {
-    cooked_root: PathBuf,
+    cooked_root: Option<PathBuf>,
     max_frames: Option<u64>,
 }
 
 fn arguments() -> Result<Option<Arguments>, String> {
     let mut values = std::env::args_os().skip(1);
-    let Some(first) = values.next() else {
-        return Err(usage("missing COOKED_ROOT"));
-    };
-    if first == "--help" || first == "-h" {
+    let first = values.next();
+    if first.as_deref() == Some(std::ffi::OsStr::new("--help"))
+        || first.as_deref() == Some(std::ffi::OsStr::new("-h"))
+    {
         println!("{}", usage(""));
         return Ok(None);
     }
-    let cooked_root = PathBuf::from(first);
+    let mut pending = None;
+    let cooked_root = match first {
+        Some(value) if value == "--max-frames" => {
+            pending = Some(value);
+            None
+        }
+        Some(value) => Some(PathBuf::from(value)),
+        None => None,
+    };
     let mut max_frames = None;
-    while let Some(argument) = values.next() {
+    while let Some(argument) = pending.take().or_else(|| values.next()) {
         if argument != "--max-frames" {
             return Err(usage(&format!(
                 "unknown argument: {}",
@@ -71,5 +83,5 @@ fn usage(error: &str) -> String {
     } else {
         format!("{error}\n\n")
     };
-    format!("{prefix}Usage: demo-game-player COOKED_ROOT [--max-frames N]")
+    format!("{prefix}Usage: demo-game-player [COOKED_ROOT] [--max-frames N]")
 }

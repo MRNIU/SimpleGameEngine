@@ -16,7 +16,7 @@ use sge_asset::{
 };
 use sge_asset_pipeline::{CookOutputRoot, full_cook};
 use sge_input::InputFrame;
-use sge_player::{PlayerLoadError, PlayerSession, RunOptions, run};
+use sge_player::{PlayerLoadError, PlayerSession, RunOptions, run, runtime_root_for_executable};
 use sge_project::{
     AuthoringAssetManifest, ObjImportSettings, ProjectDescriptor, ProjectPath, ProjectRoot,
     SourceAssetRecord, SourceImporter,
@@ -31,6 +31,15 @@ use sge_scene::{
 const GAME_ID: &str = "test.player";
 static FACTORY_CALLS: AtomicUsize = AtomicUsize::new(0);
 static ADVANCES: AtomicUsize = AtomicUsize::new(0);
+
+#[test]
+fn staged_runtime_root_is_sibling_of_the_player_executable() {
+    assert_eq!(
+        runtime_root_for_executable(Path::new("Stage/generations/id/demo-player")).unwrap(),
+        PathBuf::from("Stage/generations/id/runtime")
+    );
+    assert!(runtime_root_for_executable(Path::new("/")).is_err());
+}
 
 #[test]
 fn copied_runtime_loads_advances_and_extracts_without_source()

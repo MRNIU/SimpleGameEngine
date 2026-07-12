@@ -2,7 +2,10 @@
 
 //! Source-free runtime session ownership and frame extraction.
 
-use std::{path::Path, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use sge_app::{AdvanceError, EngineApp, EngineBuildError, GameDescriptor, InitializationError};
 use sge_asset::{
@@ -19,6 +22,27 @@ mod host;
 mod input;
 
 pub use host::{PlayerRunError, RunOptions, RunReport, run, run_session};
+
+pub fn staged_runtime_root() -> Result<PathBuf, StagedRuntimeRootError> {
+    let executable = std::env::current_exe().map_err(StagedRuntimeRootError::CurrentExecutable)?;
+    runtime_root_for_executable(&executable)
+}
+
+pub fn runtime_root_for_executable(executable: &Path) -> Result<PathBuf, StagedRuntimeRootError> {
+    executable
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(|parent| parent.join("runtime"))
+        .ok_or_else(|| StagedRuntimeRootError::MissingParent(executable.to_path_buf()))
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum StagedRuntimeRootError {
+    #[error("cannot locate the current Player executable: {0}")]
+    CurrentExecutable(#[source] std::io::Error),
+    #[error("Player executable has no parent directory: {0}")]
+    MissingParent(PathBuf),
+}
 
 pub struct PlayerSession {
     game_id: &'static str,

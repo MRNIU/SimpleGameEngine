@@ -59,7 +59,7 @@ fn player_cli_has_stable_help() -> Result<(), Box<dyn std::error::Error>> {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout)?,
-        "Usage: demo-game-player COOKED_ROOT [--max-frames N]\n"
+        "Usage: demo-game-player [COOKED_ROOT] [--max-frames N]\n"
     );
     assert!(output.stderr.is_empty());
     Ok(())
