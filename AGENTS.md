@@ -18,6 +18,7 @@
 | `README.md` | 安装、编译、运行、测试和文档生成命令 |
 | `docs/conventions.md` | 代码、文档、测试和环境约定 |
 | `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md` | 已批准目标方向、目标 crate/产品边界、延期子系统与迁移顺序 |
+| `docs/superpowers/specs/2026-07-12-project-and-data-m2-design.md` | 已实现的 M2 Project/Data 数据合同、失败边界与依赖约束 |
 | `.gitmessage` | commit message 模板 |
 | 局部 `AGENTS.md` | 目录级规则；优先级高于本文件的通用条款 |
 
@@ -27,12 +28,15 @@
 
 | 模块/目录 | 职责 | 不负责 |
 |-----------|------|--------|
-| `crates/app/` | Cargo package `sge-app`；headless-verified `EngineApp` / `Plugin` / fixed schedules / `GameDescriptor` kernel，使用 token-gated `SystemContext`，host 仅可不可变检查 World | Editor/Player host、`PlaySession`、平台或 renderer 所有权 |
+| `crates/app/` | Cargo package `sge-app`；headless-verified `EngineApp` / `Plugin` / fixed schedules / `GameDescriptor` kernel，使用 token-gated `SystemContext`；host 仅可不可变检查 World，Ready app 在启动前可提供受限 `WorldInitializer` | Editor/Player host、`PlaySession`、平台或 renderer 所有权 |
 | `crates/math/` | Cargo package `sge-math`；当前 prototype 与目标 Core 共用的 math leaf，提供 `Transform` 和 glam 类型 re-export | Reflect metadata、ECS storage |
 | `crates/ecs/` | 临时固定 `EntityRecord` prototype、entity map 和层级操作；只被当前 Scene/Render/Editor 直接依赖 | typed runtime World、目标 scene DTO、兼容 adapter 或 mirrored writes |
-| `crates/sge-ecs/` | 供 `sge-app` 和 headless tests 使用的串行 typed runtime World、显式类型注册、opaque Entity 和单组件 query | 现有 prototype adapter、Reflect、scene/render/editor 集成 |
-| `crates/reflect/` | Cargo package `sge-reflect`；冻结后的 type/field metadata、codec、clone 和 validation registry | ECS、scene/asset ID 所有权、egui drawer |
+| `crates/sge-ecs/` | 串行 typed runtime World、显式类型注册、opaque Entity、单组件 query、只读 erased component seam，以及只允许向自身新建 entity checked insert 的 `WorldInitializer` | 现有 prototype adapter、Editor/Render 产品迁移、任意 host `world_mut()` |
+| `crates/reflect/` | Cargo package `sge-reflect`；冻结后的 type/field metadata、codec、clone 和 validation registry，提供 scene-saveable opt-in 与 typed reference binding | ECS、scene/asset ID 所有权、egui drawer |
 | `crates/input/` | Cargo package `sge-input`；平台无关的逐帧 `InputFrame` | winit/egui adapter、窗口所有权 |
+| `crates/sge-asset/` | 正式 UUID `AssetId`、typed `AssetRef<T>` 与只读 `AssetLookup` 合同 | source import、Cook、runtime asset product、GPU handle |
+| `crates/project/` | Cargo package `sge-project`；strict descriptor、portable path/root、authoring manifest / source record 与单文件 atomic file replace | Editor session、importer、runtime tick、多文件 transaction |
+| `crates/sge-scene/` | strict authoring DTO、`SceneEntityId` / `Parent`、共享 `prepare`、`instantiate` / `SceneInstance` 和 `snapshot` | project I/O、GPU、Editor session、M3 runtime scene product |
 | `window` package（已删除） | 不再存在独立 window crate；未来 winit window 所有权属于 Player | 当前 Editor eframe lifecycle、预建 `sge-window` |
 | `crates/scene/` | 当前 `.scene.ron` 直接序列化固定 `EntityRecord` 的 save/load | 目标 Reflect authoring/runtime scene product、GPU、editor session |
 | `crates/asset/` | 当前 Asset UUID/manifest、OBJ source loader、imported CPU mesh | 目标 Asset source/runtime 分层与 Cook |
@@ -83,5 +87,7 @@
 - 示例 project 真源：`examples/editor_smoke/`。
 - 已通过证据：人工 host-native editor smoke 已确认真实窗口像素输出、两次 `New Cube`、手动移动第二个 cube、保存并重新打开 `.scene.ron`
 - 已完成收口：editor 已按现有 `model` / `app` / `viewport` 边界拆薄，文件 IO 留在 `editor::app`，`crates/editor/src/lib.rs` 只保留模块入口和 re-export
-- Core Kernel M1 已完成并通过 headless 自动化验证：`sge-math`、`sge-ecs`、`sge-reflect`、`sge-input` 和 `sge-app` 已实现；现有 Editor/Scene/Render/runtime 产品路径仍保持上述 prototype 边界。
-- 下一个里程碑：**Project And Data**。Asset Pipeline、Cook、`RenderSnapshot`、Editor Play、Player、Build/Stage 和最终 integration demo 不属于当前已完成范围。
+- Core Kernel M1 已完成并通过 headless 自动化验证：`sge-math`、`sge-ecs`、`sge-reflect`、`sge-input` 和 `sge-app` 已实现。
+- Project And Data M2 已完成 headless 纵切：`sge-asset`、`sge-project`、`sge-scene` 已实现，`sge-scene` 公开 `SceneInstance`、`instantiate`、`snapshot`、`SceneInstantiationError` 和 `SceneSnapshotError`；46 个 Scene tests 覆盖 strict data、prepare、candidate instantiate/snapshot/reopen 与失败边界。
+- 当前 Editor/Scene/Render/runtime 产品路径仍保持上述 bare prototype 边界，尚未迁移到 M2 target path。
+- 下一个里程碑：**Asset Pipeline And Runtime Products (M3)**。OBJ importer 迁移、import cache、Cook、runtime catalog/runtime scene、`RenderSnapshot`、Editor Play、Player、Build/Stage 和最终 integration demo 不属于当前已完成范围。

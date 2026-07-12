@@ -27,3 +27,54 @@ jobs:
 
       - name: Test
         run: cargo test --workspace --all-targets
+
+      - name: Build
+        run: cargo build --workspace
+
+      - name: Core and Data boundary audit
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if cargo tree -p sge-app --locked --target all --edges normal,build --prefix none \
+            | grep -E '^(asset|ecs|scene|runtime|sge-asset|sge-project|sge-scene|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe|winit|wgpu) v'; then
+            echo 'sge-app production dependency boundary violated' >&2
+            exit 1
+          fi
+          if cargo tree -p sge-asset --locked --target all --edges normal,build --prefix none \
+            | grep -E '^(asset|ecs|scene|runtime|sge-project|sge-scene|sge-app|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe|winit|wgpu) v'; then
+            echo 'sge-asset production dependency boundary violated' >&2
+            exit 1
+          fi
+          if cargo tree -p sge-project --locked --target all --edges normal,build --prefix none \
+            | grep -E '^(asset|ecs|scene|runtime|sge-scene|sge-app|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe|winit|wgpu) v'; then
+            echo 'sge-project production dependency boundary violated' >&2
+            exit 1
+          fi
+          if cargo tree -p sge-scene --locked --target all --edges normal,build --prefix none \
+            | grep -E '^(asset|ecs|scene|runtime|sge-project|sge-app|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe|winit|wgpu) v'; then
+            echo 'sge-scene production dependency boundary violated' >&2
+            exit 1
+          fi
+
+          target_sources=(
+            crates/app/src
+            crates/reflect/src
+            crates/sge-asset/src
+            crates/sge-ecs/src
+            crates/sge-scene/src
+            crates/project/src
+          )
+          if git grep -nE 'EntityRecord|AssetUuid|tobj|load_obj' -- "${target_sources[@]}"; then
+            echo 'target production source boundary violated' >&2
+            exit 1
+          fi
+          if git grep -n 'world_mut' -- crates/app/src crates/sge-ecs/src crates/sge-scene/src; then
+            echo 'runtime World mutation boundary violated' >&2
+            exit 1
+          fi
+          if git grep -n 'unwrap_or_default' -- crates/sge-asset/src crates/project/src crates/sge-scene/src; then
+            echo 'durable Data recovery boundary violated' >&2
+            exit 1
+          fi
