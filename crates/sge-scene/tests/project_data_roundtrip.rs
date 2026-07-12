@@ -88,7 +88,7 @@ fn corrupt_manifest_does_not_replace_live() -> Result<(), Box<dyn std::error::Er
     let before = signature(&live, &fixture)?;
     fixture.root()?.write_atomic(
         &ProjectPath::new(AUTHORING_ASSET_MANIFEST_PATH)?,
-        b"(format_version: 1, assets: [",
+        b"(format_version: 2, assets: [",
     )?;
 
     assert!(reload(&mut live, fixture.path(), game_descriptor()).is_err());

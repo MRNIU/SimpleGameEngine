@@ -1,18 +1,19 @@
 // Copyright The SimpleGameEngine Contributors
 
+mod support;
+
 use std::{
     fs,
     path::{Path, PathBuf},
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use sge_asset::AssetId;
 use sge_project::{
     AUTHORING_ASSET_MANIFEST_PATH, AuthoringAssetManifest, ManifestError, PROJECT_DESCRIPTOR_PATH,
     ProjectDescriptor, ProjectFormatError, ProjectIoError, ProjectPath, ProjectRoot,
-    SourceAssetRecord,
 };
-use sge_reflect::TypeKey;
+
+use support::{asset_id, source_record};
 
 static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
 
@@ -148,10 +149,10 @@ fn descriptor() -> Result<ProjectDescriptor, Box<dyn std::error::Error>> {
 }
 
 fn manifest() -> Result<AuthoringAssetManifest, Box<dyn std::error::Error>> {
-    let id: AssetId = "10000000-0000-4000-8000-000000000001".parse()?;
-    Ok(AuthoringAssetManifest::new(vec![SourceAssetRecord::new(
+    let id = asset_id("10000000-0000-4000-8000-000000000001")?;
+    Ok(AuthoringAssetManifest::new(vec![source_record(
         id,
-        TypeKey::new("asset.mesh")?,
-        ProjectPath::new("Content/mesh.obj")?,
-    )])?)
+        "Content/mesh.obj",
+        false,
+    )?])?)
 }

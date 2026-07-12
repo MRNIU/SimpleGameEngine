@@ -14,7 +14,7 @@ pub use descriptor::{
 pub use io::{ProjectIoError, ProjectRoot};
 pub use manifest::{
     AUTHORING_ASSET_MANIFEST_FORMAT_VERSION, AUTHORING_ASSET_MANIFEST_PATH, AuthoringAssetManifest,
-    ManifestError, SourceAssetRecord,
+    ManifestError, ObjImportSettings, SourceAssetRecord, SourceImporter,
 };
 pub use path::{ProjectPath, ProjectPathError};
 

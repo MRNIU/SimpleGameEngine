@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, str::FromStr};
 
-use sge_asset::{AssetId, AssetLookup, AssetRef, AssetType};
+use sge_asset::{AssetId, AssetLookup, AssetRef, AssetType, MESH_ASSET_TYPE_KEY};
 use sge_reflect::{
     FieldKey, FieldKind, FieldMetadata, FieldRegistration, ReflectError, TypeDescriptor, TypeKey,
     TypeRegistry, ValidationErrors, ValidationIssue, Value,
@@ -12,7 +12,7 @@ use sge_scene::SceneEntityId;
 pub struct MeshAsset;
 
 impl AssetType for MeshAsset {
-    const TYPE_KEY: &'static str = "asset.mesh";
+    const TYPE_KEY: &'static str = MESH_ASSET_TYPE_KEY;
 }
 
 #[derive(Clone, PartialEq)]

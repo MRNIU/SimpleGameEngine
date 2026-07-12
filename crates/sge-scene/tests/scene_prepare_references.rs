@@ -4,7 +4,7 @@ mod support;
 
 use std::str::FromStr;
 
-use sge_asset::{AssetId, AssetRef};
+use sge_asset::{AssetId, AssetRef, MESH_ASSET_TYPE_KEY};
 use sge_reflect::{FieldKey, ReflectedValue, Value};
 use sge_scene::{AuthoringEntity, AuthoringScene, SceneValidationError, prepare};
 
@@ -62,7 +62,7 @@ fn scene_with_probe(
 fn prepare_validates_entity_reference_codec_and_target_with_field_context()
 -> Result<(), Box<dyn std::error::Error>> {
     let registry = probe_registry()?;
-    let assets = Assets::with(AssetId::from_str(MESH_ID)?, "asset.mesh")?;
+    let assets = Assets::with(AssetId::from_str(MESH_ID)?, MESH_ASSET_TYPE_KEY)?;
     let entity = scene_id(1)?;
 
     let invalid = scene_with_probe("not-an-entity-id", MESH_ID, false)?;
@@ -107,7 +107,7 @@ fn prepare_validates_asset_reference_codec_presence_and_type()
     let registry = probe_registry()?;
     let entity = scene_id(1)?;
     let mesh_id = AssetId::from_str(MESH_ID)?;
-    let valid_assets = Assets::with(mesh_id, "asset.mesh")?;
+    let valid_assets = Assets::with(mesh_id, MESH_ASSET_TYPE_KEY)?;
 
     let invalid = scene_with_probe(&entity.to_string(), "asset:not-an-id", false)?;
     assert!(matches!(
@@ -154,7 +154,7 @@ fn prepare_validates_asset_reference_codec_presence_and_type()
             && component.as_str() == "demo.probe"
             && field.as_str() == "mesh"
             && asset == mesh_id
-            && expected.as_str() == "asset.mesh"
+            && expected.as_str() == MESH_ASSET_TYPE_KEY
             && actual.as_str() == "asset.texture"
     ));
 

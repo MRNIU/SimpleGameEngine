@@ -2,7 +2,7 @@
 
 mod support;
 
-use sge_asset::{AssetId, AssetRef};
+use sge_asset::{AssetId, AssetRef, MESH_ASSET_TYPE_KEY};
 use sge_ecs::World;
 use sge_reflect::{TypeDescriptor, TypeKey, TypeRegistry};
 use sge_scene::{
@@ -139,7 +139,7 @@ fn snapshot_encodes_saveable_components_in_descriptor_order()
     assert!(world.insert(child_runtime, Parent(root))?.is_none());
     assert!(world.insert(child_runtime, probe.clone())?.is_none());
     assert!(world.insert(child_runtime, Alpha)?.is_none());
-    let assets = Assets::with(asset, "asset.mesh")?;
+    let assets = Assets::with(asset, MESH_ASSET_TYPE_KEY)?;
 
     let scene = snapshot(&world, &registry, &assets)?;
 

@@ -2,7 +2,7 @@
 
 mod support;
 
-use sge_asset::{AssetId, AssetRef};
+use sge_asset::{AssetId, AssetRef, MESH_ASSET_TYPE_KEY};
 use sge_reflect::{
     FieldKey, FieldValues, ReflectedValue, TypeDescriptor, TypeKey, TypeRegistry, ValidationErrors,
     ValidationIssue, Value, ValueKind,
@@ -37,7 +37,7 @@ fn encoded_probe(
     Ok((
         scene,
         registry,
-        Assets::with(asset_id, "asset.mesh")?,
+        Assets::with(asset_id, MESH_ASSET_TYPE_KEY)?,
         asset_id,
     ))
 }

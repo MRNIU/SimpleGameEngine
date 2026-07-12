@@ -8,10 +8,11 @@ use std::{
 };
 
 use sge_app::{EngineApp, EngineBuildError, GameDescriptor};
-use sge_asset::{AssetId, AssetRef};
+use sge_asset::{AssetId, AssetRef, MESH_ASSET_TYPE_KEY};
 use sge_ecs::{Entity, World};
 use sge_project::{
-    AuthoringAssetManifest, ProjectDescriptor, ProjectPath, ProjectRoot, SourceAssetRecord,
+    AuthoringAssetManifest, ObjImportSettings, ProjectDescriptor, ProjectPath, ProjectRoot,
+    SourceAssetRecord, SourceImporter,
 };
 use sge_reflect::{TypeKey, TypeRegistry};
 use sge_scene::{
@@ -58,9 +59,10 @@ impl TestProject {
         let asset_id = AssetId::new_v4();
         let manifest = AuthoringAssetManifest::new(vec![SourceAssetRecord::new(
             asset_id,
-            TypeKey::new("asset.mesh")?,
+            TypeKey::new(MESH_ASSET_TYPE_KEY)?,
             ProjectPath::new("Content/mesh.obj")?,
-        )])?;
+            SourceImporter::Obj(ObjImportSettings::new(false)),
+        )?])?;
         let registry = probe_registry()?;
         let reflected = registry.encode(&Probe {
             count: 17,

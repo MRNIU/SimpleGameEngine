@@ -1,29 +1,75 @@
 // Copyright The SimpleGameEngine Contributors
 
 use serde::{Deserialize, Serialize};
-use sge_asset::{AssetId, AssetIdError, AssetLookup};
+use sge_asset::{AssetId, AssetIdError, AssetLookup, MESH_ASSET_TYPE_KEY};
 use sge_reflect::{KeyError, TypeKey};
 
 use crate::{ProjectIoError, ProjectPath, ProjectPathError, ProjectRoot, canonical_pretty_config};
 
-pub const AUTHORING_ASSET_MANIFEST_FORMAT_VERSION: u32 = 1;
+pub const AUTHORING_ASSET_MANIFEST_FORMAT_VERSION: u32 = 2;
 pub const AUTHORING_ASSET_MANIFEST_PATH: &str = "Content/asset_manifest.ron";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObjImportSettings {
+    flip_texcoord_v: bool,
+}
+
+impl ObjImportSettings {
+    #[must_use]
+    pub const fn new(flip_texcoord_v: bool) -> Self {
+        Self { flip_texcoord_v }
+    }
+
+    #[must_use]
+    pub const fn flip_texcoord_v(&self) -> bool {
+        self.flip_texcoord_v
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceImporter {
+    Obj(ObjImportSettings),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceAssetRecord {
     id: AssetId,
     asset_type: TypeKey,
     source: ProjectPath,
+    importer: SourceImporter,
 }
 
 impl SourceAssetRecord {
-    #[must_use]
-    pub const fn new(id: AssetId, asset_type: TypeKey, source: ProjectPath) -> Self {
-        Self {
+    pub fn new(
+        id: AssetId,
+        asset_type: TypeKey,
+        source: ProjectPath,
+        importer: SourceImporter,
+    ) -> Result<Self, ManifestError> {
+        match &importer {
+            SourceImporter::Obj(_) if asset_type.as_str() != MESH_ASSET_TYPE_KEY => {
+                let expected = TypeKey::new(MESH_ASSET_TYPE_KEY).map_err(|source| {
+                    ManifestError::InvalidAssetType {
+                        value: MESH_ASSET_TYPE_KEY.to_owned(),
+                        source,
+                    }
+                })?;
+                return Err(ManifestError::ImporterAssetTypeMismatch {
+                    expected,
+                    actual: asset_type,
+                });
+            }
+            SourceImporter::Obj(_) if !source.as_str().ends_with(".obj") => {
+                return Err(ManifestError::InvalidObjSource { path: source });
+            }
+            SourceImporter::Obj(_) => {}
+        }
+        Ok(Self {
             id,
             asset_type,
             source,
-        }
+            importer,
+        })
     }
 
     #[must_use]
@@ -40,6 +86,11 @@ impl SourceAssetRecord {
     pub fn source(&self) -> &ProjectPath {
         &self.source
     }
+
+    #[must_use]
+    pub const fn importer(&self) -> &SourceImporter {
+        &self.importer
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,12 +105,30 @@ struct AuthoringAssetManifestWire {
     assets: Vec<SourceAssetRecordWire>,
 }
 
+#[derive(Deserialize)]
+struct ManifestVersionProbe {
+    format_version: u32,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SourceAssetRecordWire {
     id: String,
     asset_type: String,
     source: String,
+    importer: SourceImporterWire,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+enum SourceImporterWire {
+    Obj { settings: ObjImportSettingsWire },
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObjImportSettingsWire {
+    flip_texcoord_v: bool,
 }
 
 impl AuthoringAssetManifest {
@@ -82,18 +151,23 @@ impl AuthoringAssetManifest {
 
     fn from_bytes(input: &[u8]) -> Result<Self, ManifestError> {
         let path = ProjectPath::new(AUTHORING_ASSET_MANIFEST_PATH)?;
+        let version: ManifestVersionProbe =
+            ron::de::from_bytes(input).map_err(|source| ManifestError::Parse {
+                path: path.clone(),
+                source: Box::new(source),
+            })?;
+        if version.format_version != AUTHORING_ASSET_MANIFEST_FORMAT_VERSION {
+            return Err(ManifestError::VersionMismatch {
+                path,
+                expected: AUTHORING_ASSET_MANIFEST_FORMAT_VERSION,
+                found: version.format_version,
+            });
+        }
         let wire: AuthoringAssetManifestWire =
             ron::de::from_bytes(input).map_err(|source| ManifestError::Parse {
                 path: path.clone(),
                 source: Box::new(source),
             })?;
-        if wire.format_version != AUTHORING_ASSET_MANIFEST_FORMAT_VERSION {
-            return Err(ManifestError::VersionMismatch {
-                path,
-                expected: AUTHORING_ASSET_MANIFEST_FORMAT_VERSION,
-                found: wire.format_version,
-            });
-        }
         let records = wire
             .assets
             .into_iter()
@@ -120,10 +194,11 @@ impl AuthoringAssetManifest {
                     id: record.id.to_string(),
                     asset_type: record.asset_type.to_string(),
                     source: record.source.to_string(),
+                    importer: SourceImporterWire::from_domain(&record.importer),
                 })
                 .collect(),
         };
-        ron::ser::to_string_pretty(&wire, canonical_pretty_config())
+        ron::ser::to_string_pretty(&wire, canonical_pretty_config().depth_limit(3))
             .map_err(|source| ManifestError::Serialize { path, source })
     }
 
@@ -169,7 +244,32 @@ impl SourceAssetRecordWire {
                     source,
                 }),
             })?;
-        Ok(SourceAssetRecord::new(id, asset_type, source_path))
+        SourceAssetRecord::new(id, asset_type, source_path, self.importer.into_domain()).map_err(
+            |source| ManifestError::AtPath {
+                path: context.clone(),
+                source: Box::new(source),
+            },
+        )
+    }
+}
+
+impl SourceImporterWire {
+    fn from_domain(importer: &SourceImporter) -> Self {
+        match importer {
+            SourceImporter::Obj(settings) => Self::Obj {
+                settings: ObjImportSettingsWire {
+                    flip_texcoord_v: settings.flip_texcoord_v(),
+                },
+            },
+        }
+    }
+
+    const fn into_domain(self) -> SourceImporter {
+        match self {
+            Self::Obj { settings } => {
+                SourceImporter::Obj(ObjImportSettings::new(settings.flip_texcoord_v))
+            }
+        }
     }
 }
 
@@ -232,6 +332,10 @@ pub enum ManifestError {
         #[source]
         source: ProjectPathError,
     },
+    #[error("source importer requires asset type {expected}, got {actual}")]
+    ImporterAssetTypeMismatch { expected: TypeKey, actual: TypeKey },
+    #[error("OBJ source must use a lowercase .obj suffix: {path}")]
+    InvalidObjSource { path: ProjectPath },
     #[error("duplicate asset ID in authoring manifest: {id}")]
     DuplicateAssetId { id: AssetId },
 }

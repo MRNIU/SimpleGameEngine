@@ -15,6 +15,8 @@ use std::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use sge_reflect::{KeyError, ReferenceSemantic, ReferenceValue, TypeKey};
 
+pub const MESH_ASSET_TYPE_KEY: &str = "sge.mesh";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AssetId(uuid::Uuid);
 

@@ -2,7 +2,7 @@
 
 mod support;
 
-use sge_asset::{AssetId, AssetRef};
+use sge_asset::{AssetId, AssetRef, MESH_ASSET_TYPE_KEY};
 use sge_ecs::World;
 use sge_reflect::{FieldValues, ReflectedValue, TypeDescriptor, TypeKey, TypeRegistry};
 use sge_scene::{
@@ -23,7 +23,7 @@ fn prepared_probe() -> Result<(sge_scene::PreparedScene, Probe), Box<dyn std::er
     };
     let reflected = registry.encode(&probe)?;
     let scene = AuthoringScene::new(vec![AuthoringEntity::new(entity, None, vec![reflected])?])?;
-    let assets = Assets::with(asset, "asset.mesh")?;
+    let assets = Assets::with(asset, MESH_ASSET_TYPE_KEY)?;
     Ok((prepare(&scene, &registry, &assets)?, probe))
 }
 
@@ -162,7 +162,11 @@ fn instantiate_moves_structural_and_custom_components_into_canonical_entities()
         AuthoringEntity::new(child, Some(root), vec![registry.encode(&probe)?])?,
         AuthoringEntity::new(root, None, Vec::new())?,
     ])?;
-    let prepared = prepare(&scene, &registry, &Assets::with(asset, "asset.mesh")?)?;
+    let prepared = prepare(
+        &scene,
+        &registry,
+        &Assets::with(asset, MESH_ASSET_TYPE_KEY)?,
+    )?;
     let mut world = World::new();
     world.register_component::<SceneEntityId>()?;
     world.register_component::<Parent>()?;

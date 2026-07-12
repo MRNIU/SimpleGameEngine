@@ -4,7 +4,7 @@ mod support;
 
 use std::any::TypeId;
 
-use sge_asset::{AssetId, AssetRef};
+use sge_asset::{AssetId, AssetRef, MESH_ASSET_TYPE_KEY};
 use sge_ecs::{EcsError, World};
 use sge_reflect::ReflectError;
 use sge_scene::{Parent, SceneEntityId, SceneSnapshotError, SceneValidationError, snapshot};
@@ -66,7 +66,11 @@ fn snapshot_preserves_reflect_encode_context() -> Result<(), Box<dyn std::error:
     );
 
     assert!(matches!(
-        snapshot(&world, &registry, &Assets::with(asset, "asset.mesh")?),
+        snapshot(
+            &world,
+            &registry,
+            &Assets::with(asset, MESH_ASSET_TYPE_KEY)?
+        ),
         Err(SceneSnapshotError::Encode {
             entity,
             component,
@@ -118,7 +122,11 @@ fn snapshot_reuses_entity_reference_validation() -> Result<(), Box<dyn std::erro
     );
 
     assert!(matches!(
-        snapshot(&world, &registry, &Assets::with(asset, "asset.mesh")?),
+        snapshot(
+            &world,
+            &registry,
+            &Assets::with(asset, MESH_ASSET_TYPE_KEY)?
+        ),
         Err(SceneSnapshotError::Validation(source))
             if matches!(*source, SceneValidationError::MissingEntityReference { entity, target, .. }
                 if entity == id && target == missing)
