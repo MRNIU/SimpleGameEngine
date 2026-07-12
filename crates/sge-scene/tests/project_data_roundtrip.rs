@@ -1,22 +1,25 @@
 // Copyright The SimpleGameEngine Contributors
 
+use std::cell::Cell;
+
 mod project_data_support;
 #[allow(dead_code)]
 mod support;
 
-use sge_asset::AssetId;
+use sge_asset::{AssetId, AssetRef};
 use sge_ecs::World;
 use sge_project::{
     AUTHORING_ASSET_MANIFEST_PATH, AuthoringAssetManifest, PROJECT_DESCRIPTOR_PATH,
     ProjectDescriptor, ProjectPath,
 };
+use sge_scene::{Parent, SceneEntityId};
 
 use project_data_support::{
     TestProject, game_descriptor, invalid_factory_calls, invalid_guard_game_descriptor,
     mismatch_factory_calls, mismatch_guard_game_descriptor, missing_parent_game_descriptor,
-    open_all, reload, save_scene, save_world, signature,
+    open_all, reload, save_scene, save_world, save_world_with_precommit, signature,
 };
-use support::{Probe, probe_registry};
+use support::{MeshAsset, Probe, probe_registry};
 
 #[test]
 fn project_data_happy_path_reopens_through_a_second_candidate()
@@ -157,6 +160,65 @@ fn precommit_save_failure_preserves_prior_scene_bytes() -> Result<(), Box<dyn st
         )
         .is_err()
     );
+    assert_eq!(root.read(descriptor.default_authoring_scene())?, old);
+    Ok(())
+}
+
+#[test]
+fn final_precommit_gate_failure_preserves_distinct_prior_scene_bytes()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = TestProject::new("final-precommit")?;
+    let root = fixture.root()?;
+    let descriptor = ProjectDescriptor::load(&root)?;
+    let manifest = AuthoringAssetManifest::load(&root)?;
+    let old = root.read(descriptor.default_authoring_scene())?;
+    let registry = probe_registry()?;
+    let mut source = World::new();
+    source.register_component::<SceneEntityId>()?;
+    source.register_component::<Parent>()?;
+    source.register_component::<Probe>()?;
+    source.finish_registration();
+    let root_runtime = source.spawn();
+    let child_runtime = source.spawn();
+    assert!(source.insert(root_runtime, fixture.root_id)?.is_none());
+    assert!(source.insert(child_runtime, fixture.child_id)?.is_none());
+    assert!(
+        source
+            .insert(child_runtime, Parent(fixture.root_id))?
+            .is_none()
+    );
+    assert!(
+        source
+            .insert(
+                child_runtime,
+                Probe {
+                    count: fixture.count + 1,
+                    target: fixture.root_id,
+                    mesh: AssetRef::<MeshAsset>::new(fixture.asset_id),
+                },
+            )?
+            .is_none()
+    );
+    let gate_reached = Cell::new(false);
+    let candidate = sge_scene::snapshot(&source, &registry, &manifest)?
+        .to_ron()?
+        .into_bytes();
+    assert_ne!(candidate, old);
+
+    let result = save_world_with_precommit(
+        &root,
+        descriptor.default_authoring_scene(),
+        &source,
+        &registry,
+        &manifest,
+        || {
+            gate_reached.set(true);
+            Err(std::io::Error::other("sentinel final precommit failure").into())
+        },
+    );
+
+    assert!(result.is_err());
+    assert!(gate_reached.get());
     assert_eq!(root.read(descriptor.default_authoring_scene())?, old);
     Ok(())
 }

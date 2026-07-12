@@ -224,6 +224,7 @@ pub fn open_all(path: &Path, game: GameDescriptor) -> Result<OpenProject, Box<dy
     let mut app = game.create_app()?;
     let prepared = prepare(&scene, app.type_registry(), &manifest)?;
     let instance = instantiate(prepared, app.world_initializer()?)?;
+    validate_typed_probe_product(&scene, &app, &instance)?;
 
     let snapshot_scene = snapshot(app.world(), app.type_registry(), &manifest)?;
     let encoded = snapshot_scene.to_ron()?;
@@ -237,6 +238,55 @@ pub fn open_all(path: &Path, game: GameDescriptor) -> Result<OpenProject, Box<dy
         manifest,
         root,
     })
+}
+
+fn validate_typed_probe_product(
+    scene: &AuthoringScene,
+    app: &EngineApp,
+    instance: &SceneInstance,
+) -> Result<(), Box<dyn Error>> {
+    let mut expected_count = 0;
+    for entity in scene.entities() {
+        for component in entity
+            .components()
+            .filter(|component| component.type_key().as_str() == "demo.probe")
+        {
+            expected_count += 1;
+            let expected = app.type_registry().decode(component)?;
+            let expected = expected.downcast_ref::<Probe>().ok_or_else(|| {
+                std::io::Error::other("loaded demo.probe decoded to the wrong Rust type")
+            })?;
+            let runtime_entity = instance.entity(&entity.id()).ok_or_else(|| {
+                std::io::Error::other(format!(
+                    "candidate SceneInstance is missing scene entity {}",
+                    entity.id()
+                ))
+            })?;
+            let actual = app.world().get::<Probe>(runtime_entity).ok_or_else(|| {
+                std::io::Error::other(format!(
+                    "candidate scene entity {} is missing typed Probe",
+                    entity.id()
+                ))
+            })?;
+            if actual.count != expected.count
+                || actual.target != expected.target
+                || actual.mesh.id() != expected.mesh.id()
+            {
+                return Err(std::io::Error::other(format!(
+                    "candidate scene entity {} Probe differs from loaded authoring data",
+                    entity.id()
+                ))
+                .into());
+            }
+        }
+    }
+    if app.world().query::<Probe>().count() != expected_count {
+        return Err(std::io::Error::other(
+            "candidate Probe count differs from loaded authoring scene",
+        )
+        .into());
+    }
+    Ok(())
 }
 
 pub fn save_scene(project: &OpenProject) -> Result<Vec<u8>, Box<dyn Error>> {
@@ -256,10 +306,22 @@ pub fn save_world(
     registry: &TypeRegistry,
     manifest: &AuthoringAssetManifest,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
+    save_world_with_precommit(root, scene_path, world, registry, manifest, || Ok(()))
+}
+
+pub fn save_world_with_precommit(
+    root: &ProjectRoot,
+    scene_path: &ProjectPath,
+    world: &World,
+    registry: &TypeRegistry,
+    manifest: &AuthoringAssetManifest,
+    precommit: impl FnOnce() -> Result<(), Box<dyn Error>>,
+) -> Result<Vec<u8>, Box<dyn Error>> {
     let scene = snapshot(world, registry, manifest)?;
     let bytes = scene.to_ron()?.into_bytes();
     let reopened = AuthoringScene::from_ron(std::str::from_utf8(&bytes)?)?;
     let _prepared = prepare(&reopened, registry, manifest)?;
+    precommit()?;
     root.write_atomic(scene_path, &bytes)?;
     let readback = root.read(scene_path)?;
     let readback_scene = AuthoringScene::from_ron(std::str::from_utf8(&readback)?)?;

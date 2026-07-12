@@ -1,6 +1,6 @@
 // Copyright The SimpleGameEngine Contributors
 
-use std::collections::BTreeMap;
+use std::{any::TypeId, collections::BTreeMap};
 
 use sge_asset::AssetLookup;
 use sge_ecs::{EcsError, Entity, World};
@@ -34,7 +34,11 @@ pub fn snapshot(
             let parent = world.get::<Parent>(runtime_entity).map(|parent| parent.0);
             let components = registry
                 .descriptors()
-                .filter(|descriptor| descriptor.scene_saveable())
+                .filter(|descriptor| {
+                    descriptor.scene_saveable()
+                        && descriptor.rust_type_id() != TypeId::of::<SceneEntityId>()
+                        && descriptor.rust_type_id() != TypeId::of::<Parent>()
+                })
                 .filter_map(|descriptor| {
                     let component =
                         match world.component_erased(runtime_entity, descriptor.rust_type_id()) {

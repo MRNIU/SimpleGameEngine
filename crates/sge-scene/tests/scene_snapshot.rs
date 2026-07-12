@@ -6,8 +6,8 @@ use sge_asset::{AssetId, AssetRef};
 use sge_ecs::World;
 use sge_reflect::{TypeDescriptor, TypeKey, TypeRegistry};
 use sge_scene::{
-    Parent, SceneEntityId, SceneSnapshotError, parent_descriptor, scene_entity_id_descriptor,
-    snapshot,
+    Parent, SceneEntityId, SceneSnapshotError, instantiate, parent_descriptor, prepare,
+    scene_entity_id_descriptor, snapshot,
 };
 
 use support::{Assets, MeshAsset, Probe, probe_descriptor, probe_registry, scene_id};
@@ -174,5 +174,62 @@ fn snapshot_encodes_saveable_components_in_descriptor_order()
     let reopened = sge_scene::AuthoringScene::from_ron(&bytes)?;
     assert_eq!(reopened.to_ron()?, bytes);
     let _prepared = sge_scene::prepare(&reopened, &registry, &assets)?;
+    Ok(())
+}
+
+#[test]
+fn snapshot_excludes_saveable_aliases_of_both_structural_rust_types()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut registry = TypeRegistry::new();
+    registry.register(
+        TypeDescriptor::builder::<SceneEntityId>(
+            TypeKey::new("alias.identity")?,
+            1,
+            "Identity alias",
+            SceneEntityId::new_v4,
+        )
+        .scene_saveable()
+        .build()?,
+    )?;
+    registry.register(
+        TypeDescriptor::builder::<Parent>(TypeKey::new("alias.parent")?, 1, "Parent alias", || {
+            Parent(SceneEntityId::new_v4())
+        })
+        .scene_saveable()
+        .build()?,
+    )?;
+    registry.freeze()?;
+    let root = scene_id(1)?;
+    let child = scene_id(2)?;
+    let mut source = World::new();
+    source.register_component::<SceneEntityId>()?;
+    source.register_component::<Parent>()?;
+    source.finish_registration();
+    let root_runtime = source.spawn();
+    let child_runtime = source.spawn();
+    assert!(source.insert(root_runtime, root)?.is_none());
+    assert!(source.insert(child_runtime, child)?.is_none());
+    assert!(source.insert(child_runtime, Parent(root))?.is_none());
+
+    let scene = snapshot(&source, &registry, &Assets::default())?;
+
+    assert!(
+        scene
+            .entities()
+            .all(|entity| entity.components().count() == 0)
+    );
+    let prepared = prepare(&scene, &registry, &Assets::default())?;
+    let mut reopened = World::new();
+    reopened.register_component::<SceneEntityId>()?;
+    reopened.register_component::<Parent>()?;
+    reopened.finish_registration();
+    let instance = instantiate(prepared, reopened.initializer())?;
+    assert_eq!(instance.iter().count(), 2);
+    assert_eq!(
+        instance
+            .entity(&child)
+            .and_then(|entity| reopened.get::<Parent>(entity)),
+        Some(&Parent(root))
+    );
     Ok(())
 }
