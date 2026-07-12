@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{FieldKey, TypeKey};
+use crate::{FieldKey, KeyError, TypeKey};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ValueKind {
@@ -59,6 +59,12 @@ impl Value {
 pub enum ReferenceSemantic {
     Entity,
     Asset { asset_type: TypeKey },
+}
+
+pub trait ReferenceValue: Sized + 'static {
+    fn semantic() -> Result<ReferenceSemantic, KeyError>;
+    fn to_reference(&self) -> String;
+    fn from_reference(value: &str) -> Result<Self, String>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -5,20 +5,26 @@ use std::{
     collections::BTreeMap,
 };
 
-use crate::{FieldKey, FieldMetadata, ReflectError, ValidationErrors, ValidationIssue, Value};
+use crate::{
+    FieldKey, FieldKind, FieldMetadata, ReferenceValue, ReflectError, ValidationErrors,
+    ValidationIssue, Value,
+};
 
 type FieldValidator = fn(&Value) -> Result<(), ValidationIssue>;
 type ComponentValidator<T> = fn(&T) -> Result<(), ValidationErrors>;
+type TypedGetter<T> = Box<dyn Fn(&T) -> Value>;
+type TypedSetter<T> = Box<dyn Fn(&mut T, &Value) -> Result<(), ReflectError>>;
 
 pub struct FieldRegistration<T> {
     key: FieldKey,
     metadata: FieldMetadata,
-    get: fn(&T) -> Value,
-    set: fn(&mut T, &Value) -> Result<(), ReflectError>,
+    get: TypedGetter<T>,
+    set: TypedSetter<T>,
     validate: Option<FieldValidator>,
+    reference_bound: bool,
 }
 
-impl<T> FieldRegistration<T> {
+impl<T: 'static> FieldRegistration<T> {
     pub fn new(
         key: FieldKey,
         metadata: FieldMetadata,
@@ -28,10 +34,45 @@ impl<T> FieldRegistration<T> {
         Self {
             key,
             metadata,
-            get,
-            set,
+            get: Box::new(get),
+            set: Box::new(set),
             validate: None,
+            reference_bound: false,
         }
+    }
+
+    pub fn reference<R: ReferenceValue>(
+        key: FieldKey,
+        display_name: impl Into<String>,
+        get: fn(&T) -> &R,
+        set: fn(&mut T, R),
+    ) -> Result<Self, DescriptorError> {
+        let semantic = R::semantic()?;
+        let setter_key = key.clone();
+        Ok(Self {
+            key,
+            metadata: FieldMetadata::new(display_name, FieldKind::Reference(semantic)),
+            get: Box::new(move |value| Value::Reference(get(value).to_reference())),
+            set: Box::new(move |value, field| {
+                let Value::Reference(reference) = field else {
+                    return Err(ReflectError::value_kind(
+                        setter_key.as_str(),
+                        "Reference",
+                        field.kind(),
+                    ));
+                };
+                let reference = R::from_reference(reference).map_err(|reason| {
+                    ReflectError::InvalidReferencePayload {
+                        value: reference.clone(),
+                        reason,
+                    }
+                })?;
+                set(value, reference);
+                Ok(())
+            }),
+            validate: None,
+            reference_bound: true,
+        })
     }
 
     pub fn validator(mut self, validate: fn(&Value) -> Result<(), ValidationIssue>) -> Self {
@@ -47,6 +88,7 @@ pub struct TypeDescriptorBuilder<T: Clone + 'static> {
     constructor: fn() -> T,
     fields: Vec<FieldRegistration<T>>,
     validate: Option<ComponentValidator<T>>,
+    scene_saveable: bool,
 }
 
 impl<T: Clone + 'static> TypeDescriptorBuilder<T> {
@@ -60,6 +102,11 @@ impl<T: Clone + 'static> TypeDescriptorBuilder<T> {
         self
     }
 
+    pub const fn scene_saveable(mut self) -> Self {
+        self.scene_saveable = true;
+        self
+    }
+
     pub fn build(self) -> Result<TypeDescriptor, DescriptorError> {
         if self.schema_version == 0 {
             return Err(DescriptorError::ZeroSchemaVersion);
@@ -70,6 +117,11 @@ impl<T: Clone + 'static> TypeDescriptorBuilder<T> {
         for registration in self.fields {
             if fields.contains_key(&registration.key) {
                 return Err(DescriptorError::DuplicateFieldKey(registration.key));
+            }
+            if matches!(registration.metadata.kind(), FieldKind::Reference(_))
+                && !registration.reference_bound
+            {
+                return Err(DescriptorError::UnboundReferenceField(registration.key));
             }
 
             let get = registration.get;
@@ -110,6 +162,7 @@ impl<T: Clone + 'static> TypeDescriptorBuilder<T> {
             rust_type_name,
             display_name: self.display_name,
             fields,
+            scene_saveable: self.scene_saveable,
             construct: Box::new(move || Box::new(constructor())),
             clone_value: Box::new(move |value| {
                 let value = value
@@ -167,6 +220,7 @@ pub struct TypeDescriptor {
     pub(crate) rust_type_name: &'static str,
     pub(crate) display_name: String,
     pub(crate) fields: BTreeMap<FieldKey, FieldDescriptor>,
+    pub(crate) scene_saveable: bool,
     pub(crate) construct: ErasedConstructor,
     pub(crate) clone_value: ErasedClone,
     pub(crate) validate: ErasedValidate,
@@ -193,6 +247,7 @@ impl TypeDescriptor {
             constructor,
             fields: Vec::new(),
             validate: None,
+            scene_saveable: false,
         }
     }
 
@@ -231,6 +286,11 @@ impl TypeDescriptor {
     pub fn field(&self, key: &str) -> Option<&FieldMetadata> {
         self.fields.get(key).map(|field| &field.metadata)
     }
+
+    #[must_use]
+    pub const fn scene_saveable(&self) -> bool {
+        self.scene_saveable
+    }
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -239,4 +299,8 @@ pub enum DescriptorError {
     ZeroSchemaVersion,
     #[error("duplicate reflected field: {0}")]
     DuplicateFieldKey(FieldKey),
+    #[error("reference field has no typed binding: {0}")]
+    UnboundReferenceField(FieldKey),
+    #[error("invalid reference semantic: {0}")]
+    InvalidReferenceSemantic(#[from] crate::KeyError),
 }

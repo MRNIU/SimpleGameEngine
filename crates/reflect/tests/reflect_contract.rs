@@ -3,9 +3,9 @@
 //! `sge-reflect` public contract tests.
 
 use sge_reflect::{
-    FieldKey, FieldKind, FieldMetadata, FieldRegistration, FieldValues, ReferenceSemantic,
-    ReflectError, ReflectedValue, RegistryError, TypeDescriptor, TypeKey, TypeRegistry,
-    ValidationErrors, ValidationIssue, Value,
+    DescriptorError, FieldKey, FieldKind, FieldMetadata, FieldRegistration, FieldValues, KeyError,
+    ReferenceSemantic, ReferenceValue, ReflectError, ReflectedValue, RegistryError, TypeDescriptor,
+    TypeKey, TypeRegistry, ValidationErrors, ValidationIssue, Value,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -23,6 +23,52 @@ struct RevisionedRotator {
 #[derive(Debug, Clone, PartialEq)]
 struct ModeComponent {
     mode: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BoundReference(String);
+
+impl ReferenceValue for BoundReference {
+    fn semantic() -> Result<ReferenceSemantic, KeyError> {
+        Ok(ReferenceSemantic::Entity)
+    }
+
+    fn to_reference(&self) -> String {
+        self.0.clone()
+    }
+
+    fn from_reference(value: &str) -> Result<Self, String> {
+        (!value.is_empty())
+            .then(|| Self(value.to_owned()))
+            .ok_or_else(|| "reference cannot be empty".to_owned())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReferenceComponent {
+    target: BoundReference,
+}
+
+#[derive(Debug, Clone)]
+struct InvalidSemanticReference;
+
+impl ReferenceValue for InvalidSemanticReference {
+    fn semantic() -> Result<ReferenceSemantic, KeyError> {
+        Err(KeyError::Empty)
+    }
+
+    fn to_reference(&self) -> String {
+        String::new()
+    }
+
+    fn from_reference(_value: &str) -> Result<Self, String> {
+        Ok(Self)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct InvalidSemanticComponent {
+    target: InvalidSemanticReference,
 }
 
 fn rotator_descriptor() -> TypeDescriptor {
@@ -82,6 +128,196 @@ fn rotator_descriptor_with_key(key: &str) -> TypeDescriptor {
     })
     .build()
     .unwrap()
+}
+
+fn reference_descriptor() -> TypeDescriptor {
+    TypeDescriptor::builder::<ReferenceComponent>(
+        TypeKey::new("demo.reference").unwrap(),
+        1,
+        "Reference",
+        || ReferenceComponent {
+            target: BoundReference(String::from("entity:default")),
+        },
+    )
+    .field(
+        FieldRegistration::reference(
+            FieldKey::new("target").unwrap(),
+            "Target",
+            |value: &ReferenceComponent| &value.target,
+            |value: &mut ReferenceComponent, target| value.target = target,
+        )
+        .unwrap(),
+    )
+    .build()
+    .unwrap()
+}
+
+#[test]
+fn typed_reference_roundtrips() {
+    let mut registry = TypeRegistry::new();
+    registry.register(reference_descriptor()).unwrap();
+    registry.freeze().unwrap();
+    let value = ReferenceComponent {
+        target: BoundReference(String::from("entity:root")),
+    };
+
+    let encoded = registry.encode(&value).unwrap();
+    assert_eq!(
+        encoded.fields().get("target"),
+        Some(&Value::Reference(String::from("entity:root")))
+    );
+    assert_eq!(
+        *registry
+            .decode(&encoded)
+            .unwrap()
+            .downcast::<ReferenceComponent>()
+            .unwrap(),
+        value
+    );
+}
+
+#[test]
+fn typed_reference_rejects_invalid_payload() {
+    let mut registry = TypeRegistry::new();
+    registry.register(reference_descriptor()).unwrap();
+    registry.freeze().unwrap();
+    let mut fields = FieldValues::default();
+    assert_eq!(
+        fields.insert(
+            FieldKey::new("target").unwrap(),
+            Value::Reference(String::new()),
+        ),
+        None
+    );
+
+    assert!(matches!(
+        registry.decode(&ReflectedValue::new(
+            TypeKey::new("demo.reference").unwrap(),
+            1,
+            fields,
+        )),
+        Err(ReflectError::InvalidReferencePayload { value, reason })
+            if value.is_empty() && reason == "reference cannot be empty"
+    ));
+}
+
+#[test]
+fn invalid_reference_semantic_is_a_descriptor_error() {
+    assert!(matches!(
+        FieldRegistration::reference(
+            FieldKey::new("target").unwrap(),
+            "Target",
+            |value: &InvalidSemanticComponent| &value.target,
+            |value: &mut InvalidSemanticComponent, target| value.target = target,
+        ),
+        Err(DescriptorError::InvalidReferenceSemantic(KeyError::Empty))
+    ));
+}
+
+#[test]
+fn unbound_reference_metadata_is_rejected() {
+    let descriptor = TypeDescriptor::builder::<ReferenceComponent>(
+        TypeKey::new("demo.unbound-reference").unwrap(),
+        1,
+        "Unbound Reference",
+        || ReferenceComponent {
+            target: BoundReference(String::from("entity:default")),
+        },
+    )
+    .field(FieldRegistration::new(
+        FieldKey::new("target").unwrap(),
+        FieldMetadata::new("Target", FieldKind::Reference(ReferenceSemantic::Entity)),
+        |value: &ReferenceComponent| Value::Reference(value.target.to_reference()),
+        |value: &mut ReferenceComponent, field: &Value| match field {
+            Value::Reference(target) => {
+                value.target = BoundReference(target.clone());
+                Ok(())
+            }
+            other => Err(ReflectError::value_kind(
+                "target",
+                "Reference",
+                other.kind(),
+            )),
+        },
+    ))
+    .build();
+
+    assert!(matches!(
+        descriptor,
+        Err(DescriptorError::UnboundReferenceField(field)) if field.as_str() == "target"
+    ));
+}
+
+#[test]
+fn scene_saveable_is_opt_in() {
+    let default = TypeDescriptor::builder::<Rotator>(
+        TypeKey::new("demo.non-saveable").unwrap(),
+        1,
+        "Non-saveable",
+        || Rotator {
+            speed: 1.0,
+            angle: 0.0,
+        },
+    )
+    .build()
+    .unwrap();
+    let saveable = TypeDescriptor::builder::<Rotator>(
+        TypeKey::new("demo.saveable").unwrap(),
+        1,
+        "Saveable",
+        || Rotator {
+            speed: 1.0,
+            angle: 0.0,
+        },
+    )
+    .scene_saveable()
+    .build()
+    .unwrap();
+
+    assert!(!default.scene_saveable());
+    assert!(saveable.scene_saveable());
+}
+
+#[test]
+fn registry_descriptors_are_type_key_sorted() {
+    let mut registry = TypeRegistry::new();
+    registry
+        .register(
+            TypeDescriptor::builder::<bool>(TypeKey::new("demo.zeta").unwrap(), 1, "Zeta", || {
+                false
+            })
+            .build()
+            .unwrap(),
+        )
+        .unwrap();
+    registry
+        .register(
+            TypeDescriptor::builder::<String>(
+                TypeKey::new("demo.alpha").unwrap(),
+                1,
+                "Alpha",
+                String::new,
+            )
+            .build()
+            .unwrap(),
+        )
+        .unwrap();
+    registry
+        .register(
+            TypeDescriptor::builder::<u32>(TypeKey::new("demo.middle").unwrap(), 1, "Middle", || 0)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    registry.freeze().unwrap();
+
+    assert_eq!(
+        registry
+            .descriptors()
+            .map(|descriptor| descriptor.type_key().as_str())
+            .collect::<Vec<_>>(),
+        ["demo.alpha", "demo.middle", "demo.zeta"]
+    );
 }
 
 #[test]

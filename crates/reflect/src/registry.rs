@@ -73,6 +73,10 @@ impl TypeRegistry {
             .and_then(|key| self.by_key.get(key))
     }
 
+    pub fn descriptors(&self) -> impl Iterator<Item = &TypeDescriptor> {
+        self.by_key.values()
+    }
+
     pub fn encode(&self, value: &dyn Any) -> Result<ReflectedValue, ReflectError> {
         self.require_frozen()?;
         let descriptor = self.descriptor_for_value(value)?;
@@ -334,6 +338,8 @@ pub enum ReflectError {
         expected: String,
         actual: ValueKind,
     },
+    #[error("invalid reference payload {value:?}: {reason}")]
+    InvalidReferencePayload { value: String, reason: String },
     #[error(transparent)]
     Validation(ValidationErrors),
 }

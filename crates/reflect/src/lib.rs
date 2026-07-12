@@ -13,5 +13,6 @@ pub use key::{FieldKey, KeyError, TypeKey};
 pub use registry::{ReflectError, RegistryError, TypeRegistry};
 pub use validation::{ValidationErrors, ValidationIssue};
 pub use value::{
-    FieldKind, FieldMetadata, FieldValues, ReferenceSemantic, ReflectedValue, Value, ValueKind,
+    FieldKind, FieldMetadata, FieldValues, ReferenceSemantic, ReferenceValue, ReflectedValue,
+    Value, ValueKind,
 };
