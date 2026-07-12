@@ -13,6 +13,23 @@ struct Position(f32);
 struct Velocity(f32);
 
 #[test]
+fn component_type_lookup_is_read_only_across_registration_states() -> Result<(), EcsError> {
+    let mut world = World::new();
+    world.register_component::<Position>()?;
+
+    assert!(world.component_type_is_registered(TypeId::of::<Position>()));
+    assert!(!world.component_type_is_registered(TypeId::of::<Velocity>()));
+    assert!(!world.registration_is_finished());
+
+    world.finish_registration();
+
+    assert!(world.component_type_is_registered(TypeId::of::<Position>()));
+    assert!(!world.component_type_is_registered(TypeId::of::<Velocity>()));
+    assert!(world.registration_is_finished());
+    Ok(())
+}
+
+#[test]
 fn component_erased_returns_attached_component() -> Result<(), EcsError> {
     let mut world = World::new();
     world.register_component::<Position>()?;

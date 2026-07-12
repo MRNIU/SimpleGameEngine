@@ -15,5 +15,5 @@ pub use id::{
     Parent, SceneEntityId, SceneEntityIdError, parent_descriptor, scene_entity_id_descriptor,
 };
 pub use snapshot::{SceneSnapshotError, snapshot};
-pub use transfer::{SceneInstance, SceneInstantiationError, instantiate};
+pub use transfer::{SceneInstance, SceneInstantiationError, instantiate, preflight_instantiation};
 pub use validation::{PreparedScene, SceneValidationError, prepare};

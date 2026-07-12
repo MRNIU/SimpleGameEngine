@@ -101,7 +101,12 @@ impl World {
 
     #[must_use]
     pub fn component_is_registered<T: 'static>(&self) -> bool {
-        self.components.contains_key(&TypeId::of::<T>())
+        self.component_type_is_registered(TypeId::of::<T>())
+    }
+
+    #[must_use]
+    pub fn component_type_is_registered(&self, type_id: TypeId) -> bool {
+        self.components.contains_key(&type_id)
     }
 
     pub fn spawn(&mut self) -> Entity {
@@ -259,7 +264,7 @@ impl World {
 impl WorldInitializer<'_> {
     #[must_use]
     pub fn component_is_registered(&self, type_id: TypeId) -> bool {
-        self.world.components.contains_key(&type_id)
+        self.world.component_type_is_registered(type_id)
     }
 
     pub fn spawn(&mut self) -> Entity {
