@@ -185,6 +185,34 @@ impl TypeRegistry {
         (descriptor.replace)(value, candidate)
     }
 
+    pub fn with_field_value(
+        &self,
+        value: &ReflectedValue,
+        field_key: &FieldKey,
+        new_value: &Value,
+    ) -> Result<ReflectedValue, ReflectError> {
+        let mut decoded = self.decode(value)?;
+        self.set_field_value(
+            value.type_key().as_str(),
+            decoded.as_mut(),
+            field_key,
+            new_value,
+        )?;
+        self.encode(decoded.as_ref())
+    }
+
+    pub fn default_scene_value(&self, type_key: &str) -> Result<ReflectedValue, ReflectError> {
+        self.require_frozen()?;
+        let descriptor = self.descriptor_for_key(type_key)?;
+        if !descriptor.scene_saveable() {
+            return Err(ReflectError::TypeNotSceneSaveable(
+                descriptor.type_key().clone(),
+            ));
+        }
+        let value = (descriptor.construct)();
+        self.encode(value.as_ref())
+    }
+
     fn require_frozen(&self) -> Result<(), ReflectError> {
         if self.frozen {
             Ok(())
@@ -318,6 +346,8 @@ pub enum ReflectError {
     UnknownTypeKey(String),
     #[error("unknown reflected Rust TypeId: {0:?}")]
     UnknownRustType(TypeId),
+    #[error("reflected type is not scene-saveable: {0}")]
+    TypeNotSceneSaveable(TypeKey),
     #[error("schema version mismatch for {type_key}: expected {expected}, got {actual}")]
     SchemaVersionMismatch {
         type_key: TypeKey,

@@ -126,6 +126,7 @@ fn rotator_descriptor_with_key(key: &str) -> TypeDescriptor {
             )))
         }
     })
+    .scene_saveable()
     .build()
     .unwrap()
 }
@@ -398,6 +399,106 @@ fn validated_field_write_is_atomic() {
         Err(ReflectError::Validation(_))
     ));
     assert_eq!(value.angle, 0.0);
+}
+
+#[test]
+fn reflected_dto_field_replacement_uses_the_registered_codec_and_validation() {
+    let mut registry = TypeRegistry::new();
+    registry.register(rotator_descriptor()).unwrap();
+    registry.freeze().unwrap();
+    let original = registry
+        .encode(&Rotator {
+            speed: 2.0,
+            angle: 0.0,
+        })
+        .unwrap();
+    let speed = FieldKey::new("speed").unwrap();
+
+    let changed = registry
+        .with_field_value(&original, &speed, &Value::F32(4.0))
+        .unwrap();
+
+    assert_eq!(original.fields().get("speed"), Some(&Value::F32(2.0)));
+    assert_eq!(changed.fields().get("speed"), Some(&Value::F32(4.0)));
+    assert!(matches!(
+        registry.with_field_value(&original, &speed, &Value::F32(-1.0)),
+        Err(ReflectError::Validation(_))
+    ));
+    assert_eq!(original.fields().get("speed"), Some(&Value::F32(2.0)));
+}
+
+#[test]
+fn default_scene_value_is_registry_owned_and_fails_closed() {
+    let mut registry = TypeRegistry::new();
+    registry.register(rotator_descriptor()).unwrap();
+    registry.freeze().unwrap();
+
+    let value = registry.default_scene_value("demo.rotator").unwrap();
+    assert_eq!(value.fields().get("speed"), Some(&Value::F32(1.0)));
+    assert!(matches!(
+        registry.default_scene_value("demo.unknown"),
+        Err(ReflectError::UnknownTypeKey(key)) if key == "demo.unknown"
+    ));
+
+    let mut non_saveable = TypeRegistry::new();
+    non_saveable
+        .register(
+            TypeDescriptor::builder::<bool>(
+                TypeKey::new("demo.runtime-only").unwrap(),
+                1,
+                "Runtime Only",
+                || false,
+            )
+            .build()
+            .unwrap(),
+        )
+        .unwrap();
+    non_saveable.freeze().unwrap();
+    assert!(matches!(
+        non_saveable.default_scene_value("demo.runtime-only"),
+        Err(ReflectError::TypeNotSceneSaveable(key)) if key.as_str() == "demo.runtime-only"
+    ));
+
+    let invalid_descriptor = TypeDescriptor::builder::<Rotator>(
+        TypeKey::new("demo.invalid-default").unwrap(),
+        1,
+        "Invalid Default",
+        || Rotator {
+            speed: -1.0,
+            angle: 0.0,
+        },
+    )
+    .field(
+        FieldRegistration::new(
+            FieldKey::new("speed").unwrap(),
+            FieldMetadata::new("Speed", FieldKind::F32),
+            |value: &Rotator| Value::F32(value.speed),
+            |value: &mut Rotator, field: &Value| match field {
+                Value::F32(speed) => {
+                    value.speed = *speed;
+                    Ok(())
+                }
+                other => Err(ReflectError::value_kind("speed", "F32", other.kind())),
+            },
+        )
+        .validator(|field| match field {
+            Value::F32(speed) if *speed > 0.0 => Ok(()),
+            _ => Err(ValidationIssue::field(
+                FieldKey::new("speed").unwrap(),
+                "speed must be positive",
+            )),
+        }),
+    )
+    .scene_saveable()
+    .build()
+    .unwrap();
+    let mut invalid_default = TypeRegistry::new();
+    invalid_default.register(invalid_descriptor).unwrap();
+    invalid_default.freeze().unwrap();
+    assert!(matches!(
+        invalid_default.default_scene_value("demo.invalid-default"),
+        Err(ReflectError::Validation(_))
+    ));
 }
 
 #[test]
