@@ -2549,8 +2549,11 @@ dependencies = [
 name = "sge-asset-pipeline"
 version = "0.1.0"
 dependencies = [
+ "ron",
+ "serde",
  "sge-asset",
  "sge-project",
+ "sha2",
  "thiserror 2.0.18",
  "tobj",
 ]

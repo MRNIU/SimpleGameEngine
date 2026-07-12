@@ -2,11 +2,13 @@
 
 //! Source import、disposable cache 与 full Cook 产品管线。
 
-#[cfg_attr(
+#![cfg_attr(
     not(test),
-    expect(
+    allow(
         dead_code,
-        reason = "the canonical parser is consumed by the following import-cache slice"
+        reason = "the private cache becomes reachable through full Cook in the following slice"
     )
 )]
+
+mod cache;
 mod obj;
