@@ -2523,6 +2523,8 @@ dependencies = [
  "atomic-write-file",
  "ron",
  "serde",
+ "sge-asset",
+ "sge-reflect",
  "thiserror 2.0.18",
 ]
 

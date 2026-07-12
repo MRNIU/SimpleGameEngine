@@ -7,11 +7,11 @@ repository.workspace = true
 
 [dependencies]
 atomic-write-file.workspace = true
-serde.workspace = true
-thiserror.workspace = true
-
-[dev-dependencies]
 ron.workspace = true
+serde.workspace = true
+sge-asset = { path = "../sge-asset" }
+sge-reflect = { path = "../reflect" }
+thiserror.workspace = true
 
 [lints]
 workspace = true
