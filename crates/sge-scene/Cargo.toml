@@ -9,9 +9,14 @@ repository.workspace = true
 ron.workspace = true
 serde.workspace = true
 sge-asset = { path = "../sge-asset" }
+sge-ecs = { path = "../sge-ecs" }
 sge-reflect = { path = "../reflect" }
 thiserror.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+sge-app = { path = "../app" }
+sge-project = { path = "../project" }
 
 [lints]
 workspace = true

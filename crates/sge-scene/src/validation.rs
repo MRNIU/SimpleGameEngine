@@ -18,16 +18,56 @@ pub struct PreparedScene {
     _entities: Vec<PreparedEntity>,
 }
 
-struct PreparedEntity {
+pub(crate) struct PreparedEntity {
     _id: SceneEntityId,
     _parent: Option<SceneEntityId>,
     _components: Vec<PreparedComponent>,
 }
 
-struct PreparedComponent {
+pub(crate) struct PreparedComponent {
     _type_key: TypeKey,
     _type_id: TypeId,
     _value: Box<dyn Any>,
+}
+
+impl PreparedScene {
+    pub(crate) fn entities(&self) -> impl Iterator<Item = &PreparedEntity> {
+        self._entities.iter()
+    }
+
+    pub(crate) fn into_entities(self) -> Vec<PreparedEntity> {
+        self._entities
+    }
+}
+
+impl PreparedEntity {
+    pub(crate) const fn id(&self) -> SceneEntityId {
+        self._id
+    }
+
+    pub(crate) fn components(&self) -> impl Iterator<Item = &PreparedComponent> {
+        self._components.iter()
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (SceneEntityId, Option<SceneEntityId>, Vec<PreparedComponent>) {
+        (self._id, self._parent, self._components)
+    }
+}
+
+impl PreparedComponent {
+    pub(crate) const fn type_key(&self) -> &TypeKey {
+        &self._type_key
+    }
+
+    pub(crate) const fn type_id(&self) -> TypeId {
+        self._type_id
+    }
+
+    pub(crate) fn into_parts(self) -> (TypeKey, TypeId, Box<dyn Any>) {
+        (self._type_key, self._type_id, self._value)
+    }
 }
 
 pub fn prepare(

@@ -2544,7 +2544,10 @@ version = "0.1.0"
 dependencies = [
  "ron",
  "serde",
+ "sge-app",
  "sge-asset",
+ "sge-ecs",
+ "sge-project",
  "sge-reflect",
  "thiserror 2.0.18",
  "uuid",

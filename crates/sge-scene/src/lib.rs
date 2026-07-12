@@ -4,6 +4,8 @@
 
 mod document;
 mod id;
+mod snapshot;
+mod transfer;
 mod validation;
 
 pub use document::{
@@ -12,4 +14,6 @@ pub use document::{
 pub use id::{
     Parent, SceneEntityId, SceneEntityIdError, parent_descriptor, scene_entity_id_descriptor,
 };
+pub use snapshot::{SceneSnapshotError, snapshot};
+pub use transfer::{SceneInstance, SceneInstantiationError, instantiate};
 pub use validation::{PreparedScene, SceneValidationError, prepare};
