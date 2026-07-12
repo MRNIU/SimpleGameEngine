@@ -1,0 +1,18 @@
+[package]
+name = "sge-render"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sge-app = { path = "../app" }
+sge-asset = { path = "../sge-asset" }
+sge-math = { path = "../math" }
+sge-reflect = { path = "../reflect" }
+
+[dev-dependencies]
+sge-scene = { path = "../sge-scene" }
+
+[lints]
+workspace = true

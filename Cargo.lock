@@ -2605,6 +2605,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sge-render"
+version = "0.1.0"
+dependencies = [
+ "sge-app",
+ "sge-asset",
+ "sge-math",
+ "sge-reflect",
+ "sge-scene",
+]
+
+[[package]]
 name = "sge-scene"
 version = "0.1.0"
 dependencies = [
