@@ -61,6 +61,10 @@ impl RuntimeAssetRecord {
         product: RuntimeProductPath,
         mut dependencies: Vec<AssetId>,
     ) -> Result<Self, RuntimeCatalogError> {
+        ensure_assigned_asset_id(id)?;
+        for dependency in &dependencies {
+            ensure_assigned_asset_id(*dependency)?;
+        }
         if !product.as_str().starts_with("Content/") {
             return Err(RuntimeCatalogError::InvalidProductRole { id, path: product });
         }
@@ -110,6 +114,17 @@ impl RuntimeAssetRecord {
     #[must_use]
     pub fn dependencies(&self) -> &[AssetId] {
         &self.dependencies
+    }
+}
+
+fn ensure_assigned_asset_id(id: AssetId) -> Result<(), RuntimeCatalogError> {
+    if id.is_nil() {
+        Err(RuntimeCatalogError::InvalidAssetId {
+            value: id.to_string(),
+            source: AssetIdError::NilReserved,
+        })
+    } else {
+        Ok(())
     }
 }
 

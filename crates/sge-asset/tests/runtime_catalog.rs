@@ -116,6 +116,30 @@ fn catalog_sorts_records_and_dependencies_and_exposes_borrowed_fields()
 }
 
 #[test]
+fn catalog_rejects_reserved_unassigned_asset_ids() -> Result<(), Box<dyn std::error::Error>> {
+    let assigned = asset_id(0x1000_0000)?;
+    assert!(matches!(
+        RuntimeAssetRecord::new(
+            AssetId::nil(),
+            TypeKey::new("demo.bundle")?,
+            RuntimeProductPath::new("Content/unassigned.product.ron")?,
+            Vec::new(),
+        ),
+        Err(RuntimeCatalogError::InvalidAssetId { .. })
+    ));
+    assert!(matches!(
+        RuntimeAssetRecord::new(
+            assigned,
+            TypeKey::new("demo.bundle")?,
+            RuntimeProductPath::new("Content/bundle.product.ron")?,
+            vec![AssetId::nil()],
+        ),
+        Err(RuntimeCatalogError::InvalidAssetId { .. })
+    ));
+    Ok(())
+}
+
+#[test]
 fn catalog_rejects_duplicate_ids_paths_dependencies_and_missing_dependencies()
 -> Result<(), Box<dyn std::error::Error>> {
     let first = asset_id(0x1000_0000)?;

@@ -46,6 +46,12 @@ impl SourceAssetRecord {
         source: ProjectPath,
         importer: SourceImporter,
     ) -> Result<Self, ManifestError> {
+        if id.is_nil() {
+            return Err(ManifestError::InvalidAssetId {
+                value: id.to_string(),
+                source: AssetIdError::NilReserved,
+            });
+        }
         match &importer {
             SourceImporter::Obj(_) if asset_type.as_str() != MESH_ASSET_TYPE_KEY => {
                 let expected = TypeKey::new(MESH_ASSET_TYPE_KEY).map_err(|source| {

@@ -144,5 +144,9 @@ fn authoring_store_builds_typed_lookup_and_rejects_duplicate_ids()
         RuntimeAssetStore::from_meshes([(first, first_mesh), (first, second_mesh)]),
         Err(RuntimeAssetStoreError::DuplicateAssetId { id }) if id == first
     ));
+    assert!(matches!(
+        RuntimeAssetStore::from_meshes([(AssetId::nil(), mesh(1.0)?)]),
+        Err(RuntimeAssetStoreError::UnassignedAssetId)
+    ));
     Ok(())
 }

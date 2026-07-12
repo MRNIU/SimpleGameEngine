@@ -144,7 +144,8 @@ validation：
 - MeshRenderer使用 typed `AssetRef<MeshAsset>`，共享 scene validation检查存在与类型。
 
 `MeshRenderer::default`只为 Reflect decode/generic candidate提供确定性的 nil AssetId；它不是有效资产，
-共享 asset-reference validation必须在用户选择真实 mesh前拒绝 scene commit，不能随机生成悬空 UUID。
+AssetId parser、manifest、runtime catalog/store与共享 asset-reference validation必须保留/拒绝 nil，直到
+用户选择真实 mesh；不能随机生成悬空 UUID，也不能注册 nil asset使默认值意外通过。
 
 这些 validators同时服务 file load、M5 Inspector mutation、Play snapshot与 Cook；M4不复制 host-local
 validation。

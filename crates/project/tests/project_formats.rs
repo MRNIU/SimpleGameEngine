@@ -4,7 +4,7 @@
 mod manifest_support;
 mod support;
 
-use sge_asset::{AssetLookup, MESH_ASSET_TYPE_KEY};
+use sge_asset::{AssetId, AssetLookup, MESH_ASSET_TYPE_KEY};
 use sge_project::{
     AuthoringAssetManifest, ManifestError, ObjImportSettings, ProjectDescriptor,
     ProjectFormatError, ProjectPath, SourceAssetRecord, SourceImporter,
@@ -329,6 +329,20 @@ fn manifest_v2_rejects_wrong_type_and_suffix() -> Result<(), Box<dyn std::error:
         Err(ManifestError::AtPath { source, .. })
             if matches!(*source, ManifestError::InvalidObjSource { .. })
     ));
+    Ok(())
+}
+
+#[test]
+fn manifest_rejects_reserved_unassigned_asset_id() -> Result<(), Box<dyn std::error::Error>> {
+    let error = SourceAssetRecord::new(
+        AssetId::nil(),
+        TypeKey::new(MESH_ASSET_TYPE_KEY)?,
+        ProjectPath::new("Content/mesh.obj")?,
+        SourceImporter::Obj(ObjImportSettings::new(false)),
+    )
+    .expect_err("nil asset ID must remain reserved");
+
+    assert!(matches!(error, ManifestError::InvalidAssetId { .. }));
     Ok(())
 }
 

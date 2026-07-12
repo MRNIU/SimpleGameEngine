@@ -1,7 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
 use serde::Deserialize;
-use sge_asset::{AssetId, AssetLookup, AssetRef, AssetType};
+use sge_asset::{AssetId, AssetIdError, AssetLookup, AssetRef, AssetType};
 use sge_reflect::{ReferenceSemantic, ReferenceValue, TypeKey};
 
 struct TestAsset;
@@ -40,6 +40,10 @@ fn nil_asset_id_is_stable_and_canonical() {
         "00000000-0000-0000-0000-000000000000"
     );
     assert_eq!(AssetId::nil(), AssetId::nil());
+    assert!(matches!(
+        "00000000-0000-0000-0000-000000000000".parse::<AssetId>(),
+        Err(AssetIdError::NilReserved)
+    ));
 }
 
 #[test]

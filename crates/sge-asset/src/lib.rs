@@ -128,6 +128,11 @@ impl AssetId {
     }
 
     #[must_use]
+    pub const fn is_nil(self) -> bool {
+        self.0.is_nil()
+    }
+
+    #[must_use]
     pub fn new_v4() -> Self {
         Self(uuid::Uuid::new_v4())
     }
@@ -146,6 +151,9 @@ impl FromStr for AssetId {
         let uuid = uuid::Uuid::parse_str(value)?;
         if uuid.hyphenated().to_string() != value {
             return Err(AssetIdError::NonCanonical);
+        }
+        if uuid.is_nil() {
+            return Err(AssetIdError::NilReserved);
         }
         Ok(Self(uuid))
     }
@@ -177,4 +185,6 @@ pub enum AssetIdError {
     InvalidUuid(#[from] uuid::Error),
     #[error("asset ID must use canonical lowercase hyphenated UUID form")]
     NonCanonical,
+    #[error("nil asset ID is reserved for an unassigned typed reference candidate")]
+    NilReserved,
 }

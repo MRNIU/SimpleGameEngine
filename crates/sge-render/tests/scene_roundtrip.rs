@@ -75,8 +75,8 @@ fn default_mesh_reference_is_stable_and_rejected_until_assigned()
 
     assert!(matches!(
         prepare(&scene, app.type_registry(), &store),
-        Err(SceneValidationError::MissingAssetReference { asset, .. })
-            if asset == AssetId::nil()
+        Err(SceneValidationError::InvalidAssetReference { value, .. })
+            if value == AssetId::nil().to_string()
     ));
     Ok(())
 }

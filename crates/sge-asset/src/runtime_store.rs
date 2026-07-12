@@ -23,6 +23,9 @@ impl RuntimeAssetStore {
         let mut asset_types = BTreeMap::new();
         let mut stored_meshes = BTreeMap::new();
         for (id, mesh) in meshes {
+            if id.is_nil() {
+                return Err(RuntimeAssetStoreError::UnassignedAssetId);
+            }
             if stored_meshes.insert(id, mesh).is_some() {
                 return Err(RuntimeAssetStoreError::DuplicateAssetId { id });
             }
@@ -87,6 +90,8 @@ impl AssetLookup for RuntimeAssetStore {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeAssetStoreError {
+    #[error("nil asset ID cannot be inserted into a runtime asset store")]
+    UnassignedAssetId,
     #[error("duplicate runtime asset ID: {id}")]
     DuplicateAssetId { id: AssetId },
     #[error("runtime asset {id} has unsupported product type {asset_type}")]

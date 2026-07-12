@@ -102,6 +102,8 @@ pub struct AssetId(uuid::Uuid);
 - 支持生成 v4 UUID、严格 parse、`Display`、Serde、排序和 hash。
 - durable 编码使用 canonical hyphenated lowercase UUID。
 - 空字符串、非 UUID、带 `asset:` 前缀和其他自由字符串均不是合法 `AssetId`。
+- nil UUID保留给未分配的 typed reference candidate；parser、manifest、runtime catalog/store均不得把它
+  接受为正式 asset identity。
 - 新目标路径不定义或 re-export `AssetUuid` 和字符串 `AssetId`。
 
 ### Typed asset reference
