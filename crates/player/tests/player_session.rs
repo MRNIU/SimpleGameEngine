@@ -9,14 +9,14 @@ use std::{
     time::Duration,
 };
 
-use sge_app::{EngineApp, EngineBuildError, GameDescriptor};
+use sge_app::{EngineApp, EngineBuildError, GameDescriptor, ScheduleLabel, System, SystemBuilder};
 use sge_asset::{
     AssetId, AssetRef, MESH_ASSET_TYPE_KEY, RuntimeAssetCatalog, RuntimeAssetStoreError,
     RuntimeContentError,
 };
 use sge_asset_pipeline::{CookOutputRoot, full_cook};
 use sge_input::InputFrame;
-use sge_player::{PlayerLoadError, PlayerSession};
+use sge_player::{PlayerLoadError, PlayerSession, RunOptions, run};
 use sge_project::{
     AuthoringAssetManifest, ObjImportSettings, ProjectDescriptor, ProjectPath, ProjectRoot,
     SourceAssetRecord, SourceImporter,
@@ -30,6 +30,7 @@ use sge_scene::{
 
 const GAME_ID: &str = "test.player";
 static FACTORY_CALLS: AtomicUsize = AtomicUsize::new(0);
+static ADVANCES: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
 fn copied_runtime_loads_advances_and_extracts_without_source()
@@ -112,6 +113,29 @@ fn factory_failure_remains_typed() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[test]
+#[ignore = "requires a window system; run with xvfb-run"]
+fn real_window_advances_extracts_renders_and_presents_before_exit()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = Fixture::new("window-smoke")?;
+    fixture.cook()?;
+    fixture.delete_source()?;
+    ADVANCES.store(0, Ordering::SeqCst);
+
+    let report = run(
+        game(),
+        fixture.cooked(),
+        RunOptions {
+            max_frames: Some(2),
+            initial_size: [320, 240],
+        },
+    )?;
+
+    assert_eq!(report.presented_frames(), 2);
+    assert!(ADVANCES.load(Ordering::SeqCst) >= 2);
+    Ok(())
+}
+
 fn game() -> GameDescriptor {
     GameDescriptor::new(GAME_ID, create_app)
 }
@@ -138,8 +162,16 @@ fn create_app() -> Result<EngineApp, EngineBuildError> {
         parent_descriptor().expect("built-in parent descriptor must be valid"),
     )?;
     app.add_plugin(RenderPlugin)?;
+    app.add_system(ScheduleLabel::Update, advance_probe())?;
     app.finish()?;
     Ok(app)
+}
+
+fn advance_probe() -> System {
+    SystemBuilder::new().build(|_| {
+        ADVANCES.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    })
 }
 
 struct Fixture {

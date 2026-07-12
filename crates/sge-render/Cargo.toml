@@ -11,11 +11,12 @@ sge-asset = { path = "../sge-asset" }
 sge-ecs = { path = "../sge-ecs" }
 sge-math = { path = "../math" }
 sge-reflect = { path = "../reflect" }
+pollster.workspace = true
+raw-window-handle.workspace = true
 thiserror.workspace = true
 wgpu.workspace = true
 
 [dev-dependencies]
-pollster.workspace = true
 sge-scene = { path = "../sge-scene" }
 
 [lints]

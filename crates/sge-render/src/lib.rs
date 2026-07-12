@@ -7,6 +7,7 @@ mod extract;
 mod gpu;
 mod plugin;
 mod snapshot;
+mod surface;
 
 pub use components::{Camera, Light, Material, MeshRenderer, Projection};
 pub use extract::{RenderComponentKind, RenderExtractionError, RenderItemKind, extract};
@@ -18,3 +19,4 @@ pub use plugin::RenderPlugin;
 pub use snapshot::{
     RenderCamera, RenderLight, RenderMeshInstance, RenderSnapshot, RenderView, RenderViewError,
 };
+pub use surface::{SkippedSurfaceFrame, SurfaceRenderError, SurfaceRenderOutcome, SurfaceRenderer};

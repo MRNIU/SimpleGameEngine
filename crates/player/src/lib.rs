@@ -15,6 +15,10 @@ use sge_scene::{
     instantiate, prepare_runtime,
 };
 
+mod host;
+
+pub use host::{PlayerRunError, RunOptions, RunReport, run, run_session};
+
 pub struct PlayerSession {
     game_id: &'static str,
     app: EngineApp,
