@@ -132,7 +132,8 @@ GameDescriptor
 - Editor 创建一个 authoring EngineApp，载入 authoring scene，但不调用 `advance`；EditSession 使用其中的 World 和 TypeRegistry。
 - 每次进入 Play 都重新调用 factory，实例化 snapshot，然后开始调用 `advance`。
 - Player 调用 factory、实例化 cooked runtime scene，再开始调用 `advance`。
-- game-specific Build target 调用 factory 取得同一 TypeRegistry，执行自定义组件验证和 Cook。
+- game-specific Build target 调用 factory 取得同一 TypeRegistry 与只读 World registration surface，
+  执行自定义组件验证、实例化预检和 Cook。
 - headless tests 调用 factory、构造测试 World/InputFrame 并直接调用 `advance`。
 
 game-specific binary 在 composition root 把 descriptor 显式传给 `sge_editor::run`、`sge_player::run` 或 `sge_build::run`。可复用 host 只依赖 `sge-app` 中的合同，永远不依赖具体 game crate。
@@ -213,13 +214,18 @@ flowchart TD
   Pipeline --> Scene
   Pipeline --> Asset
   Pipeline --> Reflect
+  Pipeline --> ECS
 
   Build["sge-build"] --> Pipeline
   Build --> Project
   Build --> App
 ```
 
-该 package 依赖图必须保持无环。功能子系统只能依赖 Core，不允许 Core 为未来功能反向增加依赖。Player dependency audit 的对象是最终 `demo-game-player` binary 的完整 Cargo dependency closure，而不只是 `sge-player` package。
+该 package 依赖图必须保持无环。功能子系统只能依赖 Core，不允许 Core 为未来功能反向增加依赖。
+`sge-asset-pipeline -> sge-ecs` 的直接边只用于 Full Cook 在发布前读取同一 Ready app 的 World
+component registration surface，并对 exact cooked scene执行无 mutation的实例化预检；不得因此复制
+第二套 component registry、TypeId set或 World。Player dependency audit 的对象是最终
+`demo-game-player` binary 的完整 Cargo dependency closure，而不只是 `sge-player` package。
 
 ## 目标 crate 职责
 
@@ -554,7 +560,7 @@ sge build <project>
 
 demo-game-build
 -> link demo-game + sge-build library
--> create EngineApp/TypeRegistry from GameDescriptor
+-> create EngineApp/TypeRegistry/World registrations from GameDescriptor
 -> fully parse + validate project
 -> full import/cook with custom component registry
 -> cargo build game-specific Player package

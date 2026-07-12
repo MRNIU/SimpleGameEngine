@@ -19,6 +19,7 @@
 | `docs/conventions.md` | 代码、文档、测试和环境约定 |
 | `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md` | 已批准目标方向、目标 crate/产品边界、延期子系统与迁移顺序 |
 | `docs/superpowers/specs/2026-07-12-project-and-data-m2-design.md` | 已实现的 M2 Project/Data 数据合同、失败边界与依赖约束 |
+| `docs/superpowers/specs/2026-07-12-asset-pipeline-and-runtime-products-m3-design.md` | 已批准、待实现的 M3 import/cache/Cook/runtime product 合同与发布边界 |
 | `.gitmessage` | commit message 模板 |
 | 局部 `AGENTS.md` | 目录级规则；优先级高于本文件的通用条款 |
 
