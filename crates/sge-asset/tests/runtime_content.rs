@@ -157,6 +157,14 @@ fn runtime_content_rejects_missing_extra_and_digest_mismatch()
         Err(RuntimeContentError::UnexpectedPath { .. })
     ));
 
+    let root_extra = fixture()?;
+    fs::create_dir(root_extra.root.path().join("Cache"))?;
+    fs::write(root_extra.root.path().join("source.obj"), b"source")?;
+    assert!(matches!(
+        RuntimeContentRoot::open(root_extra.root.path())?.load_current("demo.game"),
+        Err(RuntimeContentError::UnexpectedPath { .. })
+    ));
+
     let changed = fixture()?;
     fs::write(&changed.product_path, b"changed")?;
     assert!(matches!(
@@ -172,10 +180,11 @@ fn runtime_content_rejects_symlink_product() -> Result<(), Box<dyn std::error::E
     use std::os::unix::fs::symlink;
 
     let fixture = fixture()?;
-    let outside = fixture.root.path().join("outside.mesh.ron");
-    fs::write(&outside, mesh_bytes()?)?;
     fs::remove_file(&fixture.product_path)?;
-    symlink(&outside, &fixture.product_path)?;
+    symlink(
+        fixture.root.path().join("runtime_catalog.ron"),
+        &fixture.product_path,
+    )?;
 
     assert!(matches!(
         RuntimeContentRoot::open(fixture.root.path())?.load_current("demo.game"),

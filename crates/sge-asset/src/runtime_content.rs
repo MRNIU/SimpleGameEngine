@@ -73,6 +73,8 @@ impl RuntimeContentRoot {
             });
         }
 
+        validate_root_roles(&self.root)?;
+
         let generation_dir = self
             .root
             .join("generations")
@@ -119,6 +121,37 @@ impl RuntimeContentRoot {
             .collect::<Result<BTreeMap<_, _>, RuntimeContentError>>()?;
         RuntimeGeneration::verify_owned(catalog, entry_scene_bytes, product_bytes)
     }
+}
+
+fn validate_root_roles(root: &Path) -> Result<(), RuntimeContentError> {
+    let expected = BTreeSet::from([PathBuf::from(CATALOG_PATH), PathBuf::from("generations")]);
+    let mut actual = BTreeSet::new();
+    let entries = fs::read_dir(root).map_err(|source| RuntimeContentError::Io {
+        path: root.to_path_buf(),
+        source,
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|source| RuntimeContentError::Io {
+            path: root.to_path_buf(),
+            source,
+        })?;
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path).map_err(|source| RuntimeContentError::Io {
+            path: path.clone(),
+            source,
+        })?;
+        if metadata.file_type().is_symlink() {
+            return Err(RuntimeContentError::Symlink { path });
+        }
+        actual.insert(PathBuf::from(entry.file_name()));
+    }
+    if let Some(path) = expected.difference(&actual).next() {
+        return Err(RuntimeContentError::MissingPath { path: path.clone() });
+    }
+    if let Some(path) = actual.difference(&expected).next() {
+        return Err(RuntimeContentError::UnexpectedPath { path: path.clone() });
+    }
+    Ok(())
 }
 
 impl RuntimeGeneration {
