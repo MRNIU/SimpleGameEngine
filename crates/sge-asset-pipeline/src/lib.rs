@@ -2,13 +2,13 @@
 
 //! Source import、disposable cache 与 full Cook 产品管线。
 
-#![cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "the private cache becomes reachable through full Cook in the following slice"
-    )
-)]
-
 mod cache;
+mod closure;
+mod cook;
 mod obj;
+mod output;
+mod publish;
+
+pub use cache::CacheStatus;
+pub use cook::{CookError, CookReport, full_cook};
+pub use output::{CookOutputRoot, CookPublishError};

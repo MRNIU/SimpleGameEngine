@@ -19,12 +19,13 @@ const CACHE_KEY_DOMAIN: &[u8] = b"sge-obj-import-cache-v1";
 pub(crate) struct ImportedMesh {
     pub(crate) asset_id: AssetId,
     pub(crate) mesh: MeshAsset,
+    #[cfg(test)]
     pub(crate) cache_path: ProjectPath,
     pub(crate) cache_status: CacheStatus,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CacheStatus {
+pub enum CacheStatus {
     Hit,
     Rebuilt,
 }
@@ -65,6 +66,7 @@ pub(crate) fn import_obj(
                 return Ok(ImportedMesh {
                     asset_id: record.id(),
                     mesh,
+                    #[cfg(test)]
                     cache_path,
                     cache_status: CacheStatus::Hit,
                 });
@@ -104,6 +106,7 @@ pub(crate) fn import_obj(
     Ok(ImportedMesh {
         asset_id: record.id(),
         mesh,
+        #[cfg(test)]
         cache_path,
         cache_status: CacheStatus::Rebuilt,
     })
@@ -270,7 +273,7 @@ fn is_not_found(error: &ProjectIoError) -> bool {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum CacheIssue {
+pub enum CacheIssue {
     #[error("matching cache is missing")]
     Missing,
     #[error("matching cache is invalid: {0}")]
@@ -280,7 +283,7 @@ pub(crate) enum CacheIssue {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum ImportCacheError {
+pub enum ImportCacheError {
     #[error("cannot read OBJ source {source_path} for asset {asset_id}: {source}")]
     SourceRead {
         asset_id: AssetId,
@@ -326,7 +329,7 @@ pub(crate) enum ImportCacheError {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum CacheEntryError {
+pub enum CacheEntryError {
     #[error("cannot parse import cache: {source}")]
     Parse {
         #[source]

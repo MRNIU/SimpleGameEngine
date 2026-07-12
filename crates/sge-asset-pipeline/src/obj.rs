@@ -154,7 +154,7 @@ fn rebase_index(
 
 #[derive(Debug, thiserror::Error)]
 #[error("cannot import OBJ asset {asset_id} from {source_path}: {kind}")]
-pub(crate) struct ObjImportError {
+pub struct ObjImportError {
     asset_id: AssetId,
     source_path: ProjectPath,
     #[source]

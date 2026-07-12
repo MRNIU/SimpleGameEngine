@@ -2549,10 +2549,14 @@ dependencies = [
 name = "sge-asset-pipeline"
 version = "0.1.0"
 dependencies = [
+ "atomic-write-file",
  "ron",
  "serde",
  "sge-asset",
+ "sge-ecs",
  "sge-project",
+ "sge-reflect",
+ "sge-scene",
  "sha2",
  "thiserror 2.0.18",
  "tobj",

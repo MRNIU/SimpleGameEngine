@@ -6,11 +6,15 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+atomic-write-file.workspace = true
 ron.workspace = true
 serde.workspace = true
 sha2.workspace = true
 sge-asset = { path = "../sge-asset" }
+sge-ecs = { path = "../sge-ecs" }
 sge-project = { path = "../project" }
+sge-reflect = { path = "../reflect" }
+sge-scene = { path = "../sge-scene" }
 thiserror.workspace = true
 tobj.workspace = true
 
