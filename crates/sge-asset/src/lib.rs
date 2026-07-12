@@ -1,10 +1,12 @@
 // Copyright The SimpleGameEngine Contributors
 //
-//! 正式 Asset identity、typed reference 与只读 lookup 合同。
+//! 正式 Asset identity、typed reference、canonical runtime products 与只读 lookup 合同。
 //!
-//! Import、Cook 和 runtime product 属于 M3，不在本 crate 中提前建模。
+//! Source import 与 Cook 属于 `sge-asset-pipeline`，不进入本 crate。
 
 mod mesh;
+mod runtime_catalog;
+mod runtime_path;
 
 use std::{
     cmp::Ordering,
@@ -19,6 +21,13 @@ use sge_reflect::{KeyError, ReferenceSemantic, ReferenceValue, TypeKey};
 
 pub use mesh::{
     MESH_ASSET_FORMAT_VERSION, MeshAsset, MeshAssetError, MeshAssetFormatError, MeshVertex,
+};
+pub use runtime_catalog::{
+    RUNTIME_ASSET_CATALOG_FORMAT_VERSION, RuntimeAssetCatalog, RuntimeAssetRecord,
+    RuntimeCatalogError,
+};
+pub use runtime_path::{
+    RuntimeGenerationId, RuntimeGenerationIdError, RuntimeProductPath, RuntimeProductPathError,
 };
 
 pub const MESH_ASSET_TYPE_KEY: &str = "sge.mesh";
