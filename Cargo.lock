@@ -2427,6 +2427,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sge-asset"
+version = "0.1.0"
+dependencies = [
+ "ron",
+ "serde",
+ "sge-reflect",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "sge-ecs"
 version = "0.1.0"
 dependencies = [

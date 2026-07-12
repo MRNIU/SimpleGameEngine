@@ -10,6 +10,7 @@ members = [
   "crates/render",
   "crates/runtime",
   "crates/scene",
+  "crates/sge-asset",
   "crates/sge-ecs",
 ]
 resolver = "3"
