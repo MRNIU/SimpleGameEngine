@@ -3,7 +3,6 @@
 use std::{path::Path, sync::Arc, time::Instant};
 
 use sge_app::{AdvanceError, GameDescriptor};
-use sge_input::InputFrame;
 use sge_render::{SkippedSurfaceFrame, SurfaceRenderError, SurfaceRenderOutcome, SurfaceRenderer};
 use winit::{
     application::ApplicationHandler,
@@ -13,7 +12,7 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::{PlayerFrameError, PlayerLoadError, PlayerSession};
+use crate::{PlayerFrameError, PlayerLoadError, PlayerSession, input::InputAccumulator};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RunOptions {
@@ -88,6 +87,7 @@ struct PlayerHost {
     presented_frames: u64,
     occluded: bool,
     error: Option<PlayerRunError>,
+    input: InputAccumulator,
 }
 
 impl PlayerHost {
@@ -101,6 +101,7 @@ impl PlayerHost {
             presented_frames: 0,
             occluded: false,
             error: None,
+            input: InputAccumulator::default(),
         }
     }
 
@@ -116,7 +117,7 @@ impl PlayerHost {
         let now = Instant::now();
         let delta = now.saturating_duration_since(self.last_redraw);
         self.last_redraw = now;
-        if let Err(error) = self.session.advance(delta, InputFrame::new()) {
+        if let Err(error) = self.session.advance(delta, self.input.take_frame()) {
             self.fail(event_loop, error);
             return;
         }
@@ -211,6 +212,7 @@ impl ApplicationHandler for PlayerHost {
         if self.window.as_ref().map(|window| window.id()) != Some(window_id) {
             return;
         }
+        self.input.handle_window_event(&event);
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(PhysicalSize { width, height }) => {

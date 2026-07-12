@@ -16,6 +16,7 @@ use sge_scene::{
 };
 
 mod host;
+mod input;
 
 pub use host::{PlayerRunError, RunOptions, RunReport, run, run_session};
 
