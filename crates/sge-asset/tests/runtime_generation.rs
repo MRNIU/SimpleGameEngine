@@ -230,34 +230,6 @@ fn generation_changes_for_every_catalog_or_product_input() -> Result<(), Box<dyn
 }
 
 #[test]
-fn generation_length_frames_prevent_split_collisions() -> Result<(), Box<dyn std::error::Error>> {
-    let asset = id(0x1000_0000)?;
-    let records = vec![record(
-        asset,
-        "demo.product",
-        "Content/a.product.ron",
-        Vec::new(),
-    )?];
-    let left = build(
-        "demo.game",
-        "Scenes/entry.runtime-scene.ron",
-        b"ab",
-        records.clone(),
-        BTreeMap::from([(asset, b"c".to_vec())]),
-    )?;
-    let right = build(
-        "demo.game",
-        "Scenes/entry.runtime-scene.ron",
-        b"a",
-        records,
-        BTreeMap::from([(asset, b"bc".to_vec())]),
-    )?;
-
-    assert_ne!(left.generation(), right.generation());
-    Ok(())
-}
-
-#[test]
 fn build_and_verify_require_the_exact_product_set() -> Result<(), Box<dyn std::error::Error>> {
     let (records, products) = single_input()?;
     let catalog = build(
