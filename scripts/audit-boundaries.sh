@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+audit_tree() {
+  local package="$1"
+  local forbidden="$2"
+  local output status
+
+  if output="$(cargo tree -p "$package" --locked --target all \
+    --edges normal,build --prefix none)"; then
+    :
+  else
+    status=$?
+    echo "$package dependency audit failed with status $status" >&2
+    return "$status"
+  fi
+
+  if grep -E "$forbidden" <<<"$output"; then
+    echo "$package production dependency boundary violated" >&2
+    return 1
+  else
+    status=$?
+    if ((status == 1)); then
+      return 0
+    fi
+    echo "$package dependency matcher failed with status $status" >&2
+    return "$status"
+  fi
+}
+
+audit_source() {
+  local label="$1"
+  local forbidden="$2"
+  shift 2
+  local status
+
+  if git grep -nE "$forbidden" -- "$@"; then
+    echo "$label boundary violated" >&2
+    return 1
+  else
+    status=$?
+    if ((status == 1)); then
+      return 0
+    fi
+    echo "$label audit failed with status $status" >&2
+    return "$status"
+  fi
+}
+
+audit_exact_files() {
+  local label="$1"
+  local pattern="$2"
+  local expected="$3"
+  shift 3
+  local actual status
+
+  if actual="$(git grep -lE "$pattern" -- "$@" | sort)"; then
+    :
+  else
+    status=$?
+    echo "$label producer failed with status $status" >&2
+    return "$status"
+  fi
+
+  if [[ "$actual" != "$expected" ]]; then
+    echo "$label allowlist changed" >&2
+    diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2 || true
+    return 1
+  fi
+}
+
+audit_tree sge-app \
+  '^(asset|ecs|scene|runtime|sge-asset|sge-project|sge-scene|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe|winit|wgpu) v'
+audit_tree sge-asset \
+  '^(asset|ecs|scene|runtime|sge-project|sge-scene|sge-app|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe|winit|wgpu) v'
+audit_tree sge-project \
+  '^(asset|ecs|scene|runtime|sge-scene|sge-app|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe|winit|wgpu) v'
+audit_tree sge-scene \
+  '^(asset|ecs|scene|runtime|sge-project|sge-app|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe|winit|wgpu) v'
+audit_tree sge-asset-pipeline \
+  '^(asset|ecs|scene|runtime|sge-app|sge-build|editor|render|rfd|eframe|winit|wgpu) v'
+
+target_sources=(
+  crates/app/src
+  crates/reflect/src
+  crates/sge-asset/src
+  crates/sge-ecs/src
+  crates/sge-scene/src
+  crates/project/src
+)
+audit_source 'target production source' \
+  'EntityRecord|AssetUuid|asset:<|tobj|load_obj' "${target_sources[@]}"
+audit_source 'runtime World mutation' 'world_mut' \
+  crates/app/src crates/sge-ecs/src crates/sge-scene/src
+audit_source 'durable Data recovery' 'unwrap_or_default' \
+  crates/sge-asset/src crates/project/src crates/sge-scene/src
+audit_source 'runtime product source ownership' \
+  'ProjectRoot|SourceAssetRecord|ObjImportSettings|tobj|load_obj' \
+  crates/sge-asset/src crates/sge-scene/src
+
+audit_exact_files 'canonical OBJ importer owner' 'tobj::load_obj_buf' \
+  'crates/sge-asset-pipeline/src/obj.rs' crates/sge-asset-pipeline/src
+audit_exact_files 'retained bare OBJ callers' 'asset::load_obj_mesh' \
+  $'crates/asset/tests/upstream_examples.rs\ncrates/editor/src/app/file_workflow.rs\ncrates/runtime/src/lib.rs' \
+  crates/asset/tests crates/editor/src crates/render/src crates/runtime/src

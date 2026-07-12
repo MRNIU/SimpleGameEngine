@@ -16,9 +16,10 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 
 ## 当前实现
 
-- Cargo workspace 当前包含目标 package `sge-app`、`sge-asset`、`sge-ecs`、`sge-input`、`sge-math`、`sge-project`、`sge-reflect`、`sge-scene`，以及仍服务当前产品路径的 prototype package `asset`、`ecs`、`editor`、`render`、`runtime`、`scene`。三个 M2 package 的目录分别是 `crates/sge-asset/`、`crates/project/`、`crates/sge-scene/`；其余目标 package 目录见下文架构文档。旧 `app`、`input`、`math` package 名和独立 `window` crate 已删除，未来 winit window 所有权属于尚未实现的 Player。
+- Cargo workspace 当前包含目标 package `sge-app`、`sge-asset`、`sge-asset-pipeline`、`sge-ecs`、`sge-input`、`sge-math`、`sge-project`、`sge-reflect`、`sge-scene`，以及仍服务当前产品路径的 prototype package `asset`、`ecs`、`editor`、`render`、`runtime`、`scene`。M2/M3 数据与产品目录分别是 `crates/sge-asset/`、`crates/project/`、`crates/sge-scene/` 和 `crates/sge-asset-pipeline/`。旧 `app`、`input`、`math` package 名和独立 `window` crate 已删除，未来 winit window 所有权属于尚未实现的 Player。
 - Core Kernel M1 已实现并通过 headless 自动化验证：`sge-math` 是当前 prototype 与目标 Core 共用的 math leaf；`sge-ecs` 提供 typed runtime World、只读 erased component seam 和受限 `WorldInitializer`；`sge-reflect` 提供冻结后的 metadata、codec、clone、validation、scene-saveable opt-in 与 typed reference seam；`sge-input` 提供平台无关 `InputFrame`，尚无 winit/egui adapter；`sge-app` 提供 `EngineApp`、`Plugin`、固定 schedules 和 `GameDescriptor`。运行期 host 仍只能不可变检查 World，只有已完成注册且尚未启动的 Ready app 可以取得受限 initializer 来装载 scene。
 - Project And Data M2 已完成独立 headless 纵切：`sge-asset` 拥有正式 UUID `AssetId`、`AssetRef<T>` 和 `AssetLookup`；`sge-project` 拥有 strict `ProjectDescriptor`、portable `ProjectPath`、`ProjectRoot`、authoring manifest 和单文件 atomic replace；`sge-scene` 拥有 strict authoring DTO、`SceneEntityId` / `Parent`、共享 `prepare`、`instantiate` / `SceneInstance` 与 `snapshot`。同一 `GameDescriptor` 的 Ready candidate 已覆盖 project/manifest/scene load、typed instantiate/query、snapshot/reopen/save/readback 和 second candidate；失败路径验证 open/reload 不替换 live aggregate，commit 前失败保留旧 scene bytes。
+- Asset Pipeline And Runtime Products M3 已完成 headless product 纵切：manifest v2 import settings、canonical `MeshAsset`、strict runtime catalog/content/store、distinct `RuntimeScene`、canonical OBJ importer、可重建 import cache 与 deterministic full Cook 已实现。Cook 以 immutable generation 加 atomic catalog 作为发布边界，并在 commit 前从 exact disk bytes 完成 store/scene/World preflight；source-free integration 删除 project、OBJ 和 cache 后仍能按 `game_id` identity-first 加载并完成 typed instantiate/store lookup。
 - bare `asset` 仍负责当前 Editor 的 `assets/asset_manifest.ron`、UUID、OBJ loader、导入目标路径和 imported CPU mesh；临时 bare `ecs` 仍保存固定 `EntityRecord` prototype，并只被当前 bare `scene`、`render`、`editor` 直接依赖。bare `scene` 仍直接序列化 `EntityRecord`，bare `render` 仍从 prototype World 抽取 viewport 数据并保留 `wgpu` viewport pipeline 边界。当前 Editor 写入的 `scenes/`、`assets/` 和旧 manifest/scene 格式尚未迁移为 M2 target package 的产品调用方。
 - `editor` 使用 `eframe::Renderer::Wgpu`，提供 Unreal-like 左 Hierarchy / 中央 Viewport / 右 Inspector 布局，顶部菜单栏、分组 toolbar、底部状态栏、固定快捷键、material color、light 参数、camera projection 的即时 Inspector 编辑，以及 editor-only `Pilot Camera` 预览开关。
 - `editor` viewport 使用 `Z-up` editor camera、自适应十进制 world grid、XYZ axis、随 camera rotation 更新并可点击 orthographic preset 的 ViewCube、camera speed/FOV/distance hint 和 Move/Rotate/Scale gizmo。Perspective 默认水平 FOV 为 `90°`，按实际 viewport aspect 换算垂直 FOV，并使用随相机移动/高度扩展的 world-plane material grid；Orthographic preset 使用对应的 `XY` / `XZ` / `YZ` 自适应 line grid。两条 grid 路径与 scene mesh 在同一个 WGPU depth pass 中渲染，不作为覆盖物遮挡 mesh。
@@ -31,7 +32,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前主线
 - `runtime` 仍是一次性 loader smoke：可以按显式 project root 加载 scene + manifest + imported OBJ，并生成 viewport draw call；它不是持续运行的 Player。
 - 当前发布版 `eframe/egui-wgpu 0.35.0` 仍依赖 `wgpu 29`；workspace 统一到 `wgpu 29.0.4`，避免 editor/render 跨版本共享 GPU 类型。
 
-已批准目标架构、M2 实现合同及 M3 实现合同见下列文档。M1 Core Kernel 与 M2 Project And Data 已完成 headless 实现和验证；下一里程碑是 **Asset Pipeline And Runtime Products (M3)**。OBJ importer 迁移、import cache、Cook、runtime catalog/runtime scene、`RenderSnapshot`、game-specific Editor/Player、`PlaySession`、Build/Stage 和最终 integration demo 仍未实现。本节以上的 workspace 和功能描述仍是当前代码真源：
+已批准目标架构、M2 实现合同及 M3 canonical 合同见下列文档。M1 Core Kernel、M2 Project And Data 与 M3 Asset Pipeline And Runtime Products 已完成 headless 实现和验证；下一里程碑是 **Render And Hosts (M4)**。`RenderSnapshot`、target WGPU render path、game-specific Editor/Player、`PlaySession`、Build/Stage 和最终 integration demo 仍未实现。本节以上的 workspace 和功能描述仍是当前代码真源：
 
 - `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`
 - `docs/superpowers/specs/2026-07-12-project-and-data-m2-design.md`
@@ -66,9 +67,10 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo fmt --all --check'
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo clippy --workspace --all-targets -- -D warnings'
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo test --workspace --all-targets'
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo build --workspace'
+docker exec "$DEVCONTAINER_NAME" bash -lc 'scripts/audit-boundaries.sh'
 ```
 
-CI 还在 Linux job 内执行 Core/Data dependency 与 production-source boundary audit；规则真源位于 workflow。
+CI 还在 Linux job 内执行 target dependency、production source 与 retained bare OBJ caller audit；本地和 CI 共用 `scripts/audit-boundaries.sh` 作为规则真源。
 
 可选虚拟 X editor smoke：
 
@@ -95,6 +97,9 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo test --workspace --all-targets'
 # 构建 workspace
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo build --workspace'
 
+# 架构依赖、production source 与 retained prototype caller 审计
+docker exec "$DEVCONTAINER_NAME" bash -lc 'scripts/audit-boundaries.sh'
+
 # 运行 runtime sample project
 cargo run -p runtime -- examples/editor_smoke/scenes/main.scene.ron examples/editor_smoke
 
@@ -118,6 +123,7 @@ cargo run -p editor -- --smoke target/tmp/editor_smoke_osx.scene.ron
 | `assets/` | engine-owned primitive 和默认材质资源 |
 | `examples/` | 示例 project 和 smoke 入口 |
 | `crates/*/tests/` | Rust integration tests |
+| `scripts/audit-boundaries.sh` | 本地与 CI 共用的 fail-closed 架构边界审计 |
 | `docs/` | 项目约定 |
 
 ## 文档入口

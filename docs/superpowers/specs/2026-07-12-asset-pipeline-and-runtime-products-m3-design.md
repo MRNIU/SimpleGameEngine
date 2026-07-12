@@ -2,7 +2,7 @@
 
 日期：2026-07-12
 
-状态：已批准的 M3 实现合同。本文是 M3 的 canonical truth surface；实现与 review 不得弱化其中的
+状态：已实现并验证的 M3 canonical 合同。本文是 M3 的 canonical truth surface；实现与 review 不得弱化其中的
 产品能力和失败边界。
 
 上位规格：`docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`。
@@ -819,7 +819,7 @@ Live prototype保留不等于长期双真源：target packages不得依赖它，
 
 ## M3 completion definition
 
-M3 只有同时满足以下条件才 complete：
+M3 已满足以下 completion 条件：
 
 1. Manifest v2 settings、MeshAsset、cache、RuntimeScene、catalog/store和full Cook均是真实代码与真实
    caller，不是 DTO-only shell。
@@ -835,5 +835,7 @@ M3 只有同时满足以下条件才 complete：
 9. Tracked truth surface只声明 M3 headless products闭合，明确 M4 Render And Hosts仍未实现；live bare
    prototype caller与删除点准确。
 
-满足这些条件后才进入 M4；不能以 RuntimeContentRoot冒充 Player、以 Cook root冒充 Stage，或以
-headless second candidate冒充 GUI/render验证。
+实现证据包括 focused/workspace gates、`scripts/audit-boundaries.sh`、deterministic clean/cache-rebuild
+Cook tree，以及删除 source project后的 public runtime roundtrip。下一里程碑进入 M4；不能以
+RuntimeContentRoot冒充 Player、以 Cook root冒充 Stage，或以 headless second candidate冒充
+GUI/render验证。

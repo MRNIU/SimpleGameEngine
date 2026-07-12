@@ -19,7 +19,7 @@
 | `docs/conventions.md` | 代码、文档、测试和环境约定 |
 | `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md` | 已批准目标方向、目标 crate/产品边界、延期子系统与迁移顺序 |
 | `docs/superpowers/specs/2026-07-12-project-and-data-m2-design.md` | 已实现的 M2 Project/Data 数据合同、失败边界与依赖约束 |
-| `docs/superpowers/specs/2026-07-12-asset-pipeline-and-runtime-products-m3-design.md` | 已批准、待实现的 M3 import/cache/Cook/runtime product 合同与发布边界 |
+| `docs/superpowers/specs/2026-07-12-asset-pipeline-and-runtime-products-m3-design.md` | 已实现的 M3 import/cache/Cook/runtime product canonical 合同与发布边界 |
 | `.gitmessage` | commit message 模板 |
 | 局部 `AGENTS.md` | 目录级规则；优先级高于本文件的通用条款 |
 
@@ -35,9 +35,10 @@
 | `crates/sge-ecs/` | 串行 typed runtime World、显式类型注册、opaque Entity、单组件 query、只读 erased component seam，以及只允许向自身新建 entity checked insert 的 `WorldInitializer` | 现有 prototype adapter、Editor/Render 产品迁移、任意 host `world_mut()` |
 | `crates/reflect/` | Cargo package `sge-reflect`；冻结后的 type/field metadata、codec、clone 和 validation registry，提供 scene-saveable opt-in 与 typed reference binding | ECS、scene/asset ID 所有权、egui drawer |
 | `crates/input/` | Cargo package `sge-input`；平台无关的逐帧 `InputFrame` | winit/egui adapter、窗口所有权 |
-| `crates/sge-asset/` | 正式 UUID `AssetId`、typed `AssetRef<T>` 与只读 `AssetLookup` 合同 | source import、Cook、runtime asset product、GPU handle |
-| `crates/project/` | Cargo package `sge-project`；strict descriptor、portable path/root、authoring manifest / source record 与单文件 atomic file replace | Editor session、importer、runtime tick、多文件 transaction |
-| `crates/sge-scene/` | strict authoring DTO、`SceneEntityId` / `Parent`、共享 `prepare`、`instantiate` / `SceneInstance` 和 `snapshot` | project I/O、GPU、Editor session、M3 runtime scene product |
+| `crates/sge-asset/` | 正式 UUID `AssetId`、typed `AssetRef<T>`、canonical `MeshAsset`、strict runtime catalog/content/store | source import、Cook orchestration、GPU handle |
+| `crates/project/` | Cargo package `sge-project`；strict descriptor、portable path/root、manifest v2 / OBJ import settings、source record、directory containment 与单文件 atomic replace | Editor session、importer、runtime tick、多文件 transaction |
+| `crates/sge-scene/` | strict authoring/runtime scene DTO、`SceneEntityId` / `Parent`、共享 validation/prepare、runtime build、`instantiate` / `SceneInstance` 和 `snapshot` | project/Cook I/O、GPU、Editor session |
+| `crates/sge-asset-pipeline/` | canonical OBJ importer、可重建 import cache、dependency closure、deterministic full Cook 与 atomic catalog publication | App/Editor/Player host、render/UI/GPU、Cargo build |
 | `window` package（已删除） | 不再存在独立 window crate；未来 winit window 所有权属于 Player | 当前 Editor eframe lifecycle、预建 `sge-window` |
 | `crates/scene/` | 当前 `.scene.ron` 直接序列化固定 `EntityRecord` 的 save/load | 目标 Reflect authoring/runtime scene product、GPU、editor session |
 | `crates/asset/` | 当前 Asset UUID/manifest、OBJ source loader、imported CPU mesh | 目标 Asset source/runtime 分层与 Cook |
@@ -90,5 +91,6 @@
 - 已完成收口：editor 已按现有 `model` / `app` / `viewport` 边界拆薄，文件 IO 留在 `editor::app`，`crates/editor/src/lib.rs` 只保留模块入口和 re-export
 - Core Kernel M1 已完成并通过 headless 自动化验证：`sge-math`、`sge-ecs`、`sge-reflect`、`sge-input` 和 `sge-app` 已实现。
 - Project And Data M2 已完成 headless 纵切：`sge-asset`、`sge-project`、`sge-scene` 已实现，`sge-scene` 公开 `SceneInstance`、`instantiate`、`snapshot`、`SceneInstantiationError` 和 `SceneSnapshotError`；46 个 Scene tests 覆盖 strict data、prepare、candidate instantiate/snapshot/reopen 与失败边界。
-- 当前 Editor/Scene/Render/runtime 产品路径仍保持上述 bare prototype 边界，尚未迁移到 M2 target path。
-- 下一个里程碑：**Asset Pipeline And Runtime Products (M3)**。OBJ importer 迁移、import cache、Cook、runtime catalog/runtime scene、`RenderSnapshot`、Editor Play、Player、Build/Stage 和最终 integration demo 不属于当前已完成范围。
+- Asset Pipeline And Runtime Products M3 已完成 headless 产品闭环：manifest v2、MeshAsset、runtime catalog/content/store、RuntimeScene、canonical OBJ importer、cache、full Cook、publication barriers、determinism 与 source-free second candidate 均有自动化证据。
+- 当前 Editor/Scene/Render/runtime 产品路径仍保持上述 bare prototype 边界，尚未迁移到 target path；旧 `asset::load_obj_mesh` 只保留 Editor、runtime 与 upstream example test 调用方，由边界审计精确锁定，M4/M5 caller cutover 后删除。
+- 下一个里程碑：**Render And Hosts (M4)**。`RenderSnapshot`、target WGPU render、Editor/Player host、Play、Build/Stage 和最终 integration demo 不属于当前已完成范围。
