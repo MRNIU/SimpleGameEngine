@@ -192,6 +192,159 @@ fn project_root_write_does_not_create_a_missing_parent() -> Result<(), Box<dyn s
     Ok(())
 }
 
+#[test]
+fn ensure_directory_creates_nested_canonical_segments() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = TestDir::new("ensure-directory")?;
+    let root = ProjectRoot::open(temp.path())?;
+    let path = ProjectPath::new("Cache/Imported/018f2b50-79d7-7ef0-a22b-0b81e4c77f56")?;
+
+    root.ensure_directory(&path)?;
+    root.ensure_directory(&path)?;
+
+    let mut current = temp.path().to_owned();
+    for segment in path.as_str().split('/') {
+        current.push(segment);
+        assert!(fs::symlink_metadata(&current)?.is_dir());
+    }
+    Ok(())
+}
+
+#[test]
+fn ensure_directory_rejects_file_segment() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = TestDir::new("ensure-directory-file")?;
+    let path = ProjectPath::new("Cache/Imported/asset")?;
+    let segments = ["Cache", "Imported", "asset"];
+
+    for blocked_index in 0..segments.len() {
+        let project = temp.path().join(format!("project-{blocked_index}"));
+        fs::create_dir(&project)?;
+        let mut blocked = project.clone();
+        for segment in &segments[..blocked_index] {
+            blocked.push(segment);
+            fs::create_dir(&blocked)?;
+        }
+        blocked.push(segments[blocked_index]);
+        fs::write(&blocked, b"blocking file")?;
+        let root = ProjectRoot::open(&project)?;
+
+        let error = root
+            .ensure_directory(&path)
+            .err()
+            .ok_or_else(|| std::io::Error::other("file segment was accepted"))?;
+
+        assert!(matches!(
+            error,
+            sge_project::ProjectIoError::DirectoryNotDirectory { path: actual }
+                if actual == path
+        ));
+        assert!(blocked.is_file());
+        assert!(!project.join(path.as_str()).is_dir());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn ensure_directory_rejects_normal_symlink_at_every_segment()
+-> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::symlink;
+
+    let temp = TestDir::new("ensure-directory-normal-symlink")?;
+    let path = ProjectPath::new("Cache/Imported/asset")?;
+    let segments = ["Cache", "Imported", "asset"];
+
+    for blocked_index in 0..segments.len() {
+        let project = temp.path().join(format!("project-{blocked_index}"));
+        let outside = temp.path().join(format!("outside-{blocked_index}"));
+        fs::create_dir(&project)?;
+        fs::create_dir(&outside)?;
+        let mut blocked = project.clone();
+        for segment in &segments[..blocked_index] {
+            blocked.push(segment);
+            fs::create_dir(&blocked)?;
+        }
+        blocked.push(segments[blocked_index]);
+        symlink(&outside, &blocked)?;
+        let root = ProjectRoot::open(&project)?;
+
+        let error = root
+            .ensure_directory(&path)
+            .err()
+            .ok_or_else(|| std::io::Error::other("normal symlink segment was accepted"))?;
+
+        assert!(matches!(
+            error,
+            sge_project::ProjectIoError::DirectorySymlink { path: actual } if actual == path
+        ));
+        assert!(fs::symlink_metadata(&blocked)?.file_type().is_symlink());
+        assert_eq!(fs::read_dir(&outside)?.count(), 0);
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn ensure_directory_rejects_dangling_symlink_at_every_segment()
+-> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::symlink;
+
+    let temp = TestDir::new("ensure-directory-dangling-symlink")?;
+    let path = ProjectPath::new("Cache/Imported/asset")?;
+    let segments = ["Cache", "Imported", "asset"];
+
+    for blocked_index in 0..segments.len() {
+        let project = temp.path().join(format!("project-{blocked_index}"));
+        let outside = temp.path().join(format!("missing-outside-{blocked_index}"));
+        fs::create_dir(&project)?;
+        let mut blocked = project.clone();
+        for segment in &segments[..blocked_index] {
+            blocked.push(segment);
+            fs::create_dir(&blocked)?;
+        }
+        blocked.push(segments[blocked_index]);
+        symlink(&outside, &blocked)?;
+        let root = ProjectRoot::open(&project)?;
+
+        let error = root
+            .ensure_directory(&path)
+            .err()
+            .ok_or_else(|| std::io::Error::other("dangling symlink segment was accepted"))?;
+
+        assert!(matches!(
+            error,
+            sge_project::ProjectIoError::DirectorySymlink { path: actual } if actual == path
+        ));
+        assert!(fs::symlink_metadata(&blocked)?.file_type().is_symlink());
+        assert!(!outside.exists());
+    }
+    Ok(())
+}
+
+#[test]
+fn ensure_directory_requires_an_existing_open_root_without_touching_outside()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = TestDir::new("ensure-directory-missing-root")?;
+    let missing_root = temp.path().join("missing-project");
+    let outside = temp.path().join("outside");
+    let sentinel = outside.join("sentinel");
+    fs::create_dir(&outside)?;
+    fs::write(&sentinel, b"unchanged")?;
+
+    let error = ProjectRoot::open(&missing_root)
+        .err()
+        .ok_or_else(|| std::io::Error::other("missing project root was accepted"))?;
+
+    assert!(matches!(
+        error,
+        sge_project::ProjectIoError::RootAccess { path, source }
+            if path == missing_root && source.kind() == std::io::ErrorKind::NotFound
+    ));
+    assert!(!missing_root.exists());
+    assert_eq!(fs::read(&sentinel)?, b"unchanged");
+    assert_eq!(fs::read_dir(&outside)?.count(), 1);
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn project_root_rejects_normal_and_dangling_final_symlinks()

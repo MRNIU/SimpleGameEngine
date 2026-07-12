@@ -50,6 +50,53 @@ impl ProjectRoot {
         })
     }
 
+    /// Creates a project-relative directory without following symlinks.
+    pub fn ensure_directory(&self, path: &ProjectPath) -> Result<(), ProjectIoError> {
+        let mut directory = self.root.clone();
+        for segment in path.as_str().split('/') {
+            directory.push(segment);
+            let metadata = match fs::symlink_metadata(&directory) {
+                Ok(metadata) => metadata,
+                Err(source) if source.kind() == io::ErrorKind::NotFound => {
+                    fs::create_dir(&directory).map_err(|source| {
+                        ProjectIoError::DirectoryAccess {
+                            path: path.clone(),
+                            source,
+                        }
+                    })?;
+                    fs::symlink_metadata(&directory).map_err(|source| {
+                        ProjectIoError::DirectoryAccess {
+                            path: path.clone(),
+                            source,
+                        }
+                    })?
+                }
+                Err(source) => {
+                    return Err(ProjectIoError::DirectoryAccess {
+                        path: path.clone(),
+                        source,
+                    });
+                }
+            };
+            if metadata.file_type().is_symlink() {
+                return Err(ProjectIoError::DirectorySymlink { path: path.clone() });
+            }
+            if !metadata.is_dir() {
+                return Err(ProjectIoError::DirectoryNotDirectory { path: path.clone() });
+            }
+            let canonical =
+                fs::canonicalize(&directory).map_err(|source| ProjectIoError::DirectoryAccess {
+                    path: path.clone(),
+                    source,
+                })?;
+            if !canonical.starts_with(&self.root) {
+                return Err(ProjectIoError::OutsideRoot { path: path.clone() });
+            }
+            directory = canonical;
+        }
+        Ok(())
+    }
+
     /// Replaces one file with old-or-new content after containment preflight.
     ///
     /// The parent directory must already exist and the final target must not be
@@ -126,6 +173,16 @@ pub enum ProjectIoError {
         #[source]
         source: io::Error,
     },
+    #[error("cannot create or access project directory {path}: {source}")]
+    DirectoryAccess {
+        path: ProjectPath,
+        #[source]
+        source: io::Error,
+    },
+    #[error("project directory path must not contain a symlink: {path}")]
+    DirectorySymlink { path: ProjectPath },
+    #[error("project directory path segment is not a directory: {path}")]
+    DirectoryNotDirectory { path: ProjectPath },
     #[error("cannot commit project path {path}: {source}")]
     Commit {
         path: ProjectPath,
