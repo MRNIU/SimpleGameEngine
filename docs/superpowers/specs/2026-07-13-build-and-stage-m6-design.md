@@ -60,7 +60,8 @@ sge build PROJECT_ROOT [--workspace WORKSPACE_ROOT] [--stage STAGE_ROOT] [--rele
 
 - `PROJECT_ROOT` 必须是可打开的 project root。
 - `--workspace` 默认当前目录，必须包含 regular `Cargo.toml`。
-- `--stage` 默认 `WORKSPACE_ROOT/build/<game_id>/<dev|release>/Stage`。
+- `--stage` 默认 `WORKSPACE_ROOT/build/<build_package>/<dev|release>/Stage`；bootstrap不需要提前
+  信任或规范化game identity。
 - 默认 profile为 `dev`；`--release` 选择 Cargo `release`。
 - 未知/重复/缺值参数全部 fail-closed。
 
