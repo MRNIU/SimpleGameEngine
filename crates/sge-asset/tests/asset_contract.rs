@@ -4,9 +4,9 @@ use serde::Deserialize;
 use sge_asset::{AssetId, AssetLookup, AssetRef, AssetType};
 use sge_reflect::{ReferenceSemantic, ReferenceValue, TypeKey};
 
-struct MeshAsset;
+struct TestAsset;
 
-impl AssetType for MeshAsset {
+impl AssetType for TestAsset {
     const TYPE_KEY: &'static str = "asset.mesh";
 }
 
@@ -125,12 +125,12 @@ fn asset_id_deserialize_rejects_non_string_value() {
 #[test]
 fn asset_ref_binds_identity_to_asset_type() -> Result<(), Box<dyn std::error::Error>> {
     let id: AssetId = "550e8400-e29b-41d4-a716-446655440000".parse()?;
-    let mesh = AssetRef::<MeshAsset>::new(id);
+    let mesh = AssetRef::<TestAsset>::new(id);
 
     assert_eq!(mesh.id(), &id);
     assert_eq!(mesh.to_reference(), id.to_string());
     assert_eq!(
-        AssetRef::<MeshAsset>::semantic()?,
+        AssetRef::<TestAsset>::semantic()?,
         ReferenceSemantic::Asset {
             asset_type: TypeKey::new("asset.mesh")?
         }
@@ -142,7 +142,7 @@ fn asset_ref_binds_identity_to_asset_type() -> Result<(), Box<dyn std::error::Er
 fn asset_ref_decodes_only_canonical_asset_id() -> Result<(), Box<dyn std::error::Error>> {
     let id: AssetId = "550e8400-e29b-41d4-a716-446655440000".parse()?;
     let decoded =
-        AssetRef::<MeshAsset>::from_reference(&id.to_string()).map_err(std::io::Error::other)?;
+        AssetRef::<TestAsset>::from_reference(&id.to_string()).map_err(std::io::Error::other)?;
 
     assert_eq!(decoded.id(), &id);
     for invalid in [
@@ -150,7 +150,7 @@ fn asset_ref_decodes_only_canonical_asset_id() -> Result<(), Box<dyn std::error:
         "550e8400e29b41d4a716446655440000",
     ] {
         assert!(
-            AssetRef::<MeshAsset>::from_reference(invalid).is_err(),
+            AssetRef::<TestAsset>::from_reference(invalid).is_err(),
             "{invalid:?}"
         );
     }

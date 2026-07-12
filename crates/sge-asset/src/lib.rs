@@ -4,6 +4,8 @@
 //!
 //! Import、Cook 和 runtime product 属于 M3，不在本 crate 中提前建模。
 
+mod mesh;
+
 use std::{
     cmp::Ordering,
     fmt,
@@ -14,6 +16,10 @@ use std::{
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use sge_reflect::{KeyError, ReferenceSemantic, ReferenceValue, TypeKey};
+
+pub use mesh::{
+    MESH_ASSET_FORMAT_VERSION, MeshAsset, MeshAssetError, MeshAssetFormatError, MeshVertex,
+};
 
 pub const MESH_ASSET_TYPE_KEY: &str = "sge.mesh";
 
