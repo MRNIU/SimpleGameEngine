@@ -6,7 +6,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-asset = { path = "../asset" }
 ecs = { path = "../ecs" }
 sge-math = { path = "../math" }
 ron.workspace = true
