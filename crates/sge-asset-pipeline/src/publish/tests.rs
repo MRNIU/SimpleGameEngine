@@ -95,6 +95,58 @@ fn unpublished_tree_rejects_byte_mismatch() -> Result<(), Box<dyn std::error::Er
 }
 
 #[test]
+fn existing_generation_rejects_missing_role_without_commit()
+-> Result<(), Box<dyn std::error::Error>> {
+    assert_existing_generation_failure(
+        "existing-missing",
+        |path| {
+            fs::create_dir(path)?;
+            Ok(())
+        },
+        |error| matches!(error, CookPublishError::MissingPath { .. }),
+    )
+}
+
+#[test]
+fn existing_generation_rejects_extra_role_without_commit() -> Result<(), Box<dyn std::error::Error>>
+{
+    assert_existing_generation_failure(
+        "existing-extra",
+        |path| {
+            write_file(path, "Scenes/entry.runtime-scene.ron", RUNTIME_SCENE)?;
+            write_file(path, "extra", b"extra")
+        },
+        |error| matches!(error, CookPublishError::UnexpectedPath { .. }),
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn existing_generation_rejects_symlink_without_commit() -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::symlink;
+
+    assert_existing_generation_failure(
+        "existing-symlink",
+        |path| {
+            let target = path.with_extension("target");
+            fs::create_dir(&target)?;
+            symlink(target, path)
+        },
+        |error| matches!(error, CookPublishError::InvalidPathRole { .. }),
+    )
+}
+
+#[test]
+fn existing_generation_rejects_byte_mismatch_without_commit()
+-> Result<(), Box<dyn std::error::Error>> {
+    assert_existing_generation_failure(
+        "existing-bytes",
+        |path| write_file(path, "Scenes/entry.runtime-scene.ron", b"changed"),
+        |error| matches!(error, CookPublishError::ProductRead { .. }),
+    )
+}
+
+#[test]
 fn digest_valid_corrupt_mesh_fails_store_barrier_before_commit()
 -> Result<(), Box<dyn std::error::Error>> {
     let fixture = Fixture::new("corrupt-mesh")?;
@@ -250,6 +302,41 @@ fn assert_commit_error_visibility(write_new: bool) -> Result<(), Box<dyn std::er
             old_catalog.generation()
         }
     );
+    Ok(())
+}
+
+fn assert_existing_generation_failure(
+    name: &str,
+    setup: impl FnOnce(&Path) -> Result<(), io::Error>,
+    expected: impl FnOnce(&CookPublishError) -> bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = Fixture::new(name)?;
+    let output = CookOutputRoot::open(fixture.path())?;
+    let (registry, world) = runtime_types()?;
+    let products = BTreeMap::new();
+    let catalog = catalog(&products)?;
+    let generations = fixture.path().join("generations");
+    fs::create_dir(&generations)?;
+    let existing = generations.join(catalog.generation().as_str());
+    setup(&existing)?;
+    let commit_calls = AtomicUsize::new(0);
+
+    let error = publish_with_commit(
+        &output,
+        &catalog,
+        RUNTIME_SCENE,
+        &products,
+        &registry,
+        &world,
+        |_, _| {
+            commit_calls.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        },
+    )
+    .expect_err("invalid existing generation reached commit");
+
+    assert!(expected(&error), "unexpected error: {error:?}");
+    assert_eq!(commit_calls.load(Ordering::Relaxed), 0);
     Ok(())
 }
 

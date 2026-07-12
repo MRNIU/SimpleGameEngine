@@ -73,17 +73,17 @@ pub enum CookPublishError {
         #[source]
         source: io::Error,
     },
-    #[error("cannot read unpublished product {path}: {source}")]
+    #[error("cannot read runtime generation product {path}: {source}")]
     ProductRead {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("unpublished generation contains unexpected path {path}")]
+    #[error("runtime generation contains unexpected path {path}")]
     UnexpectedPath { path: PathBuf },
-    #[error("unpublished generation is missing path {path}")]
+    #[error("runtime generation is missing path {path}")]
     MissingPath { path: PathBuf },
-    #[error("unpublished generation path is a symlink or unsupported file: {path}")]
+    #[error("runtime generation path is a symlink or unsupported file: {path}")]
     InvalidPathRole { path: PathBuf },
     #[error("cannot verify unpublished runtime generation: {0}")]
     GenerationVerify(#[source] RuntimeContentError),
@@ -97,8 +97,6 @@ pub enum CookPublishError {
     ScenePrepare(#[source] Box<SceneValidationError>),
     #[error("unpublished runtime scene cannot instantiate in the candidate World: {0}")]
     ScenePreflight(#[source] SceneInstantiationError),
-    #[error("generation already exists and Task 10 does not reuse it: {path}")]
-    ExistingGeneration { path: PathBuf },
     #[error("cannot publish immutable generation from {from} to {to}: {source}")]
     GenerationRename {
         from: PathBuf,

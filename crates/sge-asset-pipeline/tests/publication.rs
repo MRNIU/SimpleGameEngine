@@ -158,7 +158,7 @@ fn existing_mismatched_generation_is_rejected_and_prior_remains_loadable()
     assert!(matches!(
         error,
         CookError::Publish(source)
-            if matches!(*source, CookPublishError::ExistingGeneration { .. })
+            if matches!(*source, CookPublishError::MissingPath { .. })
     ));
     prior.assert_preserved()
 }

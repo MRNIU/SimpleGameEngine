@@ -100,19 +100,33 @@ where
     preflight_instantiation(&prepared, world).map_err(CookPublishError::ScenePreflight)?;
 
     let final_generation = generations.join(catalog.generation().as_str());
-    if fs::symlink_metadata(&final_generation).is_ok() {
-        return Err(CookPublishError::ExistingGeneration {
-            path: final_generation,
-        });
-    }
-    fs::rename(temp.path(), &final_generation).map_err(|source| {
-        CookPublishError::GenerationRename {
-            from: temp.path().to_path_buf(),
-            to: final_generation,
-            source,
+    match fs::symlink_metadata(&final_generation) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            return Err(CookPublishError::InvalidPathRole {
+                path: final_generation,
+            });
         }
-    })?;
-    temp.disarm();
+        Ok(_) => {
+            verify_unpublished_tree(&final_generation, &expected)?;
+            temp.remove()?;
+        }
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+            fs::rename(temp.path(), &final_generation).map_err(|source| {
+                CookPublishError::GenerationRename {
+                    from: temp.path().to_path_buf(),
+                    to: final_generation,
+                    source,
+                }
+            })?;
+            temp.disarm();
+        }
+        Err(source) => {
+            return Err(CookPublishError::GenerationDirectory {
+                path: final_generation,
+                source,
+            });
+        }
+    }
 
     let catalog_bytes = canonical_catalog(catalog, entry_scene_bytes, product_bytes)?;
     commit(output.path(), &catalog_bytes)
@@ -337,6 +351,15 @@ impl TempGeneration {
 
     fn disarm(&mut self) {
         self.armed = false;
+    }
+
+    fn remove(&mut self) -> Result<(), CookPublishError> {
+        fs::remove_dir_all(&self.path).map_err(|source| CookPublishError::GenerationDirectory {
+            path: self.path.clone(),
+            source,
+        })?;
+        self.disarm();
+        Ok(())
     }
 }
 

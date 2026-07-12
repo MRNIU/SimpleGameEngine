@@ -103,6 +103,22 @@ impl FullCookFixture {
         &self.output
     }
 
+    pub fn create_output(&self, name: &str) -> Result<PathBuf, Box<dyn Error>> {
+        let path = self.root.join(name);
+        fs::create_dir(&path)?;
+        Ok(path)
+    }
+
+    pub fn delete_cache(&self) -> Result<(), Box<dyn Error>> {
+        fs::remove_dir_all(self.root.join("Cache"))?;
+        Ok(())
+    }
+
+    pub fn corrupt_all_import_cache_entries(&self) -> Result<(), Box<dyn Error>> {
+        corrupt_import_files(&self.root.join("Cache"))?;
+        Ok(())
+    }
+
     pub fn corrupt_manifest_and_remove_source(&self) -> Result<(), Box<dyn Error>> {
         fs::write(self.root.join("Content/asset_manifest.ron"), b"not ron")?;
         fs::remove_file(self.root.join("Content/used.obj"))?;
@@ -256,4 +272,21 @@ fn scene_id(index: u64) -> Result<SceneEntityId, Box<dyn Error>> {
 
 fn triangle_obj(name: &str, width: f32) -> String {
     format!("o {name}\nv 0 0 0\nv {width} 0 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 0 1\nf 1/1 2/2 3/3\n")
+}
+
+fn corrupt_import_files(path: &Path) -> Result<(), std::io::Error> {
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let child = entry.path();
+        if child.is_dir() {
+            corrupt_import_files(&child)?;
+        } else if child
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(".import.ron"))
+        {
+            fs::write(child, b"corrupt cache")?;
+        }
+    }
+    Ok(())
 }
