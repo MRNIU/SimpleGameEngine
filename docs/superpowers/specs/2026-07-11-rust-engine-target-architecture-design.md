@@ -186,6 +186,9 @@ flowchart TD
   Scene --> Asset
   Scene --> Math
 
+  Project["sge-project"] --> Asset
+  Project --> Reflect
+
   Render --> App
   Render --> ECS
   Render --> Reflect
@@ -197,7 +200,7 @@ flowchart TD
   Editor --> Asset
   Editor --> Scene
   Editor --> Render
-  Editor --> Project["sge-project"]
+  Editor --> Project
   Editor --> Pipeline["sge-asset-pipeline"]
 
   Player["sge-player"] --> App
