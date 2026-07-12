@@ -2,6 +2,7 @@
 
 //! Candidate-first EditSession、Reflect Inspector 与 target Editor host。
 
+mod build;
 mod error;
 mod host;
 mod input;
@@ -13,6 +14,7 @@ mod session;
 
 use input::EditorInputAccumulator;
 
+pub use build::EditorBuildLauncher;
 pub use error::{EditError, EditorOpenError, EditorPreviewError};
 pub use host::{EditorRunError, EditorRunOptions, EditorRunReport, run};
 pub use inspector::{InspectorComponent, InspectorField, SceneComponentType};

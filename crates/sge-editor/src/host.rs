@@ -15,17 +15,18 @@ use sge_input::{Button, KeyCode};
 use sge_reflect::{ReflectedValue, TypeKey};
 
 use crate::{
-    EditSession, EditorInputAccumulator, EditorOpenError, PlaySession, PlayStartError,
-    PreviewFrame, PreviewProbe, inspector_ui, preview,
+    EditSession, EditorBuildLauncher, EditorInputAccumulator, EditorOpenError, PlaySession,
+    PlayStartError, PreviewFrame, PreviewProbe, build::BuildProcess, inspector_ui, preview,
 };
 
 mod panels;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditorRunOptions {
     pub max_frames: Option<u64>,
     pub initial_size: [u32; 2],
     pub start_in_play: bool,
+    pub build_launcher: Option<EditorBuildLauncher>,
 }
 
 impl Default for EditorRunOptions {
@@ -34,6 +35,7 @@ impl Default for EditorRunOptions {
             max_frames: None,
             initial_size: [1280, 720],
             start_in_play: false,
+            build_launcher: None,
         }
     }
 }
@@ -71,6 +73,7 @@ pub fn run(
     let report_gameplay_input_frames = Arc::clone(&gameplay_input_frames);
     let gameplay_key_w_frames = Arc::new(AtomicU64::new(0));
     let report_gameplay_key_w_frames = Arc::clone(&gameplay_key_w_frames);
+    let build = options.build_launcher.map(BuildProcess::new);
     let native_options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         viewport: egui::ViewportBuilder::default().with_inner_size([
@@ -107,6 +110,7 @@ pub fn run(
                 component_to_add: None,
                 component_draft: None,
                 inspector_drafts: inspector_ui::InspectorDrafts::default(),
+                build,
             }))
         }),
     )
@@ -145,6 +149,7 @@ struct EditorApp {
     component_to_add: Option<TypeKey>,
     component_draft: Option<ReflectedValue>,
     inspector_drafts: inspector_ui::InspectorDrafts,
+    build: Option<BuildProcess>,
 }
 
 impl EditorApp {
@@ -200,6 +205,9 @@ impl eframe::App for EditorApp {
         if context.current_pass_index() != 0 {
             return;
         }
+        if let Some(build) = self.build.as_mut() {
+            build.poll();
+        }
         self.frames = self.frames.saturating_add(1);
         if self.probe.report().error.is_some()
             || self.max_frames.is_some_and(|max| self.frames >= max)
@@ -229,6 +237,7 @@ impl eframe::App for EditorApp {
                 } else if ui.button("Play").clicked() {
                     self.start_play();
                 }
+                self.build_controls(ui);
                 if ui
                     .add_enabled(self.play.is_none(), egui::Button::new("Save"))
                     .clicked()
@@ -295,6 +304,24 @@ impl eframe::App for EditorApp {
 }
 
 impl EditorApp {
+    fn build_controls(&mut self, ui: &mut egui::Ui) {
+        let Some(build) = self.build.as_mut() else {
+            return;
+        };
+        if ui
+            .add_enabled(!build.is_running(), egui::Button::new("Build"))
+            .clicked()
+        {
+            build.start(&self.project_root);
+        }
+        let color = if build.failed() {
+            egui::Color32::LIGHT_RED
+        } else {
+            ui.visuals().text_color()
+        };
+        ui.colored_label(color, build.status_text());
+    }
+
     fn advance_play(&mut self, context: &egui::Context, viewport_hovered: bool) {
         let keyboard_capture =
             self.play.is_some() && self.play_viewport_focused && !context.text_edit_focused();

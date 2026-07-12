@@ -2,7 +2,7 @@
 
 use std::{error::Error, path::PathBuf};
 
-use sge_editor::{EditorRunOptions, run};
+use sge_editor::{EditorBuildLauncher, EditorRunOptions, run};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let Some(arguments) = arguments()? else {
@@ -14,6 +14,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         EditorRunOptions {
             max_frames: arguments.max_frames,
             start_in_play: arguments.start_in_play,
+            build_launcher: Some(EditorBuildLauncher::new(
+                "cargo",
+                ["run", "--package", "sge-build", "--bin", "sge", "--"],
+            )),
             ..EditorRunOptions::default()
         },
     )?;
