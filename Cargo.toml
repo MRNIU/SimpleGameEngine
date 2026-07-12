@@ -6,6 +6,7 @@ members = [
   "crates/editor",
   "crates/input",
   "crates/math",
+  "crates/project",
   "crates/reflect",
   "crates/render",
   "crates/runtime",
@@ -22,6 +23,7 @@ repository = "https://github.com/MRNIU/SimpleGameEngine"
 
 [workspace.dependencies]
 anyhow = "1"
+atomic-write-file = "0.3.0"
 eframe = { version = "0.35.0", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
 egui = "0.35.0"
 glam = { version = "0.33.2", features = ["serde"] }
