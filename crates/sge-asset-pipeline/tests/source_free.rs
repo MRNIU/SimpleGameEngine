@@ -25,6 +25,7 @@ fn copied_runtime_is_source_free_and_builds_a_second_ready_candidate()
 -> Result<(), Box<dyn std::error::Error>> {
     reset_app_creations();
     let game = GameDescriptor::new(GAME_ID, create_ready_app);
+    let other_game = GameDescriptor::new("other.game", create_ready_app);
     let fixture = FullCookFixture::new("source-free")?;
     let source_root = fs::canonicalize(fixture.root_path())?;
     let copy = RuntimeCopy::new()?;
@@ -56,7 +57,7 @@ fn copied_runtime_is_source_free_and_builds_a_second_ready_candidate()
     fs::rename(&generation_path, &removed_generation)?;
     let content = RuntimeContentRoot::open(copy.root())?;
     assert!(matches!(
-        content.load_current("other.game"),
+        content.load_current(other_game.game_id()),
         Err(RuntimeContentError::GameMismatch { .. })
     ));
     assert!(matches!(
@@ -69,7 +70,7 @@ fn copied_runtime_is_source_free_and_builds_a_second_ready_candidate()
     let product_bytes = fs::read(&product_path)?;
     fs::write(&product_path, b"corrupt runtime product")?;
     assert!(matches!(
-        content.load_current("other.game"),
+        content.load_current(other_game.game_id()),
         Err(RuntimeContentError::GameMismatch { .. })
     ));
     assert!(matches!(
