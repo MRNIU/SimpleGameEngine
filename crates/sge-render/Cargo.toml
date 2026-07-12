@@ -12,8 +12,10 @@ sge-ecs = { path = "../sge-ecs" }
 sge-math = { path = "../math" }
 sge-reflect = { path = "../reflect" }
 thiserror.workspace = true
+wgpu.workspace = true
 
 [dev-dependencies]
+pollster.workspace = true
 sge-scene = { path = "../sge-scene" }
 
 [lints]

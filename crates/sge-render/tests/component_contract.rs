@@ -123,6 +123,14 @@ fn validators_reject_invalid_component_values() -> Result<(), Box<dyn std::error
         )),
         registry.validate(&Camera::new(
             true,
+            Projection::Perspective,
+            std::f32::consts::PI,
+            8.0,
+            0.1,
+            500.0,
+        )),
+        registry.validate(&Camera::new(
+            true,
             Projection::Orthographic,
             1.0,
             -1.0,

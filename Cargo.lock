@@ -2608,6 +2608,7 @@ dependencies = [
 name = "sge-render"
 version = "0.1.0"
 dependencies = [
+ "pollster",
  "sge-app",
  "sge-asset",
  "sge-ecs",
@@ -2615,6 +2616,7 @@ dependencies = [
  "sge-reflect",
  "sge-scene",
  "thiserror 2.0.18",
+ "wgpu",
 ]
 
 [[package]]

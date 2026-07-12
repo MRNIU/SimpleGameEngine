@@ -196,4 +196,6 @@ pub enum RenderViewError {
     MissingActiveCamera,
     #[error("render snapshot has multiple active cameras: {first:?} and {second:?}")]
     MultipleActiveCameras { first: Entity, second: Entity },
+    #[error("active camera {entity:?} has an invalid projection")]
+    InvalidProjection { entity: Entity },
 }

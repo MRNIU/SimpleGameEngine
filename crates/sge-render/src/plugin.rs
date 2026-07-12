@@ -233,8 +233,11 @@ pub(crate) fn validate_camera(value: &Camera) -> Result<(), ValidationErrors> {
     if !fields.into_iter().all(f32::is_finite) {
         return invalid("Camera numeric fields must be finite");
     }
-    if value.vertical_fov_radians() <= 0.0 || value.orthographic_height() <= 0.0 {
-        return invalid("Camera projection dimensions must be positive");
+    if value.vertical_fov_radians() <= 0.0
+        || value.vertical_fov_radians() >= std::f32::consts::PI
+        || value.orthographic_height() <= 0.0
+    {
+        return invalid("Camera FOV must be between zero and pi and orthographic height positive");
     }
     if value.near() <= 0.0 || value.far() <= value.near() {
         return invalid("Camera clip planes must satisfy 0 < near < far");
