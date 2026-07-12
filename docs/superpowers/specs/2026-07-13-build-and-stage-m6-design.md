@@ -1,6 +1,7 @@
 # Build And Stage M6 Design
 
 状态：Approved
+实现状态：Complete
 日期：2026-07-13
 上位规格：`2026-07-11-rust-engine-target-architecture-design.md`
 
@@ -200,3 +201,10 @@ program/prefix args；无配置时隐藏Build按钮。重复点击、spawn失败
 - Stage复制离开repo和source project后，game-specific Player仍可直接启动运行。
 - 失败发布保持旧 current Stage，tracked specs/README/AGENTS/audit与代码一致。
 - 独立review确认无Cook复制、Player依赖泄漏、个人绝对路径、shell拼接、半成品current或demo-only shortcut。
+
+## 实现结果
+
+M6 已按本规格实现：`ProjectBootstrap`、通用 `sge build`、`demo-game-build`、Cargo JSON artifact
+选择、unpublished full Cook、immutable Stage generation、atomic current manifest、Player staged runtime
+自定位和Editor非阻塞Build launcher均有自动测试。产品smoke会重复完整Build，把Stage复制到不含source
+project/OBJ/authoring manifest的隔离目录，再向staged Player注入X11 key event并真实present。

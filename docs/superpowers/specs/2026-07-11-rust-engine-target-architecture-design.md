@@ -736,7 +736,8 @@ Package/Pak、压缩、签名、installer、DLC 和 chunking 均延期。
 7. **Integration Demo**：只组合前六个里程碑已经公开的能力，不新增 demo-only engine shortcut。
 
 当前实现状态：M1 Core Kernel、M2 Project And Data、M3 Asset Pipeline And Runtime Products、
-M4 Render And Hosts、M5 Editor Play 已完成并删除被替代 prototype；下一里程碑是 M6 Build And Stage。
+M4 Render And Hosts、M5 Editor Play、M6 Build And Stage已完成并删除被替代prototype；下一里程碑是
+M7 Integration Demo，只组合并固化M1–M6公开能力。
 
 每个 milestone 完成时才创建其真实需要的 crates。计划之间可以替换当前内部 API，不需要维护双架构长期共存。
 

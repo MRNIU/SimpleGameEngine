@@ -2,7 +2,7 @@
 
 日期：2026-07-13
 
-本文描述当前 HEAD。目标与后续 M6–M7 边界见 `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`。
+本文描述当前 HEAD。目标与后续 M7 边界见 `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md`。
 
 ## 当前产品路径
 
@@ -11,6 +11,7 @@ demo-game GameDescriptor + Rotator/PlayerController systems
 ├─ target project -> sge-editor -> EditWorld + history -> eframe/WGPU authoring preview
 │                                      └-> fresh PlayWorld -> InputFrame -> same WGPU callback
 └─ full Cook -> runtime generation -> sge-player -> InputFrame/runtime World -> winit/WGPU surface
+   └─ sge build -> demo-game-build -> Cargo Player artifact -> immutable Stage -> staged Player
 ```
 
 Editor 与 Player 使用同一静态 game library、typed World、Reflect registry、scene validation、runtime asset store、render extraction 与 WGPU backend。Editor 是 eframe GPU ownership 的明确例外；Player 由 `sge-render::SurfaceRenderer` 安全拥有 surface/device/queue/config。
@@ -31,8 +32,9 @@ Editor 与 Player 使用同一静态 game library、typed World、Reflect regist
 | `sge-render` | reflected components、owned RenderSnapshot、retained GPU cache、direct/offscreen/shared WGPU path、safe surface |
 | `sge-player` | identity-first source-free PlayerSession、winit presentation/input loop |
 | `sge-editor` | candidate open、EditSession/Inspector/history/save、isolated PlaySession、egui input routing与 eframe callback host |
+| `sge-build` | bootstrap launcher、full Cook/Cargo编排、immutable Stage generation与atomic current manifest |
 | `demo-game` | static game composition root与 shared Rotator/PlayerController systems |
-| `demo-game-player` / `demo-game-editor` | thin product targets |
+| `demo-game-player` / `demo-game-editor` / `demo-game-build` | thin product targets |
 
 旧 bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 已删除。Git tree 中不存在第二套 ECS/schema/OBJ importer/WGPU backend。
 
@@ -55,6 +57,8 @@ Editor 与 Player 使用同一静态 game library、typed World、Reflect regist
 - EditWorld是唯一 live authoring truth；mutation从 World snapshot构造 fresh candidate，成功 validation/instantiate后原子替换，不维护 mirrored DTO。
 - PlaySession每次由同一 GameDescriptor创建 fresh World；Stop直接 drop且不回写 EditWorld。
 - Player只映射 focused winit input；Editor只把 Play viewport focused且未被 egui消费的输入送入 gameplay，两者在 focus/capture边界清状态。
+- `sge build`只用ProjectBootstrap定位静态Build target；game-specific进程重新完整验证identity并直接Cook进unpublished Stage runtime。
+- Stage以validated immutable generation保存Player/runtime，单文件atomic manifest是唯一current pointer；staged Player从executable同级runtime自定位。
 
 ## 验证
 
@@ -66,7 +70,7 @@ Editor 与 Player 使用同一静态 game library、typed World、Reflect regist
 - `cargo build --workspace`
 - `scripts/audit-boundaries.sh`
 
-M4–M5 额外证据：
+M4–M6 额外证据：
 
 - 真实 adapter offscreen pixel readback，包含 direct、offscreen/composite、multi-asset batching、Light、non-unit rotation、non-uniform scale 与 index 65536。
 - source-free Player test删除 project/OBJ/cache后仍加载、advance、extract/view。
@@ -74,9 +78,10 @@ M4–M5 额外证据：
 - Reflect Inspector编辑 custom component后 Undo/Redo、save/reopen；invalid mutation与失败保存保持 live state。
 - PlayWorld运行 Startup/FixedUpdate/Update/PostUpdate和WASD movement；drop后 EditWorld canonical RON不变。
 - game-specific Editor binary在 Xvfb 下聚焦 Play viewport、接收 X11 key event、真实 advance并执行 callback prepare与paint。
+- game-specific Build产品测试从clean Stage重复full Cook/Cargo build，复制Stage后不传source路径，向staged Player注入X11 key event并真实present。
 
 这些 Linux/Xvfb 证据不等于 Windows、macOS、其他 GPU、物理输入设备或人工视觉兼容性证明。
 
 ## 下一边界
 
-M6 增加 Build/Stage；M7 只组合已实现能力完成最终 demo，不新增 demo-only engine shortcut。
+M7 只组合并固化已实现能力完成最终 integration demo，不新增 demo-only engine shortcut。

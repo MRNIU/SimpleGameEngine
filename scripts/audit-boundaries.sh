@@ -100,10 +100,14 @@ audit_tree sge-player \
   '^(asset|ecs|scene|runtime|sge-project|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe) v'
 audit_tree demo-game-player \
   '^(asset|ecs|scene|runtime|sge-project|sge-asset-pipeline|sge-build|editor|render|tobj|rfd|eframe) v'
+audit_tree sge-build \
+  '^(asset|ecs|scene|runtime|sge-player|sge-editor|editor|render|rfd|eframe|winit|wgpu) v'
+audit_tree demo-game-build \
+  '^(asset|ecs|scene|runtime|sge-player|sge-editor|editor|rfd|eframe|winit) v'
 audit_tree sge-editor \
-  '^(asset|ecs|scene|runtime|editor|render|rfd) v'
+  '^(asset|ecs|scene|runtime|sge-build|editor|render|rfd) v'
 audit_tree demo-game-editor \
-  '^(asset|ecs|scene|runtime|editor|render|rfd) v'
+  '^(asset|ecs|scene|runtime|sge-build|editor|render|rfd) v'
 
 target_sources=(
   crates/app/src
@@ -115,6 +119,7 @@ target_sources=(
   crates/sge-render/src
   crates/player/src
   crates/sge-editor/src
+  crates/build/src
 )
 audit_source 'target production source' \
   'EntityRecord|AssetUuid|asset:<|tobj|load_obj' "${target_sources[@]}"
@@ -131,6 +136,8 @@ audit_source 'Player direct WGPU ownership' 'wgpu(\.workspace)?[[:space:]]*=' \
   crates/player/Cargo.toml examples/demo_game/player/Cargo.toml
 audit_source 'Editor second native event loop' 'EventLoop|run_app|create_window' \
   crates/sge-editor/src
+audit_source 'Player build/source ownership' 'ProjectRoot|full_cook|StageRoot|BuildLauncher|tobj' \
+  crates/player/src examples/demo_game/player/src
 
 audit_exact_files 'canonical OBJ importer owner' 'tobj::load_obj_buf' \
   'crates/sge-asset-pipeline/src/obj.rs' crates/sge-asset-pipeline/src
@@ -138,6 +145,8 @@ audit_exact_files 'canonical WGPU pipeline owner' 'create_render_pipeline' \
   'crates/sge-render/src/gpu/pipeline.rs' crates examples
 audit_exact_files 'retained bare OBJ callers' 'asset::load_obj_mesh' \
   '' crates examples
+audit_exact_files 'canonical full Cook owner' 'pub fn full_cook' \
+  'crates/sge-asset-pipeline/src/cook.rs' crates
 
 audit_absent \
   crates/asset crates/ecs crates/editor crates/render crates/runtime crates/scene \
