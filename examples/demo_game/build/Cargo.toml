@@ -9,5 +9,14 @@ repository.workspace = true
 demo-game = { path = "../game" }
 sge-build = { path = "../../../crates/build" }
 
+[dev-dependencies]
+sge-editor = { path = "../../../crates/sge-editor" }
+sge-input = { path = "../../../crates/input" }
+sge-math = { path = "../../../crates/math" }
+sge-player = { path = "../../../crates/player" }
+sge-reflect = { path = "../../../crates/reflect" }
+sge-render = { path = "../../../crates/sge-render" }
+sge-scene = { path = "../../../crates/sge-scene" }
+
 [lints]
 workspace = true

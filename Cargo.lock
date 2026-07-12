@@ -496,6 +496,13 @@ version = "0.1.0"
 dependencies = [
  "demo-game",
  "sge-build",
+ "sge-editor",
+ "sge-input",
+ "sge-math",
+ "sge-player",
+ "sge-reflect",
+ "sge-render",
+ "sge-scene",
 ]
 
 [[package]]
