@@ -1,0 +1,8 @@
+(
+    format_version: 1,
+    game_id: "demo.game",
+    game_package: "demo-game",
+    player_package: "demo-game-player",
+    build_package: "demo-game-build",
+    default_authoring_scene: "Scenes/main.scene.ron",
+)

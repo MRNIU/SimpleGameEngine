@@ -505,6 +505,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
+name = "demo-game"
+version = "0.1.0"
+dependencies = [
+ "sge-app",
+ "sge-render",
+ "sge-scene",
+]
+
+[[package]]
+name = "demo-game-player"
+version = "0.1.0"
+dependencies = [
+ "demo-game",
+ "sge-asset",
+ "sge-asset-pipeline",
+ "sge-player",
+ "sge-project",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

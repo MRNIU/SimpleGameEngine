@@ -1,0 +1,11 @@
+(
+    format_version: 2,
+    assets: [
+        (
+            id: "40000000-0000-4000-8000-000000000001",
+            asset_type: "sge.mesh",
+            source: "Content/Meshes/demo.obj",
+            importer: Obj(settings: (flip_texcoord_v: false)),
+        ),
+    ],
+)

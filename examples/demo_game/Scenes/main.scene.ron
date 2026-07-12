@@ -1,0 +1,84 @@
+(
+    format_version: 1,
+    entities: [
+        (
+            id: "50000000-0000-4000-8000-000000000001",
+            parent: None,
+            components: [
+                (
+                    type_key: "sge.camera",
+                    schema_version: 1,
+                    fields: ({
+                        "active": Bool(true),
+                        "far": F32(100.0),
+                        "near": F32(0.1),
+                        "orthographic_height": F32(10.0),
+                        "projection": Enum("Perspective"),
+                        "vertical_fov_radians": F32(1.0471976),
+                    }),
+                ),
+                (
+                    type_key: "sge.transform",
+                    schema_version: 1,
+                    fields: ({
+                        "rotation": Quat((0.0, 0.0, 0.0, 1.0)),
+                        "scale": Vec3((1.0, 1.0, 1.0)),
+                        "translation": Vec3((0.0, 0.0, 0.0)),
+                    }),
+                ),
+            ],
+        ),
+        (
+            id: "50000000-0000-4000-8000-000000000002",
+            parent: None,
+            components: [
+                (
+                    type_key: "sge.material",
+                    schema_version: 1,
+                    fields: ({
+                        "base_color": Color((0.9, 0.25, 0.1, 1.0)),
+                    }),
+                ),
+                (
+                    type_key: "sge.mesh_renderer",
+                    schema_version: 1,
+                    fields: ({
+                        "mesh": Reference("40000000-0000-4000-8000-000000000001"),
+                    }),
+                ),
+                (
+                    type_key: "sge.transform",
+                    schema_version: 1,
+                    fields: ({
+                        "rotation": Quat((0.0, 0.0, 0.0, 1.0)),
+                        "scale": Vec3((1.0, 1.0, 1.0)),
+                        "translation": Vec3((0.0, 0.0, 2.0)),
+                    }),
+                ),
+            ],
+        ),
+        (
+            id: "50000000-0000-4000-8000-000000000003",
+            parent: None,
+            components: [
+                (
+                    type_key: "sge.light",
+                    schema_version: 1,
+                    fields: ({
+                        "color": Color((1.0, 1.0, 1.0, 1.0)),
+                        "intensity": F32(1.0),
+                    }),
+                ),
+                (
+                    type_key: "sge.transform",
+                    schema_version: 1,
+                    fields: ({
+                        "rotation": Quat((1.0, 0.0, 0.0, 0.0)),
+                        "scale": Vec3((1.0, 1.0, 1.0)),
+                        "translation": Vec3((0.0, 0.0, 0.0)),
+                    }),
+                ),
+            ],
+        ),
+    ],
+)

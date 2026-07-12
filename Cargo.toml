@@ -17,6 +17,8 @@ members = [
   "crates/sge-ecs",
   "crates/sge-render",
   "crates/sge-scene",
+  "examples/demo_game/game",
+  "examples/demo_game/player",
 ]
 resolver = "3"
 
