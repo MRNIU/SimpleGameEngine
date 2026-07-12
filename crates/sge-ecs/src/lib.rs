@@ -7,4 +7,4 @@ mod storage;
 mod world;
 
 pub use entity::Entity;
-pub use world::{EcsError, World};
+pub use world::{EcsError, World, WorldInitializer};

@@ -5,8 +5,8 @@
 use std::time::Duration;
 
 use sge_app::{
-    AdvanceError, EngineApp, EngineBuildError, FixedTime, GameDescriptor, RegistrationError,
-    ScheduleLabel, System, SystemError, Time,
+    AdvanceError, EngineApp, EngineBuildError, FixedTime, GameDescriptor, InitializationError,
+    RegistrationError, ScheduleLabel, System, SystemError, Time,
 };
 use sge_input::{Button, InputFrame, KeyCode};
 use sge_reflect::{RegistryError, TypeDescriptor, TypeKey};
@@ -26,6 +26,9 @@ struct SecondReflected;
 struct MissingComponent;
 
 struct MissingResource;
+
+#[derive(Debug, PartialEq, Eq)]
+struct InitialValue(u32);
 
 fn first_descriptor() -> TypeDescriptor {
     TypeDescriptor::builder::<FirstReflected>(
@@ -411,4 +414,72 @@ fn game_descriptor_accepts_only_fresh_ready_apps() {
         GameDescriptor::new("failed-started", failed_started_app).create_app(),
         Err(EngineBuildError::FactoryReturnedStartedApp)
     ));
+}
+
+#[test]
+fn initializer_rejects_configuring_app() {
+    let mut app = EngineApp::new();
+
+    assert!(matches!(
+        app.world_initializer(),
+        Err(InitializationError::NotFinished)
+    ));
+}
+
+#[test]
+fn initializer_populates_ready_app_then_releases_world_borrow()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut app = EngineApp::new();
+    app.register_component::<InitialValue>()?;
+    app.finish()?;
+
+    let entity = {
+        let mut initializer = app.world_initializer()?;
+        assert!(initializer.component_is_registered(std::any::TypeId::of::<InitialValue>()));
+        let entity = initializer.spawn();
+        initializer.insert_erased(
+            entity,
+            std::any::TypeId::of::<InitialValue>(),
+            Box::new(InitialValue(7)),
+        )?;
+        entity
+    };
+
+    assert_eq!(
+        app.world().get::<InitialValue>(entity),
+        Some(&InitialValue(7))
+    );
+    Ok(())
+}
+
+#[test]
+fn initializer_rejects_running_app() -> Result<(), Box<dyn std::error::Error>> {
+    let mut app = ready_app()?;
+    app.advance(Duration::ZERO, InputFrame::new())?;
+
+    assert!(matches!(
+        app.world_initializer(),
+        Err(InitializationError::AlreadyStarted)
+    ));
+    Ok(())
+}
+
+#[test]
+fn initializer_reports_failed_before_already_started() -> Result<(), Box<dyn std::error::Error>> {
+    let mut app = EngineApp::new();
+    app.add_system(
+        ScheduleLabel::Update,
+        System::builder().build(|_| Err(SystemError::MissingResource("forced failure"))),
+    )?;
+    app.finish()?;
+    assert!(matches!(
+        app.advance(Duration::ZERO, InputFrame::new()),
+        Err(AdvanceError::System(_))
+    ));
+
+    assert!(matches!(
+        app.world_initializer(),
+        Err(InitializationError::Failed)
+    ));
+    Ok(())
 }

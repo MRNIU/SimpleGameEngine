@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use sge_ecs::{EcsError, World};
+use sge_ecs::{EcsError, World, WorldInitializer};
 use sge_input::InputFrame;
 use sge_reflect::{RegistryError, TypeDescriptor, TypeRegistry};
 
@@ -66,6 +66,20 @@ impl EngineApp {
     #[must_use]
     pub const fn world(&self) -> &World {
         &self.world
+    }
+
+    /// Borrows the restricted scene initialization surface before runtime execution begins.
+    pub fn world_initializer(&mut self) -> Result<WorldInitializer<'_>, InitializationError> {
+        if !self.finished {
+            return Err(InitializationError::NotFinished);
+        }
+        if self.failed {
+            return Err(InitializationError::Failed);
+        }
+        if self.started {
+            return Err(InitializationError::AlreadyStarted);
+        }
+        Ok(self.world.initializer())
     }
 
     #[must_use]
@@ -284,4 +298,14 @@ pub enum AdvanceError {
     Failed,
     #[error(transparent)]
     System(#[from] SystemError),
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum InitializationError {
+    #[error("EngineApp registration is not finished")]
+    NotFinished,
+    #[error("EngineApp runtime has already started")]
+    AlreadyStarted,
+    #[error("EngineApp stopped after a system failure")]
+    Failed,
 }

@@ -2,7 +2,10 @@
 //
 //! Static game library composition through the Core Kernel only.
 
-use std::time::Duration;
+use std::{
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
+};
 
 use sge_app::{
     EngineApp, EngineBuildError, FixedTime, GameDescriptor, Plugin, RegistrationError,
@@ -197,6 +200,13 @@ fn create_unfinished_app() -> Result<EngineApp, EngineBuildError> {
     Ok(EngineApp::new())
 }
 
+static FACTORY_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+fn create_counted_app() -> Result<EngineApp, EngineBuildError> {
+    FACTORY_CALLS.fetch_add(1, Ordering::SeqCst);
+    create_game_app()
+}
+
 #[test]
 fn descriptor_rejects_invalid_id_and_unfinished_factory() {
     assert!(matches!(
@@ -207,4 +217,22 @@ fn descriptor_rejects_invalid_id_and_unfinished_factory() {
         GameDescriptor::new("unfinished", create_unfinished_app).create_app(),
         Err(EngineBuildError::FactoryReturnedUnfinishedApp)
     ));
+}
+
+#[test]
+fn descriptor_validates_type_key_grammar_before_calling_factory()
+-> Result<(), Box<dyn std::error::Error>> {
+    FACTORY_CALLS.store(0, Ordering::SeqCst);
+    for invalid in ["", "game/id", "game id", "游戏"] {
+        assert!(matches!(
+            GameDescriptor::new(invalid, create_counted_app).create_app(),
+            Err(EngineBuildError::InvalidGameId)
+        ));
+        assert_eq!(FACTORY_CALLS.load(Ordering::SeqCst), 0);
+    }
+
+    let mut app = GameDescriptor::new("demo.game-1_ok", create_counted_app).create_app()?;
+    assert_eq!(FACTORY_CALLS.load(Ordering::SeqCst), 1);
+    assert!(app.world_initializer().is_ok());
+    Ok(())
 }

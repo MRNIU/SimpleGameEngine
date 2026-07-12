@@ -2,7 +2,7 @@
 
 use std::{
     any::{Any, TypeId, type_name},
-    collections::{HashMap, hash_map::Entry},
+    collections::{BTreeSet, HashMap, hash_map::Entry},
 };
 
 use crate::{
@@ -21,10 +21,18 @@ pub enum EcsError {
     DuplicateResourceType(&'static str),
     #[error("component type is not registered: {0}")]
     UnregisteredComponentType(&'static str),
+    #[error("component TypeId is not registered: {0:?}")]
+    UnregisteredComponentTypeId(TypeId),
     #[error("resource type is not registered: {0}")]
     UnregisteredResourceType(&'static str),
     #[error("entity is not alive: {0:?}")]
     EntityNotAlive(Entity),
+    #[error("entity was not created by this initializer: {0:?}")]
+    InitializerEntityNotOwned(Entity),
+    #[error("component {type_id:?} is already attached to entity {entity:?}")]
+    DuplicateComponentOnEntity { entity: Entity, type_id: TypeId },
+    #[error("boxed component TypeId mismatch: declared {declared:?}, actual {actual:?}")]
+    ComponentTypeMismatch { declared: TypeId, actual: TypeId },
 }
 
 pub struct World {
@@ -33,6 +41,13 @@ pub struct World {
     resource_types: HashMap<TypeId, &'static str>,
     resources: HashMap<TypeId, Box<dyn Any>>,
     registration_finished: bool,
+}
+
+/// Restricted, non-transactional writer for constructing new entities in a candidate [`World`].
+/// Callers must discard that candidate if any initialization operation fails.
+pub struct WorldInitializer<'world> {
+    world: &'world mut World,
+    spawned: BTreeSet<Entity>,
 }
 
 impl World {
@@ -93,6 +108,14 @@ impl World {
         self.entities.spawn()
     }
 
+    /// Borrows the raw world through its restricted initialization surface.
+    pub fn initializer(&mut self) -> WorldInitializer<'_> {
+        WorldInitializer {
+            world: self,
+            spawned: BTreeSet::new(),
+        }
+    }
+
     #[must_use]
     pub fn is_alive(&self, entity: Entity) -> bool {
         self.entities.is_alive(entity)
@@ -127,6 +150,21 @@ impl World {
             .storage_mut::<T>()
             .ok_or(EcsError::UnregisteredComponentType(type_name::<T>()))?;
         Ok(storage.values.insert(entity, value))
+    }
+
+    /// Reads a registered component without exposing its storage or mutable access.
+    pub fn component_erased(
+        &self,
+        entity: Entity,
+        type_id: TypeId,
+    ) -> Result<Option<&dyn Any>, EcsError> {
+        if !self.is_alive(entity) {
+            return Err(EcsError::EntityNotAlive(entity));
+        }
+        let Some(storage) = self.components.get(&type_id) else {
+            return Err(EcsError::UnregisteredComponentTypeId(type_id));
+        };
+        Ok(storage.get_erased(entity))
     }
 
     #[must_use]
@@ -215,6 +253,74 @@ impl World {
             .get_mut(&TypeId::of::<T>())?
             .as_any_mut()
             .downcast_mut()
+    }
+}
+
+impl WorldInitializer<'_> {
+    #[must_use]
+    pub fn component_is_registered(&self, type_id: TypeId) -> bool {
+        self.world.components.contains_key(&type_id)
+    }
+
+    pub fn spawn(&mut self) -> Entity {
+        let entity = self.world.spawn();
+        self.spawned.insert(entity);
+        entity
+    }
+
+    pub fn insert<T: 'static>(&mut self, entity: Entity, value: T) -> Result<(), EcsError> {
+        self.ensure_owned(entity)?;
+        if !self.world.is_alive(entity) {
+            return Err(EcsError::EntityNotAlive(entity));
+        }
+        let type_id = TypeId::of::<T>();
+        if !self.world.component_is_registered::<T>() {
+            return Err(EcsError::UnregisteredComponentType(type_name::<T>()));
+        }
+        if self.world.component_erased(entity, type_id)?.is_some() {
+            return Err(EcsError::DuplicateComponentOnEntity { entity, type_id });
+        }
+        let _ = self.world.insert(entity, value)?;
+        Ok(())
+    }
+
+    pub fn insert_erased(
+        &mut self,
+        entity: Entity,
+        type_id: TypeId,
+        value: Box<dyn Any>,
+    ) -> Result<(), EcsError> {
+        self.ensure_owned(entity)?;
+        if !self.world.is_alive(entity) {
+            return Err(EcsError::EntityNotAlive(entity));
+        }
+        let actual = value.as_ref().type_id();
+        let Some(storage) = self.world.components.get_mut(&type_id) else {
+            return Err(EcsError::UnregisteredComponentTypeId(type_id));
+        };
+        if actual != type_id {
+            return Err(EcsError::ComponentTypeMismatch {
+                declared: type_id,
+                actual,
+            });
+        }
+        if storage.get_erased(entity).is_some() {
+            return Err(EcsError::DuplicateComponentOnEntity { entity, type_id });
+        }
+        storage
+            .insert_boxed(entity, value)
+            .map_err(|value| EcsError::ComponentTypeMismatch {
+                declared: type_id,
+                actual: value.as_ref().type_id(),
+            })
+    }
+
+    fn ensure_owned(&self, entity: Entity) -> Result<(), EcsError> {
+        if self.spawned.contains(&entity) {
+            Ok(())
+        } else {
+            Err(EcsError::InitializerEntityNotOwned(entity))
+        }
     }
 }
 

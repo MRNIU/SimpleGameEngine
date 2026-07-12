@@ -1,5 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
+/// Opaque entity handle whose identity is meaningful only within the [`crate::World`] that
+/// created it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Entity {
     index: u32,

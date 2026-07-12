@@ -7,7 +7,7 @@ mod game;
 mod schedule;
 mod time;
 
-pub use engine::{AdvanceError, EngineApp, RegistrationError};
+pub use engine::{AdvanceError, EngineApp, InitializationError, RegistrationError};
 pub use game::{CreateAppFn, EngineBuildError, GameDescriptor, Plugin};
 pub use schedule::{
     ComponentAccess, ResourceAccess, ScheduleLabel, System, SystemBuilder, SystemContext,

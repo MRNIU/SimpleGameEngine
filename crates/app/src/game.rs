@@ -1,5 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
+use sge_reflect::TypeKey;
+
 use crate::{EngineApp, RegistrationError};
 
 pub trait Plugin {
@@ -30,9 +32,7 @@ impl GameDescriptor {
 
     /// Creates a fresh Ready app whose registration is finished and whose runtime has not started.
     pub fn create_app(&self) -> Result<EngineApp, EngineBuildError> {
-        if self.game_id.is_empty() {
-            return Err(EngineBuildError::InvalidGameId);
-        }
+        let _ = TypeKey::new(self.game_id).map_err(|_| EngineBuildError::InvalidGameId)?;
         let app = (self.create_app)()?;
         if !app.is_finished() {
             return Err(EngineBuildError::FactoryReturnedUnfinishedApp);
@@ -48,7 +48,7 @@ impl GameDescriptor {
 pub enum EngineBuildError {
     #[error(transparent)]
     Registration(#[from] RegistrationError),
-    #[error("game id cannot be empty")]
+    #[error("game id must use reflected TypeKey syntax")]
     InvalidGameId,
     #[error("game factory returned an unfinished EngineApp")]
     FactoryReturnedUnfinishedApp,
