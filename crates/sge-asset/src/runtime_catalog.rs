@@ -1,9 +1,10 @@
 // Copyright The SimpleGameEngine Contributors
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use sge_reflect::{KeyError, TypeKey};
+use sha2::{Digest, Sha256};
 
 use crate::{
     AssetId, AssetIdError, MESH_ASSET_TYPE_KEY, RuntimeGenerationId, RuntimeGenerationIdError,
@@ -113,53 +114,63 @@ impl RuntimeAssetRecord {
 }
 
 impl RuntimeAssetCatalog {
-    pub fn new(
+    fn from_parts(
         game_id: TypeKey,
         generation: RuntimeGenerationId,
         entry_scene: RuntimeProductPath,
-        mut assets: Vec<RuntimeAssetRecord>,
+        assets: Vec<RuntimeAssetRecord>,
     ) -> Result<Self, RuntimeCatalogError> {
-        if entry_scene.as_str() != ENTRY_SCENE_PATH {
-            return Err(RuntimeCatalogError::InvalidEntryScene { path: entry_scene });
-        }
-        assets.sort_unstable_by_key(|record| record.id);
-        if let Some(id) = assets
-            .windows(2)
-            .find(|pair| pair[0].id == pair[1].id)
-            .map(|pair| pair[0].id)
-        {
-            return Err(RuntimeCatalogError::DuplicateAssetId { id });
-        }
-        let mut products = BTreeSet::new();
-        for record in &assets {
-            if !products.insert(record.product.clone()) {
-                return Err(RuntimeCatalogError::DuplicateProductPath {
-                    path: record.product.clone(),
-                });
-            }
-        }
-        let ids = assets
-            .iter()
-            .map(|record| record.id)
-            .collect::<BTreeSet<_>>();
-        for record in &assets {
-            if let Some(dependency) = record
-                .dependencies
-                .iter()
-                .find(|dependency| !ids.contains(dependency))
-            {
-                return Err(RuntimeCatalogError::MissingDependency {
-                    asset: record.id,
-                    dependency: *dependency,
-                });
-            }
-        }
+        let assets = validated_assets(&entry_scene, assets)?;
         Ok(Self {
             game_id,
             generation,
             entry_scene,
             assets,
         })
+    }
+
+    pub fn build(
+        game_id: TypeKey,
+        entry_scene: RuntimeProductPath,
+        assets: Vec<RuntimeAssetRecord>,
+        entry_scene_bytes: &[u8],
+        product_bytes: &BTreeMap<AssetId, Vec<u8>>,
+    ) -> Result<Self, RuntimeCatalogError> {
+        let assets = validated_assets(&entry_scene, assets)?;
+        let generation = catalog_content_digest(
+            &game_id,
+            &entry_scene,
+            &assets,
+            entry_scene_bytes,
+            product_bytes,
+        )?;
+        Ok(Self {
+            game_id,
+            generation,
+            entry_scene,
+            assets,
+        })
+    }
+
+    pub fn verify_generation(
+        &self,
+        entry_scene_bytes: &[u8],
+        product_bytes: &BTreeMap<AssetId, Vec<u8>>,
+    ) -> Result<(), RuntimeCatalogError> {
+        let actual = catalog_content_digest(
+            &self.game_id,
+            &self.entry_scene,
+            &self.assets,
+            entry_scene_bytes,
+            product_bytes,
+        )?;
+        if actual != self.generation {
+            return Err(RuntimeCatalogError::GenerationMismatch {
+                expected: self.generation.clone(),
+                actual,
+            });
+        }
+        Ok(())
     }
 
     pub fn from_ron(input: &str) -> Result<Self, RuntimeCatalogError> {
@@ -198,7 +209,7 @@ impl RuntimeAssetCatalog {
             .into_iter()
             .map(RuntimeAssetRecord::try_from)
             .collect::<Result<Vec<_>, _>>()?;
-        Self::new(game_id, generation, entry_scene, assets)
+        Self::from_parts(game_id, generation, entry_scene, assets)
     }
 
     pub fn to_ron(&self) -> Result<String, RuntimeCatalogError> {
@@ -253,6 +264,99 @@ impl RuntimeAssetCatalog {
             .ok()
             .map(|index| &self.assets[index])
     }
+}
+
+fn validated_assets(
+    entry_scene: &RuntimeProductPath,
+    mut assets: Vec<RuntimeAssetRecord>,
+) -> Result<Vec<RuntimeAssetRecord>, RuntimeCatalogError> {
+    if entry_scene.as_str() != ENTRY_SCENE_PATH {
+        return Err(RuntimeCatalogError::InvalidEntryScene {
+            path: entry_scene.clone(),
+        });
+    }
+    assets.sort_unstable_by_key(|record| record.id);
+    if let Some(id) = assets
+        .windows(2)
+        .find(|pair| pair[0].id == pair[1].id)
+        .map(|pair| pair[0].id)
+    {
+        return Err(RuntimeCatalogError::DuplicateAssetId { id });
+    }
+    let mut products = BTreeSet::new();
+    for record in &assets {
+        if !products.insert(record.product.clone()) {
+            return Err(RuntimeCatalogError::DuplicateProductPath {
+                path: record.product.clone(),
+            });
+        }
+    }
+    let ids = assets
+        .iter()
+        .map(|record| record.id)
+        .collect::<BTreeSet<_>>();
+    for record in &assets {
+        if let Some(dependency) = record
+            .dependencies
+            .iter()
+            .find(|dependency| !ids.contains(dependency))
+        {
+            return Err(RuntimeCatalogError::MissingDependency {
+                asset: record.id,
+                dependency: *dependency,
+            });
+        }
+    }
+    Ok(assets)
+}
+
+fn catalog_content_digest(
+    game_id: &TypeKey,
+    entry_scene: &RuntimeProductPath,
+    assets: &[RuntimeAssetRecord],
+    entry_scene_bytes: &[u8],
+    product_bytes: &BTreeMap<AssetId, Vec<u8>>,
+) -> Result<RuntimeGenerationId, RuntimeCatalogError> {
+    for record in assets {
+        if !product_bytes.contains_key(&record.id) {
+            return Err(RuntimeCatalogError::MissingProductBytes { id: record.id });
+        }
+    }
+    if let Some(id) = product_bytes
+        .keys()
+        .find(|id| assets.binary_search_by(|record| record.id.cmp(id)).is_err())
+    {
+        return Err(RuntimeCatalogError::UnexpectedProductBytes { id: *id });
+    }
+
+    let mut hasher = Sha256::new();
+    hash_frame(&mut hasher, b"sge-runtime-generation-v1");
+    hasher.update(RUNTIME_ASSET_CATALOG_FORMAT_VERSION.to_be_bytes());
+    hash_frame(&mut hasher, game_id.as_str().as_bytes());
+    hash_frame(&mut hasher, entry_scene.as_str().as_bytes());
+    hash_frame(&mut hasher, entry_scene_bytes);
+    hasher.update((assets.len() as u64).to_be_bytes());
+    for record in assets {
+        hash_frame(&mut hasher, record.id.to_string().as_bytes());
+        hash_frame(&mut hasher, record.asset_type.as_str().as_bytes());
+        hash_frame(&mut hasher, record.product.as_str().as_bytes());
+        hasher.update((record.dependencies.len() as u64).to_be_bytes());
+        for dependency in &record.dependencies {
+            hash_frame(&mut hasher, dependency.to_string().as_bytes());
+        }
+        let bytes = product_bytes
+            .get(&record.id)
+            .ok_or(RuntimeCatalogError::MissingProductBytes { id: record.id })?;
+        hash_frame(&mut hasher, bytes);
+    }
+    format!("{:x}", hasher.finalize())
+        .parse()
+        .map_err(|source| RuntimeCatalogError::InvalidGeneration { source })
+}
+
+fn hash_frame(hasher: &mut Sha256, bytes: &[u8]) {
+    hasher.update((bytes.len() as u64).to_be_bytes());
+    hasher.update(bytes);
 }
 
 impl TryFrom<RuntimeAssetRecordWire> for RuntimeAssetRecord {
@@ -356,4 +460,13 @@ pub enum RuntimeCatalogError {
     DuplicateProductPath { path: RuntimeProductPath },
     #[error("runtime asset {asset} depends on missing asset {dependency}")]
     MissingDependency { asset: AssetId, dependency: AssetId },
+    #[error("runtime catalog is missing product bytes for asset {id}")]
+    MissingProductBytes { id: AssetId },
+    #[error("runtime catalog received unexpected product bytes for asset {id}")]
+    UnexpectedProductBytes { id: AssetId },
+    #[error("runtime generation mismatch: expected {expected}, computed {actual}")]
+    GenerationMismatch {
+        expected: RuntimeGenerationId,
+        actual: RuntimeGenerationId,
+    },
 }

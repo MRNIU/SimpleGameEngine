@@ -1,5 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
+use std::collections::BTreeMap;
+
 use sge_asset::{
     AssetId, MESH_ASSET_TYPE_KEY, RuntimeAssetCatalog, RuntimeAssetRecord, RuntimeCatalogError,
     RuntimeGenerationId, RuntimeProductPath,
@@ -8,10 +10,6 @@ use sge_reflect::TypeKey;
 
 fn asset_id(value: u128) -> Result<AssetId, Box<dyn std::error::Error>> {
     Ok(format!("{value:08x}-0000-4000-8000-000000000001").parse()?)
-}
-
-fn generation() -> Result<RuntimeGenerationId, Box<dyn std::error::Error>> {
-    Ok("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".parse()?)
 }
 
 fn mesh_record(id: AssetId) -> Result<RuntimeAssetRecord, Box<dyn std::error::Error>> {
@@ -26,11 +24,16 @@ fn mesh_record(id: AssetId) -> Result<RuntimeAssetRecord, Box<dyn std::error::Er
 fn catalog(
     records: Vec<RuntimeAssetRecord>,
 ) -> Result<RuntimeAssetCatalog, Box<dyn std::error::Error>> {
-    Ok(RuntimeAssetCatalog::new(
+    let products = records
+        .iter()
+        .map(|record| (*record.id(), Vec::new()))
+        .collect::<BTreeMap<_, _>>();
+    Ok(RuntimeAssetCatalog::build(
         TypeKey::new("demo.game")?,
-        generation()?,
         RuntimeProductPath::new("Scenes/entry.runtime-scene.ron")?,
         records,
+        b"scene",
+        &products,
     )?)
 }
 
@@ -94,7 +97,7 @@ fn catalog_sorts_records_and_dependencies_and_exposes_borrowed_fields()
     let catalog = catalog(vec![unknown, mesh_record(first)?])?;
 
     assert_eq!(catalog.game_id().as_str(), "demo.game");
-    assert_eq!(catalog.generation(), &generation()?);
+    assert_eq!(catalog.generation().as_str().len(), 64);
     assert_eq!(
         catalog.entry_scene().as_str(),
         "Scenes/entry.runtime-scene.ron"
@@ -156,11 +159,12 @@ fn catalog_enforces_entry_and_product_roles_but_accepts_unknown_types_and_cycles
     let first = asset_id(0x1000_0000)?;
     let second = asset_id(0x2000_0000)?;
     assert!(
-        RuntimeAssetCatalog::new(
+        RuntimeAssetCatalog::build(
             TypeKey::new("demo.game")?,
-            generation()?,
             RuntimeProductPath::new("Scenes/other.runtime-scene.ron")?,
             vec![],
+            b"scene",
+            &BTreeMap::new(),
         )
         .is_err()
     );
