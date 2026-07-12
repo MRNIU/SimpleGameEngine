@@ -164,6 +164,13 @@ canonical。所有平台统一拒绝：
   拒绝，而不是跟随或覆盖。
 - 所有 durable read/write 都经过同一 containment gate。
 
+M2 的 containment 合同针对 lexical path、已有 symlink 和普通单写者 project workflow；
+`ProjectRoot` 要求调用方对 project 写入拥有排他权。它不声称能抵御另一个恶意进程在
+containment preflight 与文件 open 之间替换目录树。`atomic-write-file` 从成功 open 开始
+固定同目录 replace 目标并提供 old-or-new 内容原子性，但不把 open 之前的 path 检查变成
+跨平台 capability traversal。若产品以后需要对抗并发敌对文件系统修改，必须另立安全规格
+并采用逐级目录句柄/平台 API；不能把静态 canonicalize 测试误报为该安全证明。
+
 普通 open 是纯读取：不能创建目录、scene、manifest 或默认内容。显式 project creation
 可以先创建约定目录，再调用相同 atomic write API 发布完整文件。
 
