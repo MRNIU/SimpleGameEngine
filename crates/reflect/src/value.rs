@@ -1,8 +1,11 @@
 // Copyright The SimpleGameEngine Contributors
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt};
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{self, MapAccess, Visitor},
+};
 
 use crate::{FieldKey, KeyError, TypeKey};
 
@@ -126,8 +129,49 @@ impl FieldMetadata {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct FieldValues(BTreeMap<FieldKey, Value>);
+
+impl<'de> Deserialize<'de> for FieldValues {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct FieldValuesVisitor;
+
+        impl<'de> Visitor<'de> for FieldValuesVisitor {
+            type Value = FieldValues;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a map of unique reflected field keys")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut fields = BTreeMap::new();
+                while let Some((key, value)) = map.next_entry::<FieldKey, Value>()? {
+                    if fields.insert(key.clone(), value).is_some() {
+                        return Err(de::Error::custom(format_args!(
+                            "duplicate reflected field key: {key}"
+                        )));
+                    }
+                }
+                Ok(FieldValues(fields))
+            }
+
+            fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                deserializer.deserialize_map(self)
+            }
+        }
+
+        deserializer.deserialize_newtype_struct("FieldValues", FieldValuesVisitor)
+    }
+}
 
 impl FieldValues {
     #[must_use]
@@ -164,6 +208,7 @@ impl FieldValues {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReflectedValue {
     type_key: TypeKey,
     schema_version: u32,

@@ -13,6 +13,7 @@ members = [
   "crates/scene",
   "crates/sge-asset",
   "crates/sge-ecs",
+  "crates/sge-scene",
 ]
 resolver = "3"
 

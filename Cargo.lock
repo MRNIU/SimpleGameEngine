@@ -2532,9 +2532,22 @@ dependencies = [
 name = "sge-reflect"
 version = "0.1.0"
 dependencies = [
+ "ron",
  "serde",
  "sge-math",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "sge-scene"
+version = "0.1.0"
+dependencies = [
+ "ron",
+ "serde",
+ "sge-asset",
+ "sge-reflect",
+ "thiserror 2.0.18",
+ "uuid",
 ]
 
 [[package]]
