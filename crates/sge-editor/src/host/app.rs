@@ -1,0 +1,222 @@
+// Copyright The SimpleGameEngine Contributors
+
+use std::{
+    sync::{Arc, atomic::Ordering},
+    time::{Duration, Instant},
+};
+
+use eframe::egui;
+
+use crate::preview;
+
+use super::{
+    EditorApp, EditorUiAction, project_identity_labels, request_screenshot, save_screenshot,
+};
+
+impl eframe::App for EditorApp {
+    fn logic(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
+        if context.current_pass_index() != 0 {
+            return;
+        }
+        if let Some(build) = self.build.as_mut() {
+            build.poll();
+        }
+        if self.screenshot_requested_at.is_some()
+            && let Some(image) = context.input(|input| {
+                input.events.iter().find_map(|event| match event {
+                    egui::Event::Screenshot { image, .. } => Some(Arc::clone(image)),
+                    _ => None,
+                })
+            })
+        {
+            let result = save_screenshot(self.screenshot.take(), image.as_ref());
+            if let Some(sender) = self.screenshot_result.take() {
+                let _ = sender.send(result);
+            }
+            context.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+        if self
+            .screenshot_requested_at
+            .is_some_and(|requested| requested.elapsed() >= Duration::from_secs(5))
+        {
+            if let Some(sender) = self.screenshot_result.take() {
+                let _ = sender.send(Err("GPU screenshot readback timed out".to_owned()));
+            }
+            context.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+        if self.screenshot_requested_at.is_some() {
+            request_screenshot(context);
+            return;
+        }
+        self.frames = self.frames.saturating_add(1);
+        if self.pending_ui_build {
+            let Some(build) = self.build.as_ref() else {
+                self.pending_ui_build = false;
+                self.last_error = Some("Build launcher disappeared while running".to_owned());
+                self.ui_actions.clear();
+                context.request_repaint();
+                return;
+            };
+            if build.is_running() {
+                context.request_repaint();
+                return;
+            }
+            self.pending_ui_build = false;
+            if build.failed() {
+                self.last_error = Some(build.status_text().to_owned());
+                self.ui_actions.clear();
+            } else {
+                self.ui_action_count.fetch_add(1, Ordering::Relaxed);
+            }
+            context.request_repaint();
+            return;
+        }
+        if self.frames >= 3
+            && let Some(action) = self.ui_actions.pop_front()
+        {
+            let build = action == EditorUiAction::Build;
+            match self.apply_ui_action(action) {
+                Ok(()) => {
+                    if build {
+                        self.pending_ui_build = true;
+                    } else {
+                        self.ui_action_count.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+                Err(error) => {
+                    self.last_error = Some(error);
+                    self.ui_actions.clear();
+                }
+            }
+            context.request_repaint();
+            return;
+        }
+        if self.screenshot.is_some()
+            && self.screenshot_requested_at.is_none()
+            && self.frames >= 3
+            && self.ui_actions.is_empty()
+        {
+            self.screenshot_requested_at = Some(Instant::now());
+            request_screenshot(context);
+            return;
+        }
+        if self.probe.report().error.is_some()
+            || self.max_frames.is_some_and(|max| self.frames >= max)
+        {
+            context.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else {
+            context.request_repaint();
+        }
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if self.pending_replacement.is_some() {
+            self.unsaved_changes_dialog(ui.ctx());
+            return;
+        }
+        self.apply_editor_shortcuts(ui);
+        if !self.immersive_viewport {
+            egui::Panel::top("project_identity").show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    for label in project_identity_labels(
+                        self.session.descriptor().game_id().as_str(),
+                        &self.project_root,
+                    ) {
+                        ui.label(label);
+                        ui.separator();
+                    }
+                    self.file_controls(ui);
+                    if self.play.is_some() {
+                        if ui.button("Stop").clicked() {
+                            let _ = self.apply_ui_action(EditorUiAction::StopPlay);
+                        }
+                    } else if ui.button("Play").clicked() {
+                        let _ = self.apply_ui_action(EditorUiAction::StartPlay);
+                    }
+                    self.build_controls(ui);
+                    if ui
+                        .add_enabled(self.play.is_none(), egui::Button::new("Save"))
+                        .clicked()
+                    {
+                        let _ = self.apply_ui_action(EditorUiAction::Save);
+                    }
+                    if ui
+                        .add_enabled(self.play.is_none(), egui::Button::new("Undo"))
+                        .clicked()
+                    {
+                        let _ = self.apply_ui_action(EditorUiAction::Undo);
+                    }
+                    if ui
+                        .add_enabled(self.play.is_none(), egui::Button::new("Redo"))
+                        .clicked()
+                    {
+                        let _ = self.apply_ui_action(EditorUiAction::Redo);
+                    }
+                    ui.label(if self.session.is_dirty() {
+                        "modified"
+                    } else {
+                        "saved"
+                    });
+                });
+            });
+        }
+        if self.pending_replacement.is_some() {
+            self.unsaved_changes_dialog(ui.ctx());
+            return;
+        }
+
+        if !self.immersive_viewport {
+            self.panel_layout
+                .begin_frame(ui.ctx(), ui.available_width());
+            self.inspector(ui);
+            self.hierarchy(ui);
+        }
+
+        let response = if let Some(frame) = &self.frame {
+            preview::paint(ui, frame, &self.probe, |ui, rect| {
+                self.viewport.paint_background(ui, rect, frame);
+            })
+        } else {
+            let available = ui.available_size_before_wrap();
+            let (rect, response) =
+                ui.allocate_exact_size(available, egui::Sense::focusable_noninteractive());
+            ui.painter()
+                .rect_filled(rect, 0.0, egui::Color32::from_gray(24));
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                self.diagnostic.as_deref().unwrap_or("Preview unavailable"),
+                egui::FontId::proportional(16.0),
+                egui::Color32::LIGHT_GRAY,
+            );
+            response
+        };
+        if self.play.is_none()
+            && let Some(frame) = self.frame.clone()
+        {
+            let result = self
+                .viewport
+                .interact(ui, &response, &frame, &mut self.session);
+            if let Err(error) = result {
+                self.last_error = Some(error.to_string());
+            } else {
+                self.refresh_frame();
+            }
+        }
+        if response.hovered() && ui.input(|input| input.pointer.any_pressed()) {
+            response.request_focus();
+        }
+        self.play_viewport_focused = self.play.is_some() && response.has_focus();
+
+        if let Some(error) = &self.last_error {
+            egui::Panel::bottom("editor_error").show(ui, |ui| {
+                ui.colored_label(egui::Color32::LIGHT_RED, error);
+            });
+        }
+        if ui.ctx().current_pass_index() == 0 {
+            self.advance_play(ui.ctx(), response.hovered());
+        }
+    }
+}
