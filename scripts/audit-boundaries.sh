@@ -146,7 +146,7 @@ audit_exact_files 'canonical WGPU pipeline owner' 'create_render_pipeline' \
 audit_exact_files 'canonical render backend facade owner' 'pub struct BackendRenderer' \
   'crates/sge-render/src/backend.rs' crates examples
 audit_exact_files 'canonical CPU renderer owner' 'pub struct CpuRenderer' \
-  'crates/sge-render/src/cpu.rs' crates examples
+  'crates/sge-render/src/cpu/mod.rs' crates examples
 audit_exact_files 'canonical frame performance owner' 'pub struct FramePerformanceMonitor' \
   'crates/sge-render/src/performance.rs' crates examples
 audit_exact_files 'retained bare OBJ callers' 'asset::load_obj_mesh' \
