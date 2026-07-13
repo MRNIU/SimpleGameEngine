@@ -27,11 +27,11 @@ Editor 与 Player 使用同一静态 game library、typed World、Reflect regist
 | `sge-math` | Transform 与 math types |
 | `sge-asset` | AssetId/AssetRef、MeshAsset、runtime catalog/content/store |
 | `sge-project` | project identity、portable paths、authoring manifest、atomic single-file I/O |
-| `sge-scene` | authoring/runtime scene、prepare/instantiate/snapshot |
+| `sge-scene` | authoring/runtime scene、SceneName、prepare/instantiate/snapshot |
 | `sge-asset-pipeline` | OBJ import、rebuildable cache、full Cook、immutable generation publication |
 | `sge-render` | reflected components、owned RenderSnapshot、retained GPU cache、direct/offscreen/shared WGPU path、safe surface |
 | `sge-player` | identity-first source-free PlayerSession、winit presentation/input loop |
-| `sge-editor` | candidate open、EditSession/Inspector/history/save、isolated PlaySession、egui input routing与 eframe callback host |
+| `sge-editor` | candidate open、EditSession/Inspector/history/save、authoring viewport/gizmo、isolated PlaySession、egui input routing与 eframe callback host |
 | `sge-build` | bootstrap launcher、full Cook/Cargo编排、immutable Stage generation与atomic current manifest |
 | `demo-game` | static game composition root与 shared Rotator/PlayerController systems |
 | `demo-game-player` / `demo-game-editor` / `demo-game-build` | thin product targets |
@@ -55,6 +55,8 @@ Editor 与 Player 使用同一静态 game library、typed World、Reflect regist
 - Player redraw 顺序固定为 advance -> extract/view -> acquire -> render -> submit -> present；仅 present 成功累计 frame。
 - Editor callback使用 eframe borrowed device/queue；store Arc identity变化先清 cache，callback error确定性关闭并返回 typed host error。
 - EditWorld是唯一 live authoring truth；mutation从 World snapshot构造 fresh candidate，成功 validation/instantiate后原子替换，不维护 mirrored DTO。
+- authoring viewport使用独立 editor camera与同一RenderSnapshot/WGPU callback；world grid/axis、六向ViewCube、geometry click selection和三轴gizmo不写入scene camera，gizmo只在release时通过通用history提交。
+- game-specific Editor独占native dialog依赖；New/Open replacement在dirty scene上必须经过Save/Discard/Cancel，project/scene路径仍受identity与ProjectRoot containment约束。
 - PlaySession每次由同一 GameDescriptor创建 fresh World；Stop直接 drop且不回写 EditWorld。
 - Player只映射 focused winit input；Editor只把 Play viewport focused且未被 egui消费的输入送入 gameplay，两者在 focus/capture边界清状态。
 - `sge build`只用ProjectBootstrap定位静态Build target；game-specific进程重新完整验证identity并直接Cook进unpublished Stage runtime。
@@ -87,4 +89,4 @@ M4–M7 额外证据：
 
 M1–M7 目标架构与独立 integration demo 已完成，没有新增 demo-only engine shortcut、第二 registry、第二 importer 或第二 WGPU backend。
 
-延期项包括但不限于：音频、物理、动画、Gameplay UI、脚本、网络、Prefab、Advanced Render/VFX、AI/Navigation、Asset Streaming/Hot Reload、Localization/Telemetry等待对应产品纵切；archive/Pak/compression/encryption/signing/installer/patch/DLC/chunk与远程/交叉编译矩阵等待发行需求；Play writeback、多实例/网络PIE、action remapping、gizmo等待编辑工作流需求；dynamic ABI、parallel ECS、RenderWorld、incremental Cook等待真实调用方或可测量的复杂度/性能触发。完整owner、触发条件与禁止占位边界见目标架构规格。当前只声明Linux/Xvfb与上述Apple Silicon macOS smoke覆盖的路径，不声明Windows、Intel Mac、其他GPU或物理输入设备已验证。
+延期项包括但不限于：音频、物理、动画、Gameplay UI、脚本、网络、Prefab、Advanced Render/VFX、AI/Navigation、Asset Streaming/Hot Reload、Localization/Telemetry等待对应产品纵切；archive/Pak/compression/encryption/signing/installer/patch/DLC/chunk与远程/交叉编译矩阵等待发行需求；Play writeback、多实例/网络PIE、action remapping等待编辑工作流需求；dynamic ABI、parallel ECS、RenderWorld、incremental Cook等待真实调用方或可测量的复杂度/性能触发。完整owner、触发条件与禁止占位边界见目标架构规格。当前只声明Linux/Xvfb与上述Apple Silicon macOS smoke覆盖的路径，不声明Windows、Intel Mac、其他GPU或物理输入设备已验证。

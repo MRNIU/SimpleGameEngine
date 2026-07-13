@@ -107,7 +107,7 @@ fn every_candidate_stage_failure_preserves_the_live_session()
 }
 
 #[test]
-fn render_incomplete_authoring_opens_with_preview_diagnostics()
+fn extraction_errors_remain_typed_while_scene_camera_is_optional_for_authoring()
 -> Result<(), Box<dyn std::error::Error>> {
     let extraction = TestProject::new("bad-extract")?;
     extraction.replace_scene(MATERIAL_COMPONENT, "")?;
@@ -120,12 +120,7 @@ fn render_incomplete_authoring_opens_with_preview_diagnostics()
     let view = TestProject::new("bad-view")?;
     view.replace_scene("\"active\": Bool(true)", "\"active\": Bool(false)")?;
     let view_session = EditSession::open(demo_game::GAME, view.path())?;
-    assert!(matches!(
-        view_session.preview_frame(),
-        Err(EditorPreviewError::View(
-            sge_render::RenderViewError::MissingActiveCamera
-        ))
-    ));
+    assert!(view_session.preview_frame().is_ok());
     Ok(())
 }
 

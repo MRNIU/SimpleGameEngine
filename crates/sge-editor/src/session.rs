@@ -5,9 +5,9 @@ use std::{path::Path, sync::Arc};
 use sge_app::{EngineApp, GameDescriptor};
 use sge_asset::RuntimeAssetStore;
 use sge_asset_pipeline::import_project_assets;
-use sge_project::{AuthoringAssetManifest, ProjectDescriptor, ProjectRoot};
+use sge_project::{AuthoringAssetManifest, ProjectDescriptor, ProjectPath, ProjectRoot};
 use sge_reflect::{FieldKey, ReflectError, ReflectedValue, TypeKey, Value};
-use sge_render::{RenderSnapshot, RenderView, extract};
+use sge_render::{Camera, RenderSnapshot, RenderView, extract};
 use sge_scene::{
     AuthoringEntity, AuthoringScene, SceneEntityId, SceneInstance, instantiate, prepare, snapshot,
 };
@@ -18,6 +18,7 @@ use crate::{
 };
 
 mod mutation;
+pub use mutation::{CreatedMeshEntity, PrimitiveKind};
 
 pub struct EditSession {
     game: GameDescriptor,
@@ -27,6 +28,7 @@ pub struct EditSession {
     app: EngineApp,
     instance: SceneInstance,
     assets: Arc<RuntimeAssetStore>,
+    scene_path: ProjectPath,
     selection: Option<SceneEntityId>,
     history: Vec<HistoryCommand>,
     cursor: usize,
@@ -38,6 +40,7 @@ pub struct PreviewFrame {
     pub snapshot: RenderSnapshot,
     pub view: RenderView,
     pub assets: Arc<RuntimeAssetStore>,
+    pub scene_entities: Vec<(SceneEntityId, sge_ecs::Entity)>,
 }
 
 #[derive(Default)]
@@ -65,6 +68,10 @@ enum HistoryCommand {
         before: Option<AuthoringEntity>,
         after: Option<AuthoringEntity>,
     },
+    Scene {
+        before: AuthoringScene,
+        after: AuthoringScene,
+    },
 }
 
 impl EditSession {
@@ -81,6 +88,7 @@ impl EditSession {
         let scene_bytes = project.read(descriptor.default_authoring_scene())?;
         let scene_text = std::str::from_utf8(&scene_bytes)?;
         let scene = AuthoringScene::from_ron(scene_text)?;
+        let scene_path = descriptor.default_authoring_scene().clone();
         let mut app = game.create_app()?;
         let prepared = prepare(&scene, app.type_registry(), assets.as_ref())?;
         let instance = instantiate(prepared, app.world_initializer()?)?;
@@ -92,6 +100,7 @@ impl EditSession {
             app,
             instance,
             assets,
+            scene_path,
             selection: None,
             history: Vec::new(),
             cursor: 0,
@@ -109,11 +118,16 @@ impl EditSession {
 
     pub fn preview_frame(&self) -> Result<PreviewFrame, EditorPreviewError> {
         let snapshot = extract(self.app.world(), self.assets.as_ref())?;
-        let view = RenderView::from_active_camera(&snapshot)?;
+        let view = RenderView::editor(sge_math::Transform::identity(), Camera::default());
         Ok(PreviewFrame {
             snapshot,
             view,
             assets: Arc::clone(&self.assets),
+            scene_entities: self
+                .instance
+                .iter()
+                .map(|(scene, runtime)| (*scene, runtime))
+                .collect(),
         })
     }
 
@@ -227,12 +241,40 @@ impl EditSession {
 
     pub fn save(&mut self) -> Result<(), EditError> {
         let encoded = self.snapshot()?.to_ron()?;
-        self.project.write_atomic(
-            self.descriptor.default_authoring_scene(),
-            encoded.as_bytes(),
-        )?;
+        self.project
+            .write_atomic(&self.scene_path, encoded.as_bytes())?;
         self.saved_cursor = Some(self.cursor);
         Ok(())
+    }
+
+    pub fn save_as(&mut self, path: ProjectPath) -> Result<(), EditError> {
+        let encoded = self.snapshot()?.to_ron()?;
+        self.project.write_atomic(&path, encoded.as_bytes())?;
+        self.scene_path = path;
+        self.saved_cursor = Some(self.cursor);
+        Ok(())
+    }
+
+    pub fn open_scene(&mut self, path: ProjectPath) -> Result<(), EditError> {
+        let bytes = self.project.read(&path)?;
+        let text = std::str::from_utf8(&bytes)?;
+        let scene = AuthoringScene::from_ron(text)?;
+        let mut app = self.game.create_app()?;
+        let prepared = prepare(&scene, app.type_registry(), self.assets.as_ref())?;
+        let instance = instantiate(prepared, app.world_initializer()?)?;
+        self.app = app;
+        self.instance = instance;
+        self.scene_path = path;
+        self.selection = None;
+        self.history.clear();
+        self.cursor = 0;
+        self.saved_cursor = Some(0);
+        Ok(())
+    }
+
+    #[must_use]
+    pub const fn scene_path(&self) -> &ProjectPath {
+        &self.scene_path
     }
 
     #[must_use]
@@ -274,13 +316,28 @@ impl EditSession {
 
     fn execute(&mut self, command: HistoryCommand) -> Result<(), EditError> {
         self.apply_and_commit(&command, true)?;
+        self.record_command(command);
+        Ok(())
+    }
+
+    fn commit_candidate(
+        &mut self,
+        command: HistoryCommand,
+        app: EngineApp,
+        instance: SceneInstance,
+    ) {
+        self.app = app;
+        self.instance = instance;
+        self.record_command(command);
+    }
+
+    fn record_command(&mut self, command: HistoryCommand) {
         if self.saved_cursor.is_some_and(|saved| saved > self.cursor) {
             self.saved_cursor = None;
         }
         self.history.truncate(self.cursor);
         self.history.push(command);
         self.cursor += 1;
-        Ok(())
     }
 
     fn apply_and_commit(
@@ -376,6 +433,13 @@ fn apply_command(
             if let Some(value) = target {
                 entities.push(value.clone());
             }
+        }
+        HistoryCommand::Scene { before, after } => {
+            return Ok(if forward {
+                after.clone()
+            } else {
+                before.clone()
+            });
         }
     }
     Ok(AuthoringScene::new(entities)?)

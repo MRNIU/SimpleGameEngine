@@ -107,7 +107,7 @@ audit_tree demo-game-build \
 audit_tree sge-editor \
   '^(asset|ecs|scene|runtime|sge-build|editor|render|rfd) v'
 audit_tree demo-game-editor \
-  '^(asset|ecs|scene|runtime|sge-build|editor|render|rfd) v'
+  '^(asset|ecs|scene|runtime|sge-build|editor|render) v'
 
 target_sources=(
   crates/app/src

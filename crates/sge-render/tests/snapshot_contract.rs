@@ -78,7 +78,7 @@ fn extractor_builds_typed_sorted_snapshot_and_view() -> Result<(), Box<dyn std::
     assert_eq!(snapshot.meshes()[0].mesh().id(), &asset);
     assert_eq!(snapshot.cameras()[0].entity(), camera_entity);
     assert_eq!(snapshot.lights()[0].entity(), light_entity);
-    assert_eq!(view.entity(), camera_entity);
+    assert_eq!(view.entity(), Some(camera_entity));
     Ok(())
 }
 

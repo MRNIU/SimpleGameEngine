@@ -19,6 +19,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前实现
 - `sge-render` 同时服务 eframe offscreen callback 与 winit surface；retained GPU cache 以 `AssetId` 为 key，store replacement 会清 cache，Player surface 只通过安全 `Arc<Window>` 创建。
 - `sge-player` 只读取 cooked root并把 winit event映射为逐帧 `InputFrame`；production dependency 不包含 project、source pipeline、OBJ parser、Editor 或 native dialog。
 - `sge-editor` identity-first 打开 target project；EditWorld 是唯一 live authoring truth，Reflect Inspector、entity/component mutation、Undo/Redo、atomic save与独立 PlaySession共用 scene validation/factory。
+- authoring viewport提供独立camera、world grid/axis、六向ViewCube、mesh geometry click selection与三轴Move/Rotate/Scale gizmo；P1文件工作流由game-specific Editor提供native dialogs，替换dirty scene前要求Save/Discard/Cancel。
 - `examples/demo_game/` 包含固定 `AssetId` OBJ、带 `Rotator` / `PlayerController` 的 authoring scene、静态 game library 和薄 game-specific Editor/Player/Build targets；同一 plugin在 headless、Editor Play、Player与Cook validation运行。
 - bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与旧 sample 已删除，不保留第二套 schema、ECS 或 WGPU backend。
 - 最终 integration demo 从临时 authoring project 经 Inspector edit、Play、真实 `sge build`、copied Stage 到 staged Player 串联同一公开产品路径。延期项包括但不限于 archive/Pak、签名、installer、远程/交叉编译矩阵和完整 build settings UI；完整清单与触发条件见目标架构规格。
@@ -72,6 +73,9 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-p
 # game-specific demo Editor：打开 project、进入独立 Play并真实 advance/WGPU prepare/paint
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-editor --test editor_product game_specific_editor_plays_and_paints_preview -- --ignored --exact'
 
+# game-specific demo Editor authoring viewport：独立camera/grid/ViewCube/gizmo路径真实WGPU prepare/paint
+docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-editor --test editor_product game_specific_editor_paints_the_authoring_viewport -- --ignored --exact'
+
 # 查看 game-specific host 参数
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p demo-game-player -- --help'
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p demo-game-editor -- --help'
@@ -123,6 +127,8 @@ PLAYER_REL="$(sed -n 's/^[[:space:]]*executable_path: "\([^"]*\)",$/\1/p' "$STAG
 ```
 
 Editor打开project时会生成ignored import cache；Build输出位于ignored `build/`。Player从Stage同级runtime自定位，不需要source project或OBJ parser。
+
+Editor authoring viewport 操作：右键拖动观察，按住右键使用 `W/A/S/D/Q/E` 飞行，滚轮前后移动，`Alt+左键` 环绕，`F` 聚焦选中实体；viewport聚焦后用 `W/E/R` 切换Move/Rotate/Scale gizmo。Hierarchy可创建带名称实体或Cube/Sphere/Cone/Cylinder，primitive全部走正式OBJ import与AssetId路径。
 
 当前已验证Apple Silicon macOS 26.5.1上的原生workspace build、120帧Editor WGPU preview、dev Stage和120帧staged Player present；尚未验证Intel Mac、其他macOS版本/GPU或物理输入设备。
 

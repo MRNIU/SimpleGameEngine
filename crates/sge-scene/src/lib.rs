@@ -4,6 +4,7 @@
 
 mod document;
 mod id;
+mod name;
 mod runtime;
 mod snapshot;
 mod transfer;
@@ -15,6 +16,7 @@ pub use document::{
 pub use id::{
     Parent, SceneEntityId, SceneEntityIdError, parent_descriptor, scene_entity_id_descriptor,
 };
+pub use name::{SceneName, scene_name_descriptor};
 pub use runtime::{
     RUNTIME_SCENE_FORMAT_VERSION, RuntimeEntity, RuntimeScene, RuntimeSceneBuild,
     RuntimeSceneBuildError, RuntimeSceneFormatError, build_runtime_scene, prepare_runtime,

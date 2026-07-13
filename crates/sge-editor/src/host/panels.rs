@@ -1,7 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
 use eframe::egui;
-use sge_scene::{AuthoringEntity, SceneEntityId};
+use sge_scene::{AuthoringEntity, SceneEntityId, SceneName};
 
 use super::EditorApp;
 use crate::inspector_ui;
@@ -14,22 +14,46 @@ impl EditorApp {
             .show(ui, |ui| {
                 ui.heading("Hierarchy");
                 if self.play.is_none() && ui.button("New Entity").clicked() {
-                    let id = SceneEntityId::new_v4();
-                    let result = AuthoringEntity::new(id, None, Vec::new())
-                        .map_err(crate::EditError::from)
-                        .and_then(|entity| self.session.add_entity(entity))
-                        .and_then(|()| self.session.select(Some(id)));
-                    self.apply_edit(result);
+                    match self.session.create_entity("Entity") {
+                        Ok(entity) => {
+                            let result = self.session.select(Some(entity));
+                            self.apply_edit(result);
+                        }
+                        Err(error) => self.last_error = Some(error.to_string()),
+                    }
                 }
+                ui.menu_button("Create Primitive", |ui| {
+                    for (label, primitive) in [
+                        ("Cube", crate::PrimitiveKind::Cube),
+                        ("Sphere", crate::PrimitiveKind::Sphere),
+                        ("Cone", crate::PrimitiveKind::Cone),
+                        ("Cylinder", crate::PrimitiveKind::Cylinder),
+                    ] {
+                        if ui.button(label).clicked() {
+                            ui.close();
+                            match self.session.create_primitive(primitive) {
+                                Ok(created) => {
+                                    let result = self.session.select(Some(created.entity));
+                                    self.apply_edit(result);
+                                }
+                                Err(error) => self.last_error = Some(error.to_string()),
+                            }
+                        }
+                    }
+                });
                 let selection = self.session.selection();
                 match self.session.snapshot() {
                     Ok(scene) => {
                         for entity in scene.entities() {
+                            let label = self
+                                .session
+                                .component::<SceneName>(entity.id())
+                                .map_or_else(
+                                    || entity.id().to_string(),
+                                    |name| name.as_str().to_owned(),
+                                );
                             if ui
-                                .selectable_label(
-                                    selection == Some(entity.id()),
-                                    entity.id().to_string(),
-                                )
+                                .selectable_label(selection == Some(entity.id()), label)
                                 .clicked()
                             {
                                 let result = self.session.select(Some(entity.id()));
@@ -41,10 +65,47 @@ impl EditorApp {
                 }
                 if self.play.is_none()
                     && let Some(selection) = self.session.selection()
-                    && ui.button("Delete Selected").clicked()
                 {
-                    let result = self.session.remove_entity(selection);
-                    self.apply_edit(result);
+                    ui.horizontal(|ui| {
+                        if ui.button("Duplicate").clicked() {
+                            match self.session.duplicate_entity(selection) {
+                                Ok(entity) => {
+                                    let result = self.session.select(Some(entity));
+                                    self.apply_edit(result);
+                                }
+                                Err(error) => self.last_error = Some(error.to_string()),
+                            }
+                        }
+                        if ui.button("Delete Subtree").clicked() {
+                            let result = self.session.remove_subtree(selection);
+                            self.apply_edit(result);
+                        }
+                    });
+                    let parents = self
+                        .session
+                        .snapshot()
+                        .map(|scene| {
+                            scene
+                                .entities()
+                                .filter(|entity| entity.id() != selection)
+                                .map(AuthoringEntity::id)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    ui.menu_button("Reparent", |ui| {
+                        if ui.button("Root").clicked() {
+                            ui.close();
+                            let result = self.session.reparent_entity(selection, None);
+                            self.apply_edit(result);
+                        }
+                        for parent in parents {
+                            if ui.button(parent.to_string()).clicked() {
+                                ui.close();
+                                let result = self.session.reparent_entity(selection, Some(parent));
+                                self.apply_edit(result);
+                            }
+                        }
+                    });
                 }
             });
     }

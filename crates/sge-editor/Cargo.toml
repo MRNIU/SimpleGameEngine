@@ -10,6 +10,7 @@ eframe.workspace = true
 sge-app = { path = "../app" }
 sge-asset = { path = "../sge-asset" }
 sge-asset-pipeline = { path = "../sge-asset-pipeline" }
+sge-ecs = { path = "../sge-ecs" }
 sge-input = { path = "../input" }
 sge-math = { path = "../math" }
 sge-project = { path = "../project" }

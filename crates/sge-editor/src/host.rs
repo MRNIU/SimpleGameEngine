@@ -17,16 +17,31 @@ use sge_reflect::{ReflectedValue, TypeKey};
 use crate::{
     EditSession, EditorBuildLauncher, EditorInputAccumulator, EditorOpenError, PlaySession,
     PlayStartError, PreviewFrame, PreviewProbe, build::BuildProcess, inspector_ui, preview,
+    viewport::EditorViewport,
 };
 
 mod panels;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+pub type NewProjectDialog = fn() -> Result<Option<PathBuf>, String>;
+pub type OpenProjectDialog = fn() -> Option<PathBuf>;
+pub type ProjectFileDialog = fn(&Path) -> Option<PathBuf>;
+
+#[derive(Debug, Clone, Copy)]
+pub struct EditorFileDialogs {
+    pub new_project: NewProjectDialog,
+    pub open_project: OpenProjectDialog,
+    pub open_scene: ProjectFileDialog,
+    pub save_scene: ProjectFileDialog,
+    pub import_obj: ProjectFileDialog,
+}
+
+#[derive(Debug, Clone)]
 pub struct EditorRunOptions {
     pub max_frames: Option<u64>,
     pub initial_size: [u32; 2],
     pub start_in_play: bool,
     pub build_launcher: Option<EditorBuildLauncher>,
+    pub file_dialogs: Option<EditorFileDialogs>,
 }
 
 impl Default for EditorRunOptions {
@@ -36,6 +51,7 @@ impl Default for EditorRunOptions {
             initial_size: [1280, 720],
             start_in_play: false,
             build_launcher: None,
+            file_dialogs: None,
         }
     }
 }
@@ -63,7 +79,11 @@ pub fn run(
     } else {
         None
     };
-    let initial_frame = current_frame(&session, play.as_ref());
+    let mut viewport = EditorViewport::default();
+    let mut initial_frame = current_frame(&session, play.as_ref());
+    if let Ok(frame) = &mut initial_frame {
+        viewport.prepare(frame);
+    }
     let preview_expected = initial_frame.is_ok();
     let probe = PreviewProbe::default();
     let report_probe = probe.clone();
@@ -111,6 +131,9 @@ pub fn run(
                 component_draft: None,
                 inspector_drafts: inspector_ui::InspectorDrafts::default(),
                 build,
+                file_dialogs: options.file_dialogs,
+                pending_replacement: None,
+                viewport,
             }))
         }),
     )
@@ -150,12 +173,25 @@ struct EditorApp {
     component_draft: Option<ReflectedValue>,
     inspector_drafts: inspector_ui::InspectorDrafts,
     build: Option<BuildProcess>,
+    file_dialogs: Option<EditorFileDialogs>,
+    pending_replacement: Option<ReplacementDialog>,
+    viewport: EditorViewport,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ReplacementDialog {
+    NewProject,
+    OpenProject,
+    OpenScene,
 }
 
 impl EditorApp {
     fn refresh_frame(&mut self) {
         match current_frame(&self.session, self.play.as_ref()) {
-            Ok(frame) => {
+            Ok(mut frame) => {
+                if self.play.is_none() {
+                    self.viewport.prepare(&mut frame);
+                }
                 self.frame = Some(frame);
                 self.diagnostic = None;
             }
@@ -219,6 +255,10 @@ impl eframe::App for EditorApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if self.pending_replacement.is_some() {
+            self.unsaved_changes_dialog(ui.ctx());
+            return;
+        }
         egui::Panel::top("project_identity").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("SimpleGameEngine Editor");
@@ -230,6 +270,7 @@ impl eframe::App for EditorApp {
                 ui.separator();
                 ui.label(self.project_root.display().to_string());
                 ui.separator();
+                self.file_controls(ui);
                 if self.play.is_some() {
                     if ui.button("Stop").clicked() {
                         self.stop_play();
@@ -266,6 +307,10 @@ impl eframe::App for EditorApp {
                 });
             });
         });
+        if self.pending_replacement.is_some() {
+            self.unsaved_changes_dialog(ui.ctx());
+            return;
+        }
 
         self.hierarchy(ui);
         self.inspector(ui);
@@ -287,6 +332,18 @@ impl eframe::App for EditorApp {
             );
             response
         };
+        if self.play.is_none()
+            && let Some(frame) = self.frame.clone()
+        {
+            let result = self
+                .viewport
+                .interact(ui, &response, &frame, &mut self.session);
+            if let Err(error) = result {
+                self.last_error = Some(error.to_string());
+            } else {
+                self.refresh_frame();
+            }
+        }
         if response.hovered() && ui.input(|input| input.pointer.any_pressed()) {
             response.request_focus();
         }
@@ -304,6 +361,142 @@ impl eframe::App for EditorApp {
 }
 
 impl EditorApp {
+    fn file_controls(&mut self, ui: &mut egui::Ui) {
+        if self.play.is_some() {
+            return;
+        }
+        let Some(dialogs) = self.file_dialogs else {
+            return;
+        };
+        let mut replacement = None;
+        ui.menu_button("File", |ui| {
+            if ui.button("New Project…").clicked() {
+                ui.close();
+                replacement = Some(ReplacementDialog::NewProject);
+            }
+            if ui.button("Open Project…").clicked() {
+                ui.close();
+                replacement = Some(ReplacementDialog::OpenProject);
+            }
+            if ui.button("Open Scene…").clicked() {
+                ui.close();
+                replacement = Some(ReplacementDialog::OpenScene);
+            }
+            if ui.button("Save Scene As…").clicked() {
+                ui.close();
+                if let Some(path) = (dialogs.save_scene)(&self.project_root) {
+                    match project_path(&self.project_root, &path)
+                        .and_then(|path| self.session.save_as(path).map_err(|e| e.to_string()))
+                    {
+                        Ok(()) => self.apply_edit(Ok(())),
+                        Err(error) => self.last_error = Some(error),
+                    }
+                }
+            }
+            if ui.button("Import OBJ…").clicked() {
+                ui.close();
+                if let Some(path) = (dialogs.import_obj)(&self.project_root) {
+                    match self.session.import_obj(path) {
+                        Ok(created) => {
+                            let result = self.session.select(Some(created.entity));
+                            self.apply_edit(result);
+                        }
+                        Err(error) => self.last_error = Some(error.to_string()),
+                    }
+                }
+            }
+        });
+        if let Some(replacement) = replacement {
+            if self.session.is_dirty() {
+                self.pending_replacement = Some(replacement);
+            } else {
+                self.run_replacement_dialog(dialogs, replacement);
+            }
+        }
+    }
+
+    fn unsaved_changes_dialog(&mut self, context: &egui::Context) {
+        let Some(replacement) = self.pending_replacement else {
+            return;
+        };
+        let mut decision = None;
+        egui::Window::new("Unsaved scene changes")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label("Save the current scene before continuing?");
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        decision = Some(true);
+                    }
+                    if ui.button("Discard").clicked() {
+                        decision = Some(false);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.pending_replacement = None;
+                    }
+                });
+            });
+        let Some(save) = decision else {
+            return;
+        };
+        if save && let Err(error) = self.session.save() {
+            self.last_error = Some(error.to_string());
+            return;
+        }
+        self.pending_replacement = None;
+        if let Some(dialogs) = self.file_dialogs {
+            self.run_replacement_dialog(dialogs, replacement);
+        }
+    }
+
+    fn run_replacement_dialog(
+        &mut self,
+        dialogs: EditorFileDialogs,
+        replacement: ReplacementDialog,
+    ) {
+        match replacement {
+            ReplacementDialog::NewProject => match (dialogs.new_project)().and_then(|path| {
+                path.map_or(Ok(None), |path| {
+                    EditSession::open(self.session.game(), &path)
+                        .map_err(|error| error.to_string())
+                        .map(|session| Some((session, path)))
+                })
+            }) {
+                Ok(Some((session, path))) => self.replace_session(session, path),
+                Ok(None) => {}
+                Err(error) => self.last_error = Some(error),
+            },
+            ReplacementDialog::OpenProject => {
+                if let Some(root) = (dialogs.open_project)() {
+                    match EditSession::open(self.session.game(), &root) {
+                        Ok(session) => self.replace_session(session, root),
+                        Err(error) => self.last_error = Some(error.to_string()),
+                    }
+                }
+            }
+            ReplacementDialog::OpenScene => {
+                if let Some(path) = (dialogs.open_scene)(&self.project_root) {
+                    match project_path(&self.project_root, &path)
+                        .and_then(|path| self.session.open_scene(path).map_err(|e| e.to_string()))
+                    {
+                        Ok(()) => self.apply_edit(Ok(())),
+                        Err(error) => self.last_error = Some(error),
+                    }
+                }
+            }
+        }
+    }
+
+    fn replace_session(&mut self, session: EditSession, root: PathBuf) {
+        self.session = session;
+        self.project_root = root;
+        self.play = None;
+        self.viewport = EditorViewport::default();
+        self.last_error = None;
+        self.refresh_frame();
+    }
+
     fn build_controls(&mut self, ui: &mut egui::Ui) {
         let Some(build) = self.build.as_mut() else {
             return;
@@ -355,6 +548,16 @@ impl EditorApp {
             }
         }
     }
+}
+
+fn project_path(root: &Path, path: &Path) -> Result<sge_project::ProjectPath, String> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| "selected path must remain inside the project root".to_owned())?;
+    let text = relative
+        .to_str()
+        .ok_or_else(|| "project path must be UTF-8".to_owned())?;
+    sge_project::ProjectPath::new(text).map_err(|error| error.to_string())
 }
 
 fn current_frame(

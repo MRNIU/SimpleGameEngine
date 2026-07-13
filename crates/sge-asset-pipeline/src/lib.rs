@@ -22,6 +22,13 @@ pub struct ImportedAssetSet {
     outcomes: Vec<(AssetId, CacheStatus)>,
 }
 
+pub fn validate_obj_source(
+    record: &sge_project::SourceAssetRecord,
+    bytes: &[u8],
+) -> Result<(), ObjImportError> {
+    obj::parse_obj(record, bytes).map(|_| ())
+}
+
 impl ImportedAssetSet {
     #[must_use]
     pub const fn store(&self) -> &RuntimeAssetStore {

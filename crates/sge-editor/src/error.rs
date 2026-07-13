@@ -1,8 +1,8 @@
 // Copyright The SimpleGameEngine Contributors
 
 use sge_app::{EngineBuildError, InitializationError};
-use sge_asset_pipeline::ProjectAssetImportError;
-use sge_project::{ManifestError, ProjectFormatError, ProjectIoError};
+use sge_asset_pipeline::{ObjImportError, ProjectAssetImportError};
+use sge_project::{ManifestError, ProjectFormatError, ProjectIoError, ProjectPathError};
 use sge_reflect::{KeyError, ReflectError};
 use sge_render::{RenderExtractionError, RenderViewError};
 use sge_scene::{
@@ -86,8 +86,24 @@ pub enum EditError {
     Instantiation(#[from] SceneInstantiationError),
     #[error(transparent)]
     SceneFormat(#[from] SceneFormatError),
+    #[error("authoring scene is not UTF-8: {0}")]
+    SceneText(#[from] std::str::Utf8Error),
     #[error(transparent)]
     Project(#[from] ProjectIoError),
+    #[error(transparent)]
+    ProjectPath(#[from] ProjectPathError),
+    #[error(transparent)]
+    Manifest(#[from] ManifestError),
+    #[error("cannot read source asset {path:?}: {source}")]
+    SourceRead {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error(transparent)]
+    Import(#[from] ProjectAssetImportError),
+    #[error(transparent)]
+    ObjImport(#[from] ObjImportError),
 }
 
 impl From<SceneValidationError> for EditError {

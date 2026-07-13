@@ -39,7 +39,9 @@ pub struct RenderLight {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderView {
-    camera: RenderCamera,
+    entity: Option<Entity>,
+    transform: Transform,
+    camera: Camera,
 }
 
 impl RenderSnapshot {
@@ -56,6 +58,14 @@ impl RenderSnapshot {
     #[must_use]
     pub fn lights(&self) -> &[RenderLight] {
         &self.lights
+    }
+
+    pub fn set_mesh_transform(&mut self, entity: Entity, transform: Transform) -> bool {
+        let Some(mesh) = self.meshes.iter_mut().find(|mesh| mesh.entity == entity) else {
+            return false;
+        };
+        mesh.transform = transform;
+        true
     }
 }
 
@@ -158,6 +168,15 @@ impl RenderLight {
 }
 
 impl RenderView {
+    #[must_use]
+    pub const fn editor(transform: Transform, camera: Camera) -> Self {
+        Self {
+            entity: None,
+            transform,
+            camera,
+        }
+    }
+
     pub fn from_active_camera(snapshot: &RenderSnapshot) -> Result<Self, RenderViewError> {
         let mut active = snapshot
             .cameras
@@ -171,22 +190,26 @@ impl RenderView {
                 second: second.entity,
             });
         }
-        Ok(Self { camera })
+        Ok(Self {
+            entity: Some(camera.entity),
+            transform: camera.transform,
+            camera: camera.camera,
+        })
     }
 
     #[must_use]
-    pub const fn entity(self) -> Entity {
-        self.camera.entity
+    pub const fn entity(self) -> Option<Entity> {
+        self.entity
     }
 
     #[must_use]
     pub const fn transform(self) -> Transform {
-        self.camera.transform
+        self.transform
     }
 
     #[must_use]
     pub const fn camera(self) -> Camera {
-        self.camera.camera
+        self.camera
     }
 }
 
@@ -196,6 +219,6 @@ pub enum RenderViewError {
     MissingActiveCamera,
     #[error("render snapshot has multiple active cameras: {first:?} and {second:?}")]
     MultipleActiveCameras { first: Entity, second: Entity },
-    #[error("active camera {entity:?} has an invalid projection")]
-    InvalidProjection { entity: Entity },
+    #[error("render view {entity:?} has an invalid projection")]
+    InvalidProjection { entity: Option<Entity> },
 }

@@ -5,11 +5,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use sge_editor::{EditError, EditSession, EditorPreviewError};
+use sge_editor::{EditError, EditSession, PrimitiveKind};
 use sge_input::{Button, InputFrame, KeyCode};
 use sge_math::Transform;
+use sge_project::ProjectPath;
 use sge_reflect::{FieldKind, Value};
-use sge_scene::{AuthoringEntity, SceneEntityId};
+use sge_scene::{AuthoringEntity, SceneEntityId, SceneName};
 
 const CAMERA: &str = "50000000-0000-4000-8000-000000000001";
 const MESH: &str = "50000000-0000-4000-8000-000000000002";
@@ -167,19 +168,14 @@ fn saved_cursor_and_atomic_save_follow_committed_history() -> Result<(), Box<dyn
 }
 
 #[test]
-fn valid_authoring_without_active_camera_reports_preview_diagnostic()
+fn valid_authoring_without_active_camera_uses_the_independent_editor_view()
 -> Result<(), Box<dyn std::error::Error>> {
     let project = TestProject::new("preview-diagnostic")?;
     let mut session = EditSession::open(demo_game::GAME, project.path())?;
 
     session.remove_component(id(CAMERA)?, "sge.camera")?;
 
-    assert!(matches!(
-        session.preview_frame(),
-        Err(EditorPreviewError::View(
-            sge_render::RenderViewError::MissingActiveCamera
-        ))
-    ));
+    assert!(session.preview_frame().is_ok());
     assert!(session.is_dirty());
     Ok(())
 }
@@ -228,6 +224,107 @@ fn play_uses_a_fresh_world_and_drop_preserves_edit_world() -> Result<(), Box<dyn
     Ok(())
 }
 
+#[test]
+fn authoring_workflow_uses_generic_history_and_formal_assets()
+-> Result<(), Box<dyn std::error::Error>> {
+    let project = TestProject::new("authoring-workflow")?;
+    let mut session = EditSession::open(demo_game::GAME, project.path())?;
+    let mesh = id(MESH)?;
+    let camera = id(CAMERA)?;
+
+    session.rename_entity(mesh, "Hero")?;
+    assert_eq!(
+        session
+            .component::<SceneName>(mesh)
+            .ok_or("missing SceneName")?
+            .as_str(),
+        "Hero"
+    );
+    let duplicate = session.duplicate_entity(mesh)?;
+    assert_eq!(
+        session
+            .component::<SceneName>(duplicate)
+            .ok_or("missing duplicate SceneName")?
+            .as_str(),
+        "Hero Copy"
+    );
+    session.reparent_entity(duplicate, Some(camera))?;
+    assert_eq!(parent(&session, duplicate)?, Some(camera));
+    session.undo()?;
+    assert_eq!(parent(&session, duplicate)?, None);
+    session.redo()?;
+    session.remove_subtree(camera)?;
+    assert!(!has_entity(&session, camera)?);
+    assert!(!has_entity(&session, duplicate)?);
+    session.undo()?;
+    assert!(has_entity(&session, camera)?);
+    assert!(has_entity(&session, duplicate)?);
+
+    let imported = session.import_obj(project.path().join("Content/Meshes/demo.obj"))?;
+    assert!(
+        session
+            .manifest()
+            .records()
+            .iter()
+            .any(|record| record.id() == imported.asset)
+    );
+    assert!(has_entity(&session, imported.entity)?);
+    assert_eq!(
+        mesh_asset(&session, imported.entity)?,
+        imported.asset.to_string()
+    );
+    let source_count = fs::read_dir(project.path().join("Content/Meshes"))?.count();
+    let invalid = project.path().join("invalid.obj");
+    fs::write(&invalid, b"not an obj")?;
+    assert!(session.import_obj(&invalid).is_err());
+    assert_eq!(
+        fs::read_dir(project.path().join("Content/Meshes"))?.count(),
+        source_count
+    );
+
+    let cube = session.create_cube()?;
+    assert!(
+        session
+            .manifest()
+            .records()
+            .iter()
+            .any(|record| record.id() == cube.asset)
+    );
+    assert!(has_entity(&session, cube.entity)?);
+    assert_eq!(mesh_asset(&session, cube.entity)?, cube.asset.to_string());
+    for primitive in [
+        PrimitiveKind::Sphere,
+        PrimitiveKind::Cone,
+        PrimitiveKind::Cylinder,
+    ] {
+        let created = session.create_primitive(primitive)?;
+        assert!(has_entity(&session, created.entity)?);
+        assert_eq!(
+            mesh_asset(&session, created.entity)?,
+            created.asset.to_string()
+        );
+    }
+    let empty = session.create_entity("Empty")?;
+    assert_eq!(
+        session
+            .component::<SceneName>(empty)
+            .ok_or("missing empty entity name")?
+            .as_str(),
+        "Empty"
+    );
+
+    let alternate = ProjectPath::new("Scenes/alternate.scene.ron")?;
+    session.save_as(alternate.clone())?;
+    assert_eq!(session.scene_path(), &alternate);
+    assert!(project.path().join(alternate.as_str()).is_file());
+    let missing_parent = ProjectPath::new("Missing/failed.scene.ron")?;
+    assert!(session.save_as(missing_parent).is_err());
+    assert_eq!(session.scene_path(), &alternate);
+    session.open_scene(ProjectPath::new("Scenes/main.scene.ron")?)?;
+    assert_eq!(session.scene_path().as_str(), "Scenes/main.scene.ron");
+    Ok(())
+}
+
 fn field(
     session: &EditSession,
     entity: SceneEntityId,
@@ -269,6 +366,28 @@ fn has_entity(session: &EditSession, entity: SceneEntityId) -> Result<bool, Edit
         .snapshot()?
         .entities()
         .any(|candidate| candidate.id() == entity))
+}
+
+fn parent(
+    session: &EditSession,
+    entity: SceneEntityId,
+) -> Result<Option<SceneEntityId>, Box<dyn std::error::Error>> {
+    session
+        .snapshot()?
+        .entities()
+        .find(|candidate| candidate.id() == entity)
+        .map(AuthoringEntity::parent)
+        .ok_or_else(|| format!("missing {entity}").into())
+}
+
+fn mesh_asset(
+    session: &EditSession,
+    entity: SceneEntityId,
+) -> Result<String, Box<dyn std::error::Error>> {
+    match field(session, entity, "sge.mesh_renderer", "mesh")? {
+        Value::Reference(asset) => Ok(asset),
+        other => Err(format!("unexpected mesh field: {other:?}").into()),
+    }
 }
 
 fn id(value: &str) -> Result<SceneEntityId, Box<dyn std::error::Error>> {

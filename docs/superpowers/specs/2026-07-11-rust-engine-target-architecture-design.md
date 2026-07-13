@@ -655,7 +655,7 @@ Package/Pak、压缩、签名、installer、DLC 和 chunking 均延期。
 | AI/Navigation | Plugin、ECS、Asset/Cook | 出现具体 gameplay 和导航数据 cook/runtime 需求 | `sge-ai`、`sge-navigation` 和通用 behaviour-tree framework |
 | Asset Streaming/Hot Reload | AssetId、runtime asset state、显式 Editor reload | 内容规模需要按需加载，或 Editor 迭代明确要求热重载，并先定义 lifetime/failure 合同 | background streaming、watcher、runtime source fallback |
 | Localization/Telemetry | 独立产品或工具插件 | 出现具体内容、运营或诊断要求 | core 内置 localization、remote crash upload、analytics |
-| Editor Manipulation | EditSession mutation/history、viewport input、Reflect Inspector | 出现可验证的场景空间编辑工作流，并先定义坐标系、selection、snapping与history合同 | transform gizmo、scene handles、action remapping |
+| Editor Manipulation | EditSession mutation/history、viewport input、Reflect Inspector | transform gizmo 已由 P1 authoring workflow 触发并在当前边界实现；后续 handles/remapping仍需独立可验证工作流 | scene handles、action remapping、snapping |
 
 这些子系统将来可以成为 crate，也可以先在 game crate 内证明合同。只有职责拥有多个真实调用方、需要独立依赖或独立演化时才拆 crate。
 
@@ -692,7 +692,7 @@ Package/Pak、压缩、签名、installer、DLC 和 chunking 均延期。
 - incremental Cook、Asset Processor daemon、SQLite catalog 和 distributed cache。
 - Pak/PCK、compression、encryption、patcher、DLC、chunk 和 cook-on-the-fly。
 - Play write-back、多实例 PIE 和 network PIE。
-- transform gizmo、scene handles、action remapping与高级viewport authoring交互。
+- scene handles、action remapping、snapping与更高级viewport authoring交互；基础editor camera/grid/ViewCube/selection/transform gizmo已实现。
 - 通用 project/editor launcher；当前直接运行明确的 game-specific Editor package，多游戏启动体验成为真实目标后另立规格。
 - runtime source parsing、Player importer 或 source fallback；这一项是永久禁止的产品边界，不是延期能力。
 

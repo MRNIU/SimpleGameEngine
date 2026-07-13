@@ -51,6 +51,11 @@ impl PlaySession {
             snapshot,
             view,
             assets: Arc::clone(&self.assets),
+            scene_entities: self
+                .instance
+                .iter()
+                .map(|(scene, runtime)| (*scene, runtime))
+                .collect(),
         })
     }
 

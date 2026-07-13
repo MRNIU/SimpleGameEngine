@@ -6,6 +6,13 @@
             parent: None,
             components: [
                 (
+                    type_key: "sge.name",
+                    schema_version: 1,
+                    fields: ({
+                        "value": String("Camera"),
+                    }),
+                ),
+                (
                     type_key: "sge.camera",
                     schema_version: 1,
                     fields: ({
@@ -32,6 +39,13 @@
             id: "50000000-0000-4000-8000-000000000002",
             parent: None,
             components: [
+                (
+                    type_key: "sge.name",
+                    schema_version: 1,
+                    fields: ({
+                        "value": String("Demo Mesh"),
+                    }),
+                ),
                 (
                     type_key: "demo.player_controller",
                     schema_version: 1,
@@ -75,6 +89,13 @@
             id: "50000000-0000-4000-8000-000000000003",
             parent: None,
             components: [
+                (
+                    type_key: "sge.name",
+                    schema_version: 1,
+                    fields: ({
+                        "value": String("Directional Light"),
+                    }),
+                ),
                 (
                     type_key: "sge.light",
                     schema_version: 1,

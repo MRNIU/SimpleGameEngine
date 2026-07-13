@@ -66,7 +66,7 @@ bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `e
 
 1. 阅读本文件、`README.md`、`docs/conventions.md`、`.gitmessage` 和当前 milestone spec。
 2. 检查 `git status --short`，保护用户和其他贡献者改动。
-3. 以当前源码、tests 和 tracked docs 为真值；`docs/superpowers/plans/` 只是 ignored 本地执行笔记。
+3. 以当前源码、tests 和 tracked docs 为真值；旧 `docs/superpowers/plans/` 与 `.superpowers/` scratch 已删除，不得恢复为状态真值。
 
 实施中：
 
@@ -85,6 +85,7 @@ bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `e
 最后审阅日期：2026-07-13
 
 - M1 Core Kernel、M2 Project And Data、M3 Asset Pipeline And Runtime Products、M4 Render And Hosts、M5 Editor Play、M6 Build And Stage、M7 Integration Demo 已完成。
+- 旧版P1 Editor能力已按当前边界吸纳：SceneName与entity workflow、game-specific native file dialogs、world-space authoring viewport、geometry selection、六向ViewCube和三轴transform gizmo。
 - `demo-game-editor --play` 打开 target project、运行独立 PlayWorld/game systems并真实执行 WGPU prepare/paint；Stop isolation有 headless roundtrip证据。
 - `demo-game-player` 从 source-free cooked root加载，使用 winit input adapter、advance/extract并真实 present。
 - `sge build` 启动 game-specific Build，full Cook后只接受本次Cargo Player artifact，并以immutable generation + atomic manifest发布可复制Stage。

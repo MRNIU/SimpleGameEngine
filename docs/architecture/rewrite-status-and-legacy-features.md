@@ -19,10 +19,10 @@
 | 构建与语言 | C++、CMake、SDL/Assimp、GoogleTest | Rust Cargo workspace | Rust 2024 workspace、Dev Container、统一 gate | 已替换；不恢复 CMake 路径 |
 | ECS 与游戏逻辑 | 无 ECS/game plugin | 固定 `EntityRecord` | typed ECS、Reflect、EngineApp、静态 game library、四阶段 schedule | 已替换并扩展 |
 | Project 与 scene | 直接加载模型，无 authoring project | project + `.scene.ron`，宽松字符串引用 | strict project/manifest/authoring/runtime scene、稳定 UUID、fail-closed | 已替换；旧格式不兼容 |
-| Asset pipeline | Assimp/OBJ、纹理和材质直接进入软件渲染 | OBJ manifest/import cache、内置 primitive | canonical OBJ、typed `AssetId`、rebuildable cache、full Cook/runtime products | 核心已吸纳；纹理和 primitive 尚未迁移 |
+| Asset pipeline | Assimp/OBJ、纹理和材质直接进入软件渲染 | OBJ manifest/import cache、内置 primitive | canonical OBJ、typed `AssetId`、rebuildable cache、full Cook/runtime products、四种primitive authoring source | OBJ与primitive已吸纳；纹理尚未迁移 |
 | Renderer | CPU 顶点/片段处理、光栅化、深度、Phong、多光源、per-triangle/tile/deferred 路径 | Editor WGPU viewport | Editor/Player 共用 owned snapshot 与唯一 WGPU backend；方向光、深度、batch/cache | backend 已替换；材质/纹理和高级光照可按产品纵切重做 |
-| Editor 数据编辑 | 无 | hierarchy、Inspector、create/delete/duplicate、Undo/Redo、文件工作流 | hierarchy、Reflect Inspector、entity/component mutation、Undo/Redo、atomic save | 核心已吸纳；命名、duplicate/reparent、完整文件 UX 待补 |
-| Editor viewport | 无 | Z-up camera、UE 风格导航、grid/axis、ViewCube、click selection、Move/Rotate/Scale gizmo、Pilot Camera | authoring/Play WGPU preview与Play input；无 editor camera/gizmo | 值得吸纳，但必须基于当前 EditSession/RenderSnapshot 重写 |
+| Editor 数据编辑 | 无 | hierarchy、Inspector、create/delete/duplicate、Undo/Redo、文件工作流 | reflected entity name、duplicate/reparent/subtree delete、通用 history、四种正式 AssetId primitive、native file workflow与未保存确认 | P1 已按当前 EditSession/ProjectRoot 重写，不恢复固定 EntityRecord |
+| Editor viewport | 无 | Z-up camera、UE 风格导航、grid/axis、ViewCube、click selection、Move/Rotate/Scale gizmo、Pilot Camera | 独立 editor camera、world grid/axis、六向 ViewCube、geometry/depth click selection、三轴 Move/Rotate/Scale gizmo | P1 已在唯一 RenderSnapshot/WGPU backend 上重写；Play 继续使用 game camera/input |
 | Runtime | SDL system-test render loop | source project loader smoke | source-free Player、winit input、持续 WGPU present | 已替换并闭环 |
 | Play/game input | 无 | 无正式 PlayWorld/game systems | isolated PlayWorld、game systems、input routing、Stop isolation | 当前新增能力 |
 | Build/Stage | CMake build tree | 无产品 Cook/Stage | game-specific Build、full Cook、immutable self-contained Stage | 当前新增能力 |
@@ -32,9 +32,9 @@
 
 | 优先级 | 旧能力 | 采用方式 | 不采用的旧边界 |
 | --- | --- | --- | --- |
-| P1 | editor camera、grid/axis、ViewCube、click selection、transform gizmo | 作为当前 `sge-editor` 的 authoring viewport 纵切，所有写入经过 EditSession/history | 不复制旧 `EditorModel`、旧 draw-call 或第二 WGPU backend |
-| P1 | New/Open Project、Open/Save As、Import OBJ 对话框 | 先放入 game-specific Editor，继续执行 game identity 与 ProjectRoot containment | 不恢复可编辑 path input或通用多游戏 launcher |
-| P1 | entity name、duplicate、reparent、subtree delete/undo、primitive 创建 | 扩展当前 reflected authoring scene和通用 history；primitive走正式 AssetId/runtime product | 不恢复固定 `EntityRecord` 字段或 `primitive:*` 字符串旁路 |
+| P1（已吸纳） | editor camera、grid/axis、ViewCube、click selection、transform gizmo | 当前 `sge-editor` authoring viewport；preview只改 owned snapshot，释放手柄时经 EditSession/history提交一次 | 未复制旧 `EditorModel`、旧 draw-call 或第二 WGPU backend |
+| P1（已吸纳） | New/Open Project、Open/Save As、Import OBJ 对话框 | `rfd`只由 game-specific Editor拥有，通用 host接收窄路径回调；identity、containment和未保存确认仍 fail closed | 未恢复可编辑 path input或通用多游戏 launcher |
+| P1（已吸纳） | entity name、duplicate、reparent、subtree delete/undo、primitive 创建 | reflected SceneName和通用 scene history；Cube/Sphere/Cone/Cylinder都经 OBJ importer、AssetId和runtime store | 未恢复固定 `EntityRecord` 字段或 `primitive:*` 字符串旁路 |
 | P2 | texture/material source pipeline | 定义 texture source、Cook product、typed reference、GPU cache和Inspector纵切后实现 | 不让 Player读取源图片，不直接移植 Assimp/旧 Texture 类 |
 | P2 | Phong/specular、多光源、back-face culling | 以一个可见 demo 和当前 RenderSnapshot/WGPU backend实现 | 不恢复 CPU renderer、多 backend facade或旧 uniform map |
 | 触发后 | frustum culling、tile/deferred 等优化 | 只有真实场景和测量结果证明需要时设计 | 不因旧版曾有实现而提前迁移 |
@@ -45,8 +45,8 @@
 
 这不等于“旧版全部用户体验已经恢复”或“成熟通用引擎已经完成”。下一阶段应按产品价值推进：
 
-1. 补齐 P1 Editor authoring UX，并扩展Intel Mac、Windows、其他GPU与物理输入验证。
-2. 根据 demo 需求选择 texture/material 或 primitive/content workflow纵切。
+1. 扩展Intel Mac、Windows、其他GPU与物理输入验证，并按真实编辑需求继续改善 hierarchy/tree 与 viewport 操作细节。
+2. 根据 demo 需求选择 texture/material content workflow纵切。
 3. 发行需要出现后再做 archive/Pak、签名、installer与跨平台发布矩阵。
 4. 音频、物理、动画、脚本、网络、PBR/VFX等继续遵守目标规格中的触发条件，不创建空壳。
 

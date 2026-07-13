@@ -5,7 +5,10 @@ mod systems;
 
 use sge_app::{EngineApp, EngineBuildError, GameDescriptor};
 use sge_render::RenderPlugin;
-use sge_scene::{Parent, SceneEntityId, parent_descriptor, scene_entity_id_descriptor};
+use sge_scene::{
+    Parent, SceneEntityId, SceneName, parent_descriptor, scene_entity_id_descriptor,
+    scene_name_descriptor,
+};
 
 pub use components::{PlayerController, Rotator};
 pub use systems::GameRuntimeState;
@@ -20,6 +23,9 @@ fn create_app() -> Result<EngineApp, EngineBuildError> {
     )?;
     app.register_reflected_component::<Parent>(
         parent_descriptor().expect("built-in parent descriptor must be valid"),
+    )?;
+    app.register_reflected_component::<SceneName>(
+        scene_name_descriptor().expect("built-in scene name descriptor must be valid"),
     )?;
     app.add_plugin(RenderPlugin)?;
     app.register_reflected_component::<Rotator>(components::rotator_descriptor())?;

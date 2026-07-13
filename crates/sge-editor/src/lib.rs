@@ -11,13 +11,17 @@ mod inspector_ui;
 mod play;
 mod preview;
 mod session;
+mod viewport;
 
 use input::EditorInputAccumulator;
 
 pub use build::EditorBuildLauncher;
 pub use error::{EditError, EditorOpenError, EditorPreviewError};
-pub use host::{EditorRunError, EditorRunOptions, EditorRunReport, run};
+pub use host::{
+    EditorFileDialogs, EditorRunError, EditorRunOptions, EditorRunReport, NewProjectDialog,
+    OpenProjectDialog, ProjectFileDialog, run,
+};
 pub use inspector::{InspectorComponent, InspectorField, SceneComponentType};
 pub use play::{PlaySession, PlayStartError};
 pub use preview::{PreviewProbe, PreviewProbeReport};
-pub use session::{EditSession, EditorWorkspace, PreviewFrame};
+pub use session::{CreatedMeshEntity, EditSession, EditorWorkspace, PreviewFrame, PrimitiveKind};

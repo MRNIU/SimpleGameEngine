@@ -91,6 +91,33 @@ fn game_specific_editor_plays_and_paints_preview() -> Result<(), Box<dyn std::er
     Ok(())
 }
 
+#[test]
+#[ignore = "requires a window system; run with xvfb-run"]
+fn game_specific_editor_paints_the_authoring_viewport() -> Result<(), Box<dyn std::error::Error>> {
+    let project = TestProject::new()?;
+    let _window_manager = WindowManager::start()?;
+    let output = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
+        .arg(project.path())
+        .args(["--max-frames", "120"])
+        .output()?;
+    assert!(
+        output.status.success(),
+        "editor stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout)?;
+    for field in ["preview_prepare=", "preview_paint="] {
+        let count = stdout
+            .split_whitespace()
+            .find_map(|value| value.strip_prefix(field))
+            .ok_or("missing authoring preview report")?
+            .parse::<u64>()?;
+        assert!(count > 0);
+    }
+    assert!(stdout.contains("play_frames=0"));
+    Ok(())
+}
+
 struct WindowManager(std::process::Child);
 
 impl WindowManager {

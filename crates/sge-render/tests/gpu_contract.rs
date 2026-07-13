@@ -36,7 +36,7 @@ fn projection_uses_wgpu_depth_and_rejects_zero_target() -> Result<(), Box<dyn st
 
     let matrix = view_projection_matrix(view, [800, 600])?;
     assert!(matrix.into_iter().all(f32::is_finite));
-    assert_eq!(view.entity(), entity);
+    assert_eq!(view.entity(), Some(entity));
     assert!(matches!(
         view_projection_matrix(view, [0, 600]),
         Err(ViewProjectionError::Target(RenderTargetError::ZeroSize))
