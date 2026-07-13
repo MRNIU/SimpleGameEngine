@@ -121,19 +121,14 @@ impl eframe::App for EditorApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        if self.pending_close_confirmation {
-            self.close_confirmation_dialog(ui.ctx());
-            return;
+        let modal_open = self.pending_close_confirmation
+            || self.pending_replacement.is_some()
+            || self.pending_build_confirmation;
+        if modal_open {
+            ui.disable();
+        } else {
+            self.apply_editor_shortcuts(ui);
         }
-        if self.pending_replacement.is_some() {
-            self.unsaved_changes_dialog(ui.ctx());
-            return;
-        }
-        if self.pending_build_confirmation {
-            self.build_confirmation_dialog(ui.ctx());
-            return;
-        }
-        self.apply_editor_shortcuts(ui);
         if !self.immersive_viewport {
             egui::Panel::top("project_identity").show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -192,11 +187,6 @@ impl eframe::App for EditorApp {
                 });
             });
         }
-        if self.pending_replacement.is_some() {
-            self.unsaved_changes_dialog(ui.ctx());
-            return;
-        }
-
         if !self.immersive_viewport {
             self.panel_layout
                 .begin_frame(ui.ctx(), ui.available_width());
@@ -253,6 +243,18 @@ impl eframe::App for EditorApp {
             response.request_focus();
         }
         self.play_viewport_focused = self.play.is_some() && response.has_focus();
+        if self.pending_close_confirmation {
+            self.close_confirmation_dialog(ui.ctx());
+            return;
+        }
+        if self.pending_replacement.is_some() {
+            self.unsaved_changes_dialog(ui.ctx());
+            return;
+        }
+        if self.pending_build_confirmation {
+            self.build_confirmation_dialog(ui.ctx());
+            return;
+        }
         if ui.ctx().current_pass_index() == 0 {
             self.advance_play(ui.ctx(), response.hovered());
         }

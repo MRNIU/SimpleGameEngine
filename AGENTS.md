@@ -6,7 +6,7 @@
 
 - 项目名称：SimpleGameEngine
 - 当前定位：Rust 跨平台游戏引擎与 editor-first 产品实验仓库
-- 当前阶段：M1–M7 架构 spine 已完成；Mac 产品可用性 hardening 尚未完成
+- 当前阶段：M1–M7 架构 spine 与 Mac Product Hardening H0 已完成；进入 alpha 评估
 - 技术栈：Rust stable、Cargo workspace、egui/eframe、winit、wgpu
 - 默认开发环境：Dev Container / Docker
 - 迁移策略：不维护旧内部 API/格式兼容层；已替代的 prototype 通过 Git 历史参考
@@ -85,6 +85,6 @@ bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `e
 - `demo-game-player` 从 source-free cooked root加载，使用 winit input adapter、advance/extract并真实 present。
 - `sge build` 启动 game-specific Build，full Cook后只接受本次Cargo Player artifact，并以immutable generation + atomic manifest发布可复制Stage。
 - `scripts/test-integration-demo.sh` 从 workspace gate/audit、game-specific Editor 窗口 smoke 到 authoring/Play/真实 Build/Cook/copied Stage/staged Player 单链闭合最终目标。
-- Apple Silicon macOS 26.5.1 已有3轮原生自动action-tape编辑/保存/Play/Stop、Build/Stage、cooked scene读回、staged Player 120帧present和Retina-aware surface readback证据；真实键鼠、native dialog与dirty close人工验收仍未完成，不外推到Intel Mac或其他GPU。
-- 下一阶段是 Mac Product Hardening：以真实鼠标键盘操作、截图/图像识别和可复现用户旅程清零现有功能缺陷，在通过完整可用性验收前不得声明“可真正使用”或“产品完成”。
+- Apple Silicon macOS 26.5.1 已有3轮原生自动action-tape编辑/保存/Play/Stop、Build/Stage、cooked scene读回、staged Player 120帧present和Retina-aware surface readback证据；系统级鼠标/键盘事件也已覆盖连续编辑、Play/Stop、dirty close三决策和native Save panel打开/取消。该证据不外推到特定物理输入设备、Intel Mac或其他GPU。
+- Mac Product Hardening H0 已闭合并进入 alpha 评估；下一步补充特定物理输入设备、更多native dialog分支和长时间连续使用证据，在通过完整可用性验收前不得声明“可真正使用”或“产品完成”。
 - 新功能延期项包括但不限于音频、物理、网络、archive/Pak/signing/installer、Play writeback、action remapping、prefab、parallel ECS/RenderWorld/incremental Cook；它们不应混入缺陷清零阶段。
