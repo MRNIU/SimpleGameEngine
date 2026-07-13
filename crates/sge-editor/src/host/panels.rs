@@ -6,11 +6,22 @@ use sge_scene::{AuthoringEntity, SceneEntityId, SceneName};
 use super::EditorApp;
 use crate::{inspector, inspector_ui};
 
+const MIN_HIERARCHY_WIDTH: f32 = 160.0;
+const MIN_INSPECTOR_WIDTH: f32 = 240.0;
+const MIN_VIEWPORT_WIDTH: f32 = 240.0;
+
 impl EditorApp {
     pub(super) fn hierarchy(&mut self, ui: &mut egui::Ui) {
+        let max_width = side_panel_max_width(
+            ui.available_width(),
+            MIN_HIERARCHY_WIDTH,
+            MIN_VIEWPORT_WIDTH,
+        );
         egui::Panel::left("hierarchy")
             .resizable(true)
             .default_size(230.0)
+            .min_size(MIN_HIERARCHY_WIDTH)
+            .max_size(max_width)
             .show(ui, |ui| {
                 ui.heading("Hierarchy");
                 if self.play.is_none() && ui.button("New Entity").clicked() {
@@ -105,9 +116,16 @@ impl EditorApp {
     }
 
     pub(super) fn inspector(&mut self, ui: &mut egui::Ui) {
+        let max_width = side_panel_max_width(
+            ui.available_width(),
+            MIN_INSPECTOR_WIDTH,
+            MIN_HIERARCHY_WIDTH + MIN_VIEWPORT_WIDTH,
+        );
         egui::Panel::right("inspector")
             .resizable(true)
             .default_size(300.0)
+            .min_size(MIN_INSPECTOR_WIDTH)
+            .max_size(max_width)
             .show(ui, |ui| {
                 self.inspector_contents(ui);
                 fill_resizable_panel(ui);
@@ -269,9 +287,18 @@ fn fill_resizable_panel(ui: &mut egui::Ui) {
     ui.take_available_space();
 }
 
+fn side_panel_max_width(available_width: f32, minimum: f32, reserved_width: f32) -> f32 {
+    (available_width - reserved_width)
+        .max(minimum)
+        .min(available_width)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::fill_resizable_panel;
+    use super::{
+        MIN_HIERARCHY_WIDTH, MIN_INSPECTOR_WIDTH, MIN_VIEWPORT_WIDTH, fill_resizable_panel,
+        side_panel_max_width,
+    };
     use eframe::egui;
 
     #[test]
@@ -299,5 +326,25 @@ mod tests {
         );
 
         assert!((width - 230.0).abs() <= 1.0, "panel width was {width}");
+    }
+
+    #[test]
+    fn side_panels_reserve_the_other_panel_and_viewport() {
+        let window_width = 1_000.0;
+        let inspector_max = side_panel_max_width(
+            window_width,
+            MIN_INSPECTOR_WIDTH,
+            MIN_HIERARCHY_WIDTH + MIN_VIEWPORT_WIDTH,
+        );
+        let hierarchy_max = side_panel_max_width(
+            window_width - inspector_max,
+            MIN_HIERARCHY_WIDTH,
+            MIN_VIEWPORT_WIDTH,
+        );
+
+        let viewport_width = window_width - inspector_max - hierarchy_max;
+        assert!(viewport_width >= MIN_VIEWPORT_WIDTH);
+        assert!(inspector_max >= MIN_INSPECTOR_WIDTH);
+        assert!(hierarchy_max >= MIN_HIERARCHY_WIDTH);
     }
 }

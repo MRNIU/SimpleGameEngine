@@ -551,8 +551,8 @@ impl eframe::App for EditorApp {
         }
 
         if !self.immersive_viewport {
-            self.hierarchy(ui);
             self.inspector(ui);
+            self.hierarchy(ui);
         }
 
         let response = if let Some(frame) = &self.frame {
