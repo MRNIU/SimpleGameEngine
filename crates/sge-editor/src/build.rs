@@ -2,6 +2,9 @@
 
 use std::{ffi::OsString, path::Path, process::Child, process::Command};
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditorBuildLauncher {
     program: OsString,
@@ -60,12 +63,15 @@ impl BuildProcess {
         if self.child.is_some() {
             return false;
         }
-        let child = Command::new(&self.config.program)
+        let mut command = Command::new(&self.config.program);
+        command
             .args(&self.config.prefix_args)
             .arg("build")
             .arg(project_root)
-            .args(&self.config.build_args)
-            .spawn();
+            .args(&self.config.build_args);
+        #[cfg(unix)]
+        command.process_group(0);
+        let child = command.spawn();
         match child {
             Ok(child) => {
                 self.child = Some(child);
@@ -116,9 +122,7 @@ impl BuildProcess {
             };
             return Ok(());
         }
-        child
-            .kill()
-            .map_err(|error| format!("failed to stop Build: {error}"))?;
+        stop_child(child).map_err(|error| format!("failed to stop Build: {error}"))?;
         child
             .wait()
             .map_err(|error| format!("failed to wait for stopped Build: {error}"))?;
@@ -149,6 +153,24 @@ impl BuildProcess {
     fn status(&self) -> &BuildStatus {
         &self.status
     }
+}
+
+#[cfg(unix)]
+fn stop_child(child: &mut Child) -> Result<(), std::io::Error> {
+    let pid = i32::try_from(child.id())
+        .map_err(|_| std::io::Error::other("Build process ID exceeds i32"))?;
+    match nix::sys::signal::killpg(
+        nix::unistd::Pid::from_raw(pid),
+        nix::sys::signal::Signal::SIGKILL,
+    ) {
+        Ok(()) | Err(nix::errno::Errno::ESRCH) => Ok(()),
+        Err(error) => Err(std::io::Error::other(error)),
+    }
+}
+
+#[cfg(not(unix))]
+fn stop_child(child: &mut Child) -> Result<(), std::io::Error> {
+    child.kill()
 }
 
 impl Drop for BuildProcess {
@@ -223,7 +245,7 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         let marker = output_path("cancelled-child");
         let _stale_cleanup = fs::remove_file(&marker);
-        let script = r#"sleep 2; printf completed > "$0""#;
+        let script = r#"sh -c 'sleep 0.2; printf completed > "$0"' "$0" & wait"#;
         let mut process = BuildProcess::new(EditorBuildLauncher::new(
             "sh",
             ["-c".into(), script.into(), marker.as_os_str().to_owned()],
@@ -232,7 +254,7 @@ mod tests {
         assert!(process.start(PathBuf::from("project").as_path()));
         process.cancel()?;
         assert!(matches!(process.status(), BuildStatus::Cancelled));
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(Duration::from_millis(300));
         assert!(!marker.exists());
 
         let mut dropped = BuildProcess::new(EditorBuildLauncher::new(
@@ -241,7 +263,7 @@ mod tests {
         ));
         assert!(dropped.start(PathBuf::from("project").as_path()));
         drop(dropped);
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(Duration::from_millis(300));
         assert!(!marker.exists());
         Ok(())
     }

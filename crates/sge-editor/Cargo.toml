@@ -20,6 +20,9 @@ sge-reflect = { path = "../sge-reflect" }
 sge-scene = { path = "../sge-scene" }
 thiserror.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["signal"] }
+
 [dev-dependencies]
 demo-game = { path = "../../examples/demo_game/game" }
 

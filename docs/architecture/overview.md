@@ -111,6 +111,7 @@ flowchart TB
 - GPU mesh cache 以 `AssetId` retained；direct surface 与 offscreen/composite 共享 mesh draw path 和 depth policy。
 - Player redraw 固定为 advance → extract/view → acquire → render → submit → present；只有 present 成功才累计 frame。
 - `sge build` 通过 `ProjectBootstrap` 定位 game-specific Build target；目标进程重新验证 identity 并执行 full Cook。
+- Editor 独占本次 Build 生命周期；Unix launcher 使用独立进程组，取消、关闭或 drop 会终止整棵 Cargo/Build 子进程树并回收直接子进程。
 - Stage 保存 immutable Player/runtime generation，单文件 atomic manifest 是唯一 current pointer；staged Player 从 executable 同级 `runtime` 自定位。
 
 ## 验证与架构门禁
