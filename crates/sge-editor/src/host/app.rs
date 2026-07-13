@@ -137,15 +137,18 @@ impl eframe::App for EditorApp {
         if !self.immersive_viewport {
             egui::Panel::top("project_identity").show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    for label in project_identity_labels(
+                    let [game, project] = project_identity_labels(
                         self.session.descriptor().game_id().as_str(),
                         &self.project_root,
-                    ) {
-                        ui.label(label);
-                        ui.separator();
-                    }
+                    );
+                    ui.label(game);
+                    ui.separator();
+                    ui.label(project)
+                        .on_hover_text(self.project_root.display().to_string());
+                    ui.separator();
                     self.file_controls(ui);
                     if self.play.is_some() {
+                        ui.colored_label(egui::Color32::LIGHT_GREEN, "PLAY");
                         if ui.button("Stop").clicked() {
                             let _ = self.apply_ui_action(EditorUiAction::StopPlay);
                         }
@@ -180,11 +183,12 @@ impl eframe::App for EditorApp {
                     {
                         let _ = self.apply_ui_action(EditorUiAction::Redo);
                     }
-                    ui.label(if self.session.is_dirty() {
-                        "modified"
+                    let (status, color) = if self.session.is_dirty() {
+                        ("Modified", egui::Color32::GOLD)
                     } else {
-                        "saved"
-                    });
+                        ("Saved", egui::Color32::from_rgb(80, 170, 100))
+                    };
+                    ui.colored_label(color, status);
                 });
             });
         }
@@ -198,6 +202,20 @@ impl eframe::App for EditorApp {
                 .begin_frame(ui.ctx(), ui.available_width());
             self.inspector(ui);
             self.hierarchy(ui);
+        }
+
+        if let Some(error) = self.last_error.clone() {
+            let mut dismiss = false;
+            egui::Panel::bottom("editor_error").show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.strong("Error:");
+                    ui.colored_label(egui::Color32::LIGHT_RED, error);
+                    dismiss = ui.button("Dismiss").clicked();
+                });
+            });
+            if dismiss {
+                self.last_error = None;
+            }
         }
 
         let response = if let Some(frame) = &self.frame {
@@ -235,12 +253,6 @@ impl eframe::App for EditorApp {
             response.request_focus();
         }
         self.play_viewport_focused = self.play.is_some() && response.has_focus();
-
-        if let Some(error) = &self.last_error {
-            egui::Panel::bottom("editor_error").show(ui, |ui| {
-                ui.colored_label(egui::Color32::LIGHT_RED, error);
-            });
-        }
         if ui.ctx().current_pass_index() == 0 {
             self.advance_play(ui.ctx(), response.hovered());
         }

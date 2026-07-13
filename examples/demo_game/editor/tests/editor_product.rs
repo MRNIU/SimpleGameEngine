@@ -369,6 +369,41 @@ fn internal_ui_tape_cannot_report_a_dirty_unconfirmed_build_as_complete()
     Ok(())
 }
 
+#[test]
+#[ignore = "requires a real WGPU window; run with xvfb-run"]
+fn internal_ui_tape_paints_error_feedback_before_readback() -> Result<(), Box<dyn std::error::Error>>
+{
+    let project = TestProject::new()?;
+    let screenshot = project.path().join("error-feedback.png");
+    let output = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
+        .arg(project.path())
+        .args(["--ui-action", "undo", "--screenshot"])
+        .arg(&screenshot)
+        .output()?;
+    assert!(!output.status.success());
+    let screenshot = image::open(screenshot)?.to_rgba8();
+    assert_editor_screenshot_size(&screenshot);
+    let scale = screenshot.height() as f32 / 720.0;
+    let error_top = screenshot
+        .height()
+        .saturating_sub((60.0 * scale).round() as u32);
+    let red_pixels = screenshot
+        .enumerate_pixels()
+        .filter(|(x, y, pixel)| {
+            *x <= (300.0 * scale).round() as u32
+                && *y >= error_top
+                && pixel[0] > 170
+                && pixel[1] < 150
+                && pixel[2] < 150
+        })
+        .count();
+    assert!(
+        red_pixels > (20.0 * scale * scale) as usize,
+        "error feedback is not visible before screenshot readback"
+    );
+    Ok(())
+}
+
 fn assert_editor_screenshot_size(image: &image::RgbaImage) {
     let (width, height) = image.dimensions();
     assert!(

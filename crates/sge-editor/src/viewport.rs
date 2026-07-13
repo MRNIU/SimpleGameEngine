@@ -181,6 +181,7 @@ impl EditorViewport {
         if !overlay_consumed && !camera_consumed && !gizmo_consumed {
             self.select(response, frame, session)?;
         }
+        self.paint_status(ui, response.rect);
         Ok(())
     }
 
@@ -359,6 +360,27 @@ impl EditorViewport {
     fn adjust_camera_speed(&mut self, delta: i8) {
         self.camera_speed_level =
             (i16::from(self.camera_speed_level) + i16::from(delta)).clamp(1, 8) as u8;
+    }
+
+    fn paint_status(&self, ui: &egui::Ui, viewport: egui::Rect) {
+        let text = if self.game_view {
+            "Game View (G)"
+        } else {
+            self.gizmo.status_text()
+        };
+        let rect = egui::Rect::from_min_size(
+            viewport.left_top() + egui::vec2(10.0, 10.0),
+            egui::vec2(116.0, 26.0),
+        );
+        let painter = ui.painter_at(viewport);
+        painter.rect_filled(rect, 4.0, egui::Color32::from_black_alpha(190));
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            text,
+            egui::FontId::proportional(13.0),
+            egui::Color32::WHITE,
+        );
     }
 
     fn draw_view_cube(&mut self, ui: &mut egui::Ui, rect: egui::Rect) -> bool {
@@ -552,6 +574,15 @@ impl GizmoMode {
             Self::Select | Self::Scale => Self::Move,
             Self::Move => Self::Rotate,
             Self::Rotate => Self::Scale,
+        }
+    }
+
+    const fn status_text(self) -> &'static str {
+        match self {
+            Self::Select => "Select (Q)",
+            Self::Move => "Move (W)",
+            Self::Rotate => "Rotate (E)",
+            Self::Scale => "Scale (R)",
         }
     }
 }
@@ -1187,6 +1218,10 @@ mod tests {
         assert_eq!(GizmoMode::Move.next(), GizmoMode::Rotate);
         assert_eq!(GizmoMode::Rotate.next(), GizmoMode::Scale);
         assert_eq!(GizmoMode::Scale.next(), GizmoMode::Move);
+        assert_eq!(GizmoMode::Select.status_text(), "Select (Q)");
+        assert_eq!(GizmoMode::Move.status_text(), "Move (W)");
+        assert_eq!(GizmoMode::Rotate.status_text(), "Rotate (E)");
+        assert_eq!(GizmoMode::Scale.status_text(), "Scale (R)");
     }
 
     #[test]

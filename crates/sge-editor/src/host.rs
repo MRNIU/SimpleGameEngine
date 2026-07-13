@@ -255,10 +255,15 @@ struct EditorApp {
 }
 
 fn project_identity_labels(game_id: &str, project_root: &Path) -> [String; 2] {
-    [
-        format!("game_id: {game_id}"),
-        project_root.display().to_string(),
-    ]
+    let project = project_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .map_or_else(
+            || project_root.display().to_string(),
+            |name| name.to_owned(),
+        );
+    [format!("game_id: {game_id}"), format!("project: {project}")]
 }
 
 fn request_screenshot(context: &egui::Context) {
@@ -331,10 +336,13 @@ mod tests {
     #[test]
     fn toolbar_identity_contains_only_game_and_project_context() {
         assert_eq!(
-            project_identity_labels("demo.game", Path::new("examples/demo_game")),
+            project_identity_labels(
+                "demo.game",
+                Path::new("/a/very/long/workspace/examples/demo_game")
+            ),
             [
                 "game_id: demo.game".to_owned(),
-                "examples/demo_game".to_owned(),
+                "project: demo_game".to_owned(),
             ]
         );
     }

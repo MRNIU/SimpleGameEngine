@@ -98,6 +98,7 @@ flowchart TB
 - `EditWorld` 是唯一 live authoring truth；mutation 从 snapshot 构造 fresh candidate，通过 validation/instantiate 后原子替换。
 - Inspector、entity/component operation、gizmo commit 和文件操作统一进入 `EditSession` history，不维护 mirrored DTO。
 - authoring viewport 拥有独立 editor camera；grid/axis、ViewCube、selection 和 gizmo 不修改 scene camera。
+- 1280×720 顶栏只显示 compact project identity，完整路径通过 hover 保留；viewport 显式显示 active tool/Game View，错误条在 central viewport 布局前占位并可关闭。
 - `PlaySession` 每次从同一 `GameDescriptor` 创建 fresh World；Stop 直接丢弃且不写回 `EditWorld`。
 - game-specific Editor 独占 native dialog 依赖；dirty scene replacement 必须经过 Save/Discard/Cancel。
 - Editor 只把 Play viewport 已聚焦且未被 egui 消费的输入发送给 gameplay。
