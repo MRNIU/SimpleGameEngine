@@ -5,7 +5,7 @@
 //! would create wider cross-module contracts than this private host feature.
 
 use eframe::egui;
-use sge_math::{Mat4, Quat, Transform, Vec3, Vec4};
+use sge_math::{Mat3, Mat4, Quat, Transform, Vec3, Vec4};
 use sge_reflect::Value;
 use sge_render::{Camera, RenderView, view_projection_matrix};
 use sge_scene::SceneEntityId;
@@ -133,8 +133,7 @@ impl EditorViewport {
                 self.distance =
                     frame_distance(minimum, maximum, self.camera.vertical_fov_radians());
             }
-            let forward = Vec3::new(-1.0, 1.0, -0.65).normalize();
-            self.transform.rotation = Quat::from_rotation_arc(Vec3::Z, forward).to_array();
+            self.transform.rotation = initial_camera_rotation().to_array();
             self.sync_position_from_pivot();
             self.initialized = true;
         }
@@ -583,17 +582,7 @@ fn projection(frame: &PreviewFrame, rect: egui::Rect) -> Option<Mat4> {
 
 fn project(matrix: Mat4, point: Vec3, rect: egui::Rect) -> Option<ScreenPoint> {
     let clip = matrix * Vec4::new(point.x, point.y, point.z, 1.0);
-    if !clip.is_finite() || clip.w <= 0.0 {
-        return None;
-    }
-    let ndc = clip.truncate() / clip.w;
-    Some(ScreenPoint {
-        position: egui::pos2(
-            rect.left() + (ndc.x + 1.0) * 0.5 * rect.width(),
-            rect.top() + (1.0 - ndc.y) * 0.5 * rect.height(),
-        ),
-        depth: ndc.z,
-    })
+    project_clip_point(clip, rect)
 }
 
 fn draw_grid(ui: &egui::Ui, rect: egui::Rect, frame: &PreviewFrame) {
@@ -671,12 +660,92 @@ fn draw_world_line(
     color: egui::Color32,
     width: f32,
 ) {
-    if let (Some(start), Some(end)) = (project(matrix, start, rect), project(matrix, end, rect)) {
+    if let Some([start, end]) = project_segment(matrix, start, end, rect) {
         painter.line_segment(
             [start.position, end.position],
             egui::Stroke::new(width, color),
         );
     }
+}
+
+fn initial_camera_rotation() -> Quat {
+    camera_rotation(3.0 * std::f32::consts::FRAC_PI_4, -0.45)
+}
+
+fn camera_rotation(yaw: f32, pitch: f32) -> Quat {
+    let yaw_rotation = Quat::from_rotation_z(yaw);
+    let flat_forward = yaw_rotation * Vec3::X;
+    let right = yaw_rotation * Vec3::Y;
+    let forward = (Quat::from_axis_angle(right, -pitch) * flat_forward).normalize();
+    let up = forward.cross(right).normalize();
+    Quat::from_mat3(&Mat3::from_cols(right, up, forward))
+}
+
+fn project_segment(
+    matrix: Mat4,
+    start: Vec3,
+    end: Vec3,
+    rect: egui::Rect,
+) -> Option<[ScreenPoint; 2]> {
+    let start = matrix * start.extend(1.0);
+    let end = matrix * end.extend(1.0);
+    let (start, end) = clip_segment(start, end)?;
+    Some([
+        project_clip_point(start, rect)?,
+        project_clip_point(end, rect)?,
+    ])
+}
+
+fn clip_segment(start: Vec4, end: Vec4) -> Option<(Vec4, Vec4)> {
+    if !start.is_finite() || !end.is_finite() {
+        return None;
+    }
+    let planes: [fn(Vec4) -> f32; 6] = [
+        |point| point.x + point.w,
+        |point| point.w - point.x,
+        |point| point.y + point.w,
+        |point| point.w - point.y,
+        |point| point.z,
+        |point| point.w - point.z,
+    ];
+    let mut lower = 0.0_f32;
+    let mut upper = 1.0_f32;
+    for plane in planes {
+        let start_distance = plane(start);
+        let end_distance = plane(end);
+        if start_distance < 0.0 && end_distance < 0.0 {
+            return None;
+        }
+        if (start_distance < 0.0) != (end_distance < 0.0) {
+            let crossing = start_distance / (start_distance - end_distance);
+            if start_distance < 0.0 {
+                lower = lower.max(crossing);
+            } else {
+                upper = upper.min(crossing);
+            }
+        }
+    }
+    (lower <= upper).then(|| {
+        let delta = end - start;
+        (start + delta * lower, start + delta * upper)
+    })
+}
+
+fn project_clip_point(clip: Vec4, rect: egui::Rect) -> Option<ScreenPoint> {
+    if !clip.is_finite() || clip.w <= 0.0 {
+        return None;
+    }
+    let ndc = clip.truncate() / clip.w;
+    if !(0.0..=1.0).contains(&ndc.z) {
+        return None;
+    }
+    Some(ScreenPoint {
+        position: egui::pos2(
+            rect.left() + (ndc.x + 1.0) * 0.5 * rect.width(),
+            rect.top() + (1.0 - ndc.y) * 0.5 * rect.height(),
+        ),
+        depth: ndc.z,
+    })
 }
 
 fn preset_axes(preset: ViewPreset) -> (Vec3, Vec3) {
@@ -875,5 +944,28 @@ mod tests {
         );
         assert!(small >= 2.5);
         assert!(large > small * 5.0);
+    }
+
+    #[test]
+    fn initial_camera_is_z_up_without_roll() {
+        let rotation = initial_camera_rotation();
+        let right = rotation * Vec3::X;
+        let up = rotation * Vec3::Y;
+        assert!(right.z.abs() < 0.0001);
+        assert!(up.dot(Vec3::Z) > 0.5);
+    }
+
+    #[test]
+    fn world_segments_are_clipped_to_the_wgpu_frustum() {
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(100.0, 100.0));
+        let [start, end] = project_segment(
+            Mat4::IDENTITY,
+            Vec3::new(-2.0, 0.0, 0.5),
+            Vec3::new(0.0, 0.0, 0.5),
+            rect,
+        )
+        .expect("crossing segment must remain visible");
+        assert_eq!(start.position, egui::pos2(0.0, 50.0));
+        assert_eq!(end.position, egui::pos2(50.0, 50.0));
     }
 }
