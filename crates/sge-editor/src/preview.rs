@@ -57,10 +57,7 @@ impl egui_wgpu::CallbackTrait for PreviewCallback {
             self.probe.fail("preview GPU resources are missing");
             return Vec::new();
         };
-        let size = [
-            logical_dimension(self.logical_size[0], screen.pixels_per_point),
-            logical_dimension(self.logical_size[1], screen.pixels_per_point),
-        ];
+        let size = preview_target_size(self.backend, self.logical_size, screen.pixels_per_point);
         gpu.renderer.set_backend(self.backend);
         gpu.select_assets(&self.frame.assets);
         let started = Instant::now();
@@ -153,8 +150,16 @@ fn viewport_sense() -> egui::Sense {
     egui::Sense::click_and_drag()
 }
 
-fn logical_dimension(points: f32, pixels_per_point: f32) -> u32 {
-    (points * pixels_per_point).round().max(1.0) as u32
+fn preview_target_size(
+    backend: RenderBackend,
+    logical_size: [f32; 2],
+    pixels_per_point: f32,
+) -> [u32; 2] {
+    let scale = match backend {
+        RenderBackend::Wgpu => pixels_per_point,
+        RenderBackend::Cpu => 1.0,
+    };
+    logical_size.map(|points| (points * scale).round().max(1.0) as u32)
 }
 
 fn store_replaced(current: Option<&Arc<RuntimeAssetStore>>, next: &Arc<RuntimeAssetStore>) -> bool {
@@ -277,7 +282,23 @@ mod tests {
     use eframe::egui;
     use sge_asset::RuntimeAssetStore;
 
-    use super::{store_replaced, viewport_sense};
+    use super::{preview_target_size, store_replaced, viewport_sense};
+
+    #[test]
+    fn wgpu_preview_uses_physical_pixels() {
+        assert_eq!(
+            preview_target_size(sge_render::RenderBackend::Wgpu, [640.0, 360.0], 2.0),
+            [1280, 720]
+        );
+    }
+
+    #[test]
+    fn cpu_preview_uses_logical_pixels_to_keep_retina_interactive() {
+        assert_eq!(
+            preview_target_size(sge_render::RenderBackend::Cpu, [640.0, 360.0], 2.0),
+            [640, 360]
+        );
+    }
 
     #[test]
     fn viewport_accepts_clicks_drags_and_keyboard_focus() {

@@ -50,3 +50,8 @@ unsafe_op_in_unsafe_fn = "deny"
 
 [workspace.lints.clippy]
 all = "warn"
+
+# Keep the software rasterizer usable when contributors launch the Editor with
+# the documented development command. Release builds already optimize it.
+[profile.dev.package.sge-render]
+opt-level = 3

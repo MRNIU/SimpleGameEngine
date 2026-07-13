@@ -110,7 +110,7 @@ flowchart TB
 - active camera、projection、mesh asset 和 GPU target 错误均 typed fail，不静默恢复。
 - `BackendRenderer` 只选择执行路径，不拥有 scene 或 asset truth；切换后端不会重建、写回或修改场景数据。
 - WGPU mesh cache 以 `AssetId` retained；direct surface 与 offscreen/composite 共享 mesh draw path 和 depth policy。
-- CPU 后端直接读取同一个 `RuntimeAssetStore`，先顺序生成屏幕空间三角形，再由 Rayon worker 对互不重叠的水平 tile 并行执行光栅化、透视校正法线插值、深度测试、alpha blend 与首个方向光 Lambert 光照。每个 tile 仍按 snapshot 三角形顺序处理，因此无需 framebuffer 锁或跨线程合并，并保持单线程/多线程输出一致；完成后的 RGBA 帧交给既有 presentation 层。
+- CPU 后端直接读取同一个 `RuntimeAssetStore`，先顺序生成屏幕空间三角形，再由 Rayon worker 对互不重叠的水平 tile 并行执行光栅化、透视校正法线插值、深度测试、alpha blend 与首个方向光 Lambert 光照。每个 tile 仍按 snapshot 三角形顺序处理，因此无需 framebuffer 锁或跨线程合并，并保持单线程/多线程输出一致；完成后的 RGBA 帧交给既有 presentation 层。Editor CPU 预览以 viewport 逻辑像素为光栅目标并由合成层缩放，避免 Retina 的平方级像素放大阻塞输入；WGPU 预览与 Player surface 仍按物理像素工作。
 - Editor 顶栏实时选择 WGPU/CPU；Player 使用 `--backend wgpu|cpu`，默认 WGPU。该选择是 host session 状态，不进入 project、authoring/runtime scene 或 Cook/Stage 数据。
 - `sge-render::FramePerformanceMonitor` 是唯一会话级性能采样 owner：固定保留最近240个已完成帧间隔，汇总FPS、p50/p95/max、60/30 FPS预算超限、advance/extract/render CPU wall time和surface跳帧。Player在同一redraw链路聚合完整帧；Editor分别显示UI thread的Play advance/extract与eframe callback的Preview prepare/paint，不伪造跨线程帧关联。
 - 性能数据只描述host侧CPU wall time和已完成/跳过的surface事实；WGPU command encoding、`present()`返回不代表GPU执行完成。本地监控状态不进入project、scene、Cook或Stage，也不通过GPU readback、timestamp query或遥测扩张边界。

@@ -18,7 +18,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前实现
 > 当前状态：M1–M7 架构和 integration demo 链路已经闭合，但产品可用性 hardening 尚未完成。自动 smoke 证明路径能够运行，不证明 Editor/Player 的全部交互、视觉结果、文件工作流和异常恢复已经可用于日常生产。
 
 - M1–M7 已完成：typed ECS / Reflect / EngineApp、strict project/authoring data、canonical OBJ import/full Cook/runtime products、owned `RenderSnapshot`、WGPU/CPU 双渲染后端、Edit/Play target Editor 架构路径、game-specific Build/self-contained Stage 和最终 integration demo 已形成一条产品路径。
-- `sge-render` 的窄 backend facade 让 WGPU 与 CPU 光栅器共用 `RenderSnapshot`、`RenderView`、`RuntimeAssetStore` 和投影逻辑；GPU retained cache 以 `AssetId` 为 key，CPU 实现六平面三角形裁剪、背面剔除、深度测试与当前 Lambert 光照，并用无锁水平 tile 并行光栅化。两者都通过现有 eframe callback 或安全 `Arc<Window>` surface 显示，CPU 路径只用 WGPU 上传/合成最终 RGBA 帧。共享的会话级性能监控统计最近240个已完成帧间隔的FPS、p50/p95/max、advance/extract/render CPU wall time和Player surface跳帧；Editor的Play与Preview保持独立统计流。
+- `sge-render` 的窄 backend facade 让 WGPU 与 CPU 光栅器共用 `RenderSnapshot`、`RenderView`、`RuntimeAssetStore` 和投影逻辑；GPU retained cache 以 `AssetId` 为 key，CPU 实现六平面三角形裁剪、背面剔除、深度测试与当前 Lambert 光照，并用无锁水平 tile 并行光栅化。两者都通过现有 eframe callback 或安全 `Arc<Window>` surface 显示，CPU 路径只用 WGPU 上传/合成最终 RGBA 帧；Editor CPU 预览按逻辑像素光栅化后缩放显示，避免 Retina 物理像素造成四倍工作量，WGPU 仍使用物理像素。共享的会话级性能监控统计最近240个已完成帧间隔的FPS、p50/p95/max、advance/extract/render CPU wall time和Player surface跳帧；Editor的Play与Preview保持独立统计流。
 - `sge-player` 只读取 cooked root并把 winit event映射为逐帧 `InputFrame`；production dependency 不包含 project、source pipeline、OBJ parser、Editor 或 native dialog。
 - `sge-editor` identity-first 打开 target project；EditWorld 是唯一 live authoring truth，Reflect Inspector、entity/component mutation、Undo/Redo、atomic save与独立 PlaySession共用 scene validation/factory。
 - authoring viewport提供独立camera、world grid/axis、六向ViewCube、mesh geometry click selection与三轴Move/Rotate/Scale gizmo；scene Camera和Directional Light具有editor-only三维线框表示，可在viewport直接选择和变换且不进入Game View/Player渲染；P1文件工作流由game-specific Editor提供native dialogs，替换dirty scene前要求Save/Discard/Cancel。
@@ -110,7 +110,7 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-b
 docker exec "$DEVCONTAINER_NAME" bash -lc 'scripts/test-integration-demo.sh'
 ```
 
-真实窗口 smoke 只证明 Linux/Xvfb 下的 WGPU/CPU render、WGPU callback/surface present、经 X11 注入的 host input 路径和确定性退出，不是 UI/UX 或功能正确性验收。另有 Apple Silicon macOS 26.5.1 上的 workspace build、Editor WGPU prepare/paint、Build/Stage和staged Player present证据；该 Mac 证据尚未覆盖 CPU backend，这些结果也不等于Windows、Intel Mac、其他GPU或物理输入设备兼容性证明。
+真实窗口 smoke 只证明 Linux/Xvfb 下的 WGPU/CPU render、WGPU callback/surface present、经 X11 注入的 host input 路径和确定性退出，不是 UI/UX 或功能正确性验收。另有 Apple Silicon macOS 26.5.1 上的 workspace build、Editor WGPU/CPU prepare/paint、Build/Stage和staged Player present证据；这些结果也不等于Windows、Intel Mac、其他GPU或物理输入设备兼容性证明。
 
 ## macOS 原生编译与使用
 
@@ -131,7 +131,7 @@ cargo build --workspace
 # 打开 game-specific Editor
 cargo run -p demo-game-editor -- examples/demo_game
 
-# Editor 顶栏 Renderer 下拉框可在 WGPU/CPU 间实时切换；Perf 打开会话级 Performance 面板，不修改 scene
+# Editor 顶栏 Renderer 下拉框可在 WGPU/CPU 间实时切换；CPU 预览采用逻辑像素保证 Retina 开发构建的交互性；Perf 打开会话级 Performance 面板，不修改 scene
 
 # 打开 Editor 并直接进入独立 PlaySession
 cargo run -p demo-game-editor -- examples/demo_game --play
