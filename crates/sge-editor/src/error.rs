@@ -104,6 +104,15 @@ pub enum EditError {
     Import(#[from] ProjectAssetImportError),
     #[error(transparent)]
     ObjImport(#[from] ObjImportError),
+    #[error(
+        "asset import failed and source rollback also failed for {path}: operation: {operation}; rollback: {rollback}"
+    )]
+    AssetImportRollback {
+        path: sge_project::ProjectPath,
+        #[source]
+        operation: Box<EditError>,
+        rollback: ProjectIoError,
+    },
 }
 
 impl From<SceneValidationError> for EditError {

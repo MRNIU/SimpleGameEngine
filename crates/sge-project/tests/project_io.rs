@@ -132,6 +132,42 @@ fn project_root_atomically_creates_reads_and_replaces_a_file()
 }
 
 #[test]
+fn project_root_removes_only_a_contained_regular_file() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = TestDir::new("remove-file")?;
+    fs::create_dir(temp.path().join("Content"))?;
+    let root = ProjectRoot::open(temp.path())?;
+    let path = ProjectPath::new("Content/pending.obj")?;
+    root.write_atomic(&path, b"pending")?;
+
+    root.remove_file(&path)?;
+
+    assert!(!temp.path().join(path.as_str()).exists());
+    assert!(matches!(
+        root.remove_file(&path),
+        Err(sge_project::ProjectIoError::Remove { path: actual, source })
+            if actual == path && source.kind() == std::io::ErrorKind::NotFound
+    ));
+    Ok(())
+}
+
+#[test]
+fn project_root_create_only_write_never_replaces_existing_bytes()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = TestDir::new("write-new")?;
+    fs::create_dir(temp.path().join("Content"))?;
+    let root = ProjectRoot::open(temp.path())?;
+    let path = ProjectPath::new("Content/new.obj")?;
+
+    root.write_new_atomic(&path, b"first")?;
+    assert!(matches!(
+        root.write_new_atomic(&path, b"replacement"),
+        Err(sge_project::ProjectIoError::TargetExists { path: actual }) if actual == path
+    ));
+    assert_eq!(root.read(&path)?, b"first");
+    Ok(())
+}
+
+#[test]
 fn project_root_reports_atomic_commit_phase_failure() -> Result<(), Box<dyn std::error::Error>> {
     let temp = TestDir::new("commit-failure")?;
     let scenes = temp.path().join("scenes");
@@ -368,6 +404,14 @@ fn project_root_rejects_normal_and_dangling_final_symlinks()
         normal_error,
         sge_project::ProjectIoError::TargetSymlink { path: actual } if actual == path
     ));
+    let normal_remove_error = root
+        .remove_file(&path)
+        .err()
+        .ok_or_else(|| std::io::Error::other("normal final symlink removal was accepted"))?;
+    assert!(matches!(
+        normal_remove_error,
+        sge_project::ProjectIoError::TargetSymlink { path: actual } if actual == path
+    ));
     assert_eq!(fs::read(&target)?, b"target bytes");
 
     fs::remove_file(scenes.join("main.scene.ron"))?;
@@ -381,6 +425,14 @@ fn project_root_rejects_normal_and_dangling_final_symlinks()
         .ok_or_else(|| std::io::Error::other("dangling final symlink was accepted"))?;
     assert!(matches!(
         dangling_error,
+        sge_project::ProjectIoError::TargetSymlink { path: actual } if actual == path
+    ));
+    let dangling_remove_error = root
+        .remove_file(&path)
+        .err()
+        .ok_or_else(|| std::io::Error::other("dangling final symlink removal was accepted"))?;
+    assert!(matches!(
+        dangling_remove_error,
         sge_project::ProjectIoError::TargetSymlink { path: actual } if actual == path
     ));
     assert_eq!(fs::read_dir(&scenes)?.count(), 1);
@@ -418,6 +470,15 @@ fn project_root_rejects_parent_symlink_escape_for_read_and_write()
         .ok_or_else(|| std::io::Error::other("parent symlink write escape was accepted"))?;
     assert!(matches!(
         write_error,
+        sge_project::ProjectIoError::OutsideRoot { path: actual } if actual == path
+    ));
+
+    let remove_error = root
+        .remove_file(&path)
+        .err()
+        .ok_or_else(|| std::io::Error::other("parent symlink removal escape was accepted"))?;
+    assert!(matches!(
+        remove_error,
         sge_project::ProjectIoError::OutsideRoot { path: actual } if actual == path
     ));
     assert_eq!(fs::read(outside.join("main.scene.ron"))?, b"outside bytes");

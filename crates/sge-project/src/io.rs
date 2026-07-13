@@ -102,6 +102,24 @@ impl ProjectRoot {
     /// The parent directory must already exist and the final target must not be
     /// a symlink.
     pub fn write_atomic(&self, path: &ProjectPath, bytes: &[u8]) -> Result<(), ProjectIoError> {
+        let target = self.write_target(path, false)?;
+        Self::commit_write(path, target, bytes)
+    }
+
+    /// Creates one new file atomically without replacing an existing target.
+    ///
+    /// `ProjectRoot` has exclusive write ownership, so the existence preflight
+    /// and commit are one logical operation for project callers.
+    pub fn write_new_atomic(&self, path: &ProjectPath, bytes: &[u8]) -> Result<(), ProjectIoError> {
+        let target = self.write_target(path, true)?;
+        Self::commit_write(path, target, bytes)
+    }
+
+    fn write_target(
+        &self,
+        path: &ProjectPath,
+        require_new: bool,
+    ) -> Result<PathBuf, ProjectIoError> {
         let relative = Path::new(path.as_str());
         let parent = relative.parent().ok_or_else(|| ProjectIoError::Write {
             path: path.clone(),
@@ -124,6 +142,9 @@ impl ProjectRoot {
             Ok(metadata) if metadata.file_type().is_symlink() => {
                 return Err(ProjectIoError::TargetSymlink { path: path.clone() });
             }
+            Ok(_) if require_new => {
+                return Err(ProjectIoError::TargetExists { path: path.clone() });
+            }
             Ok(_) => {}
             Err(source) if source.kind() == io::ErrorKind::NotFound => {}
             Err(source) => {
@@ -133,6 +154,14 @@ impl ProjectRoot {
                 });
             }
         }
+        Ok(target)
+    }
+
+    fn commit_write(
+        path: &ProjectPath,
+        target: PathBuf,
+        bytes: &[u8],
+    ) -> Result<(), ProjectIoError> {
         let mut file = atomic_write_file::AtomicWriteFile::open(target).map_err(|source| {
             ProjectIoError::Write {
                 path: path.clone(),
@@ -145,6 +174,42 @@ impl ProjectRoot {
                 source,
             })?;
         file.commit().map_err(|source| ProjectIoError::Commit {
+            path: path.clone(),
+            source,
+        })
+    }
+
+    /// Removes one project-relative file after containment preflight.
+    ///
+    /// The parent directory must already exist and the final target must not be
+    /// a symlink. Cross-file coordination remains the caller's responsibility.
+    pub fn remove_file(&self, path: &ProjectPath) -> Result<(), ProjectIoError> {
+        let relative = Path::new(path.as_str());
+        let parent = relative.parent().ok_or_else(|| ProjectIoError::Remove {
+            path: path.clone(),
+            source: io::Error::new(io::ErrorKind::InvalidInput, "project path has no parent"),
+        })?;
+        let file_name = relative.file_name().ok_or_else(|| ProjectIoError::Remove {
+            path: path.clone(),
+            source: io::Error::new(io::ErrorKind::InvalidInput, "project path has no file name"),
+        })?;
+        let canonical_parent =
+            fs::canonicalize(self.root.join(parent)).map_err(|source| ProjectIoError::Remove {
+                path: path.clone(),
+                source,
+            })?;
+        if !canonical_parent.starts_with(&self.root) {
+            return Err(ProjectIoError::OutsideRoot { path: path.clone() });
+        }
+        let target = canonical_parent.join(file_name);
+        let metadata = fs::symlink_metadata(&target).map_err(|source| ProjectIoError::Remove {
+            path: path.clone(),
+            source,
+        })?;
+        if metadata.file_type().is_symlink() {
+            return Err(ProjectIoError::TargetSymlink { path: path.clone() });
+        }
+        fs::remove_file(target).map_err(|source| ProjectIoError::Remove {
             path: path.clone(),
             source,
         })
@@ -173,6 +238,12 @@ pub enum ProjectIoError {
         #[source]
         source: io::Error,
     },
+    #[error("cannot remove project path {path}: {source}")]
+    Remove {
+        path: ProjectPath,
+        #[source]
+        source: io::Error,
+    },
     #[error("cannot create or access project directory {path}: {source}")]
     DirectoryAccess {
         path: ProjectPath,
@@ -191,6 +262,8 @@ pub enum ProjectIoError {
     },
     #[error("project write target must not be a symlink: {path}")]
     TargetSymlink { path: ProjectPath },
+    #[error("project create-only target already exists: {path}")]
+    TargetExists { path: ProjectPath },
     #[error("project path resolves outside the project root: {path}")]
     OutsideRoot { path: ProjectPath },
 }

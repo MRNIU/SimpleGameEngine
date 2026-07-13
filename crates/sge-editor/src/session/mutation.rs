@@ -160,7 +160,59 @@ impl EditSession {
             PrimitiveKind::Cone => ("Cone", cone_obj(16)),
             PrimitiveKind::Cylinder => ("Cylinder", cylinder_obj(16)),
         };
-        self.import_obj_bytes(source.as_bytes(), name)
+        let bytes = source.as_bytes();
+        if let Some(asset) = self.matching_obj_asset(bytes)? {
+            return self.create_mesh_entity(asset, name);
+        }
+        self.import_obj_bytes(bytes, name)
+    }
+
+    fn matching_obj_asset(&self, bytes: &[u8]) -> Result<Option<AssetId>, EditError> {
+        for record in self.manifest.records() {
+            let SourceImporter::Obj(settings) = record.importer();
+            if record.asset_type().as_str() == MESH_ASSET_TYPE_KEY
+                && !settings.flip_texcoord_v()
+                && self.project.read(record.source())? == bytes
+            {
+                return Ok(Some(record.id()));
+            }
+        }
+        Ok(None)
+    }
+
+    fn create_mesh_entity(
+        &mut self,
+        asset: AssetId,
+        name: &str,
+    ) -> Result<CreatedMeshEntity, EditError> {
+        let authoring = self.mesh_entity(asset, name)?;
+        let entity = authoring.id();
+        self.add_entity(authoring)?;
+        Ok(CreatedMeshEntity { asset, entity })
+    }
+
+    fn mesh_entity(&self, asset: AssetId, name: &str) -> Result<AuthoringEntity, EditError> {
+        let entity = SceneEntityId::new_v4();
+        let name_value = self.set_component_draft_field(
+            &self.component_draft("sge.name")?,
+            "value",
+            Value::String(name.to_owned()),
+        )?;
+        let mesh_value = self.set_component_draft_field(
+            &self.component_draft("sge.mesh_renderer")?,
+            "mesh",
+            Value::Reference(asset.to_string()),
+        )?;
+        Ok(AuthoringEntity::new(
+            entity,
+            None,
+            vec![
+                self.component_draft("sge.transform")?,
+                mesh_value,
+                self.component_draft("sge.material")?,
+                name_value,
+            ],
+        )?)
     }
 
     fn import_obj_bytes(
@@ -180,40 +232,37 @@ impl EditSession {
         validate_obj_source(&record, bytes)?;
         records.push(record);
         let manifest = sge_project::AuthoringAssetManifest::new(records)?;
-        let entity = SceneEntityId::new_v4();
-        let name_value = self.set_component_draft_field(
-            &self.component_draft("sge.name")?,
-            "value",
-            Value::String(name.to_owned()),
-        )?;
-        let mesh_value = self.set_component_draft_field(
-            &self.component_draft("sge.mesh_renderer")?,
-            "mesh",
-            Value::Reference(asset.to_string()),
-        )?;
-        let authoring = AuthoringEntity::new(
-            entity,
-            None,
-            vec![
-                self.component_draft("sge.transform")?,
-                mesh_value,
-                self.component_draft("sge.material")?,
-                name_value,
-            ],
-        )?;
+        let authoring = self.mesh_entity(asset, name)?;
+        let entity = authoring.id();
         let before = self.snapshot()?;
         let mut entities = before.entities().cloned().collect::<Vec<_>>();
         entities.push(authoring.clone());
         let after = AuthoringScene::new(entities)?;
 
-        self.project.write_atomic(&source, bytes)?;
-        let imported = import_project_assets(&self.project, &manifest)?;
-        let assets = std::sync::Arc::new(imported.into_parts().0);
-        let mut candidate_app = self.game.create_app()?;
-        let prepared = prepare(&after, candidate_app.type_registry(), assets.as_ref())?;
-        let candidate_instance =
-            sge_scene::instantiate(prepared, candidate_app.world_initializer()?)?;
-        manifest.save(&self.project)?;
+        self.project.write_new_atomic(&source, bytes)?;
+        let commit = (|| -> Result<_, EditError> {
+            let imported = import_project_assets(&self.project, &manifest)?;
+            let assets = std::sync::Arc::new(imported.into_parts().0);
+            let mut candidate_app = self.game.create_app()?;
+            let prepared = prepare(&after, candidate_app.type_registry(), assets.as_ref())?;
+            let candidate_instance =
+                sge_scene::instantiate(prepared, candidate_app.world_initializer()?)?;
+            manifest.save(&self.project)?;
+            Ok((assets, candidate_app, candidate_instance))
+        })();
+        let (assets, candidate_app, candidate_instance) = match commit {
+            Ok(candidate) => candidate,
+            Err(operation) => {
+                if let Err(rollback) = self.project.remove_file(&source) {
+                    return Err(EditError::AssetImportRollback {
+                        path: source,
+                        operation: Box::new(operation),
+                        rollback,
+                    });
+                }
+                return Err(operation);
+            }
+        };
         self.manifest = manifest;
         self.assets = assets;
         self.commit_candidate(

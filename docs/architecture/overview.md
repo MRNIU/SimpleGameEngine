@@ -86,6 +86,8 @@ flowchart TB
 
 - `project.sge.ron`、`Content/asset_manifest.ron`、`Scenes/*.scene.ron` 是 authoring truth。
 - project `Cache/` 是可删除重建的 import cache，不是 durable truth。
+- Editor 负责 source、manifest 与 candidate scene 的跨文件工作流：新 source 采用 create-only atomic write；后续 import/cache、prepare/instantiate 或 manifest atomic save 失败时删除该 source，既有 manifest、scene 与 live session 不提交候选状态。
+- Basic Shapes 仍是普通 manifest/source/`AssetId` 资产；同一项目内以 importer settings 与规范 OBJ 字节匹配并复用，不建立内建 mesh 旁路。Undo/Redo 只改变 scene entity，已提交资产保持持久可复用。
 - full Cook 发布 immutable generation 与单个 atomic runtime catalog。
 - Player 只读取 runtime catalog、entry `RuntimeScene` 和 canonical `MeshAsset` products。
 - runtime `Entity`、absolute path、Editor state、GPU handle 和 cache path 不进入 authoring/runtime scene。
