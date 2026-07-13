@@ -85,6 +85,6 @@ bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `e
 - `demo-game-player` 从 source-free cooked root加载，使用 winit input adapter、advance/extract并真实 present。
 - `sge build` 启动 game-specific Build，full Cook后只接受本次Cargo Player artifact，并以immutable generation + atomic manifest发布可复制Stage。
 - `scripts/test-integration-demo.sh` 从 workspace gate/audit、game-specific Editor 窗口 smoke 到 authoring/Play/真实 Build/Cook/copied Stage/staged Player 单链闭合最终目标。
-- Apple Silicon macOS 26.5.1 已有原生 workspace build、Editor WGPU preview、Build/Stage与staged Player present证据；不外推到Intel Mac、其他GPU或物理输入。
+- Apple Silicon macOS 26.5.1 已有3轮原生自动action-tape编辑/保存/Play/Stop、Build/Stage、cooked scene读回、staged Player 120帧present和Retina-aware surface readback证据；真实键鼠、native dialog与dirty close人工验收仍未完成，不外推到Intel Mac或其他GPU。
 - 下一阶段是 Mac Product Hardening：以真实鼠标键盘操作、截图/图像识别和可复现用户旅程清零现有功能缺陷，在通过完整可用性验收前不得声明“可真正使用”或“产品完成”。
 - 新功能延期项包括但不限于音频、物理、网络、archive/Pak/signing/installer、Play writeback、action remapping、prefab、parallel ECS/RenderWorld/incremental Cook；它们不应混入缺陷清零阶段。

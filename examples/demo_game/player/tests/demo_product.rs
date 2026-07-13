@@ -105,9 +105,20 @@ fn game_specific_player_reads_back_presented_surface() -> Result<(), Box<dyn std
         1
     );
     let screenshot = image::open(screenshot)?.to_rgba8();
-    assert_eq!(screenshot.dimensions(), (1280, 720));
+    let (width, height) = screenshot.dimensions();
+    assert!(width >= 1280 && height >= 720);
+    assert_eq!(u64::from(width) * 720, u64::from(height) * 1280);
     let corner = *screenshot.get_pixel(0, 0);
-    assert!(screenshot.pixels().any(|pixel| *pixel != corner));
+    let visible_pixels = screenshot
+        .pixels()
+        .filter(|pixel| {
+            pixel.0[..3]
+                .iter()
+                .zip(corner.0[..3].iter())
+                .any(|(channel, background)| channel.abs_diff(*background) > 16)
+        })
+        .count();
+    assert!(visible_pixels > (u64::from(width) * u64::from(height) / 100) as usize);
     Ok(())
 }
 
