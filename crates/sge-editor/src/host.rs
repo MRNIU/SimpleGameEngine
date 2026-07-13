@@ -173,6 +173,7 @@ pub fn run(
                 file_dialogs: options.file_dialogs,
                 pending_replacement: None,
                 viewport,
+                immersive_viewport: false,
             }))
         }),
     )
@@ -235,6 +236,7 @@ struct EditorApp {
     file_dialogs: Option<EditorFileDialogs>,
     pending_replacement: Option<ReplacementDialog>,
     viewport: EditorViewport,
+    immersive_viewport: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -497,56 +499,61 @@ impl eframe::App for EditorApp {
             self.unsaved_changes_dialog(ui.ctx());
             return;
         }
-        egui::Panel::top("project_identity").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                for label in project_identity_labels(
-                    self.session.descriptor().game_id().as_str(),
-                    &self.project_root,
-                ) {
-                    ui.label(label);
-                    ui.separator();
-                }
-                self.file_controls(ui);
-                if self.play.is_some() {
-                    if ui.button("Stop").clicked() {
-                        let _ = self.apply_ui_action(EditorUiAction::StopPlay);
+        self.apply_editor_shortcuts(ui);
+        if !self.immersive_viewport {
+            egui::Panel::top("project_identity").show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    for label in project_identity_labels(
+                        self.session.descriptor().game_id().as_str(),
+                        &self.project_root,
+                    ) {
+                        ui.label(label);
+                        ui.separator();
                     }
-                } else if ui.button("Play").clicked() {
-                    let _ = self.apply_ui_action(EditorUiAction::StartPlay);
-                }
-                self.build_controls(ui);
-                if ui
-                    .add_enabled(self.play.is_none(), egui::Button::new("Save"))
-                    .clicked()
-                {
-                    let _ = self.apply_ui_action(EditorUiAction::Save);
-                }
-                if ui
-                    .add_enabled(self.play.is_none(), egui::Button::new("Undo"))
-                    .clicked()
-                {
-                    let _ = self.apply_ui_action(EditorUiAction::Undo);
-                }
-                if ui
-                    .add_enabled(self.play.is_none(), egui::Button::new("Redo"))
-                    .clicked()
-                {
-                    let _ = self.apply_ui_action(EditorUiAction::Redo);
-                }
-                ui.label(if self.session.is_dirty() {
-                    "modified"
-                } else {
-                    "saved"
+                    self.file_controls(ui);
+                    if self.play.is_some() {
+                        if ui.button("Stop").clicked() {
+                            let _ = self.apply_ui_action(EditorUiAction::StopPlay);
+                        }
+                    } else if ui.button("Play").clicked() {
+                        let _ = self.apply_ui_action(EditorUiAction::StartPlay);
+                    }
+                    self.build_controls(ui);
+                    if ui
+                        .add_enabled(self.play.is_none(), egui::Button::new("Save"))
+                        .clicked()
+                    {
+                        let _ = self.apply_ui_action(EditorUiAction::Save);
+                    }
+                    if ui
+                        .add_enabled(self.play.is_none(), egui::Button::new("Undo"))
+                        .clicked()
+                    {
+                        let _ = self.apply_ui_action(EditorUiAction::Undo);
+                    }
+                    if ui
+                        .add_enabled(self.play.is_none(), egui::Button::new("Redo"))
+                        .clicked()
+                    {
+                        let _ = self.apply_ui_action(EditorUiAction::Redo);
+                    }
+                    ui.label(if self.session.is_dirty() {
+                        "modified"
+                    } else {
+                        "saved"
+                    });
                 });
             });
-        });
+        }
         if self.pending_replacement.is_some() {
             self.unsaved_changes_dialog(ui.ctx());
             return;
         }
 
-        self.hierarchy(ui);
-        self.inspector(ui);
+        if !self.immersive_viewport {
+            self.hierarchy(ui);
+            self.inspector(ui);
+        }
 
         let response = if let Some(frame) = &self.frame {
             preview::paint(ui, frame, &self.probe, |ui, rect| {
@@ -591,6 +598,37 @@ impl eframe::App for EditorApp {
         }
         if ui.ctx().current_pass_index() == 0 {
             self.advance_play(ui.ctx(), response.hovered());
+        }
+    }
+}
+
+impl EditorApp {
+    fn apply_editor_shortcuts(&mut self, ui: &egui::Ui) {
+        if ui.input(|input| input.key_pressed(egui::Key::F11)) {
+            self.immersive_viewport = !self.immersive_viewport;
+        }
+        if ui.ctx().text_edit_focused() || self.play.is_some() {
+            return;
+        }
+        let (command, shift, save, undo, redo, delete) = ui.input(|input| {
+            (
+                input.modifiers.command,
+                input.modifiers.shift,
+                input.key_pressed(egui::Key::S),
+                input.key_pressed(egui::Key::Z),
+                input.key_pressed(egui::Key::Y),
+                input.key_pressed(egui::Key::Delete),
+            )
+        });
+        if command && save {
+            let _ = self.apply_ui_action(EditorUiAction::Save);
+        } else if command && undo && !shift {
+            let _ = self.apply_ui_action(EditorUiAction::Undo);
+        } else if command && (redo || (shift && undo)) {
+            let _ = self.apply_ui_action(EditorUiAction::Redo);
+        } else if delete && let Some(selection) = self.session.selection() {
+            let result = self.session.remove_subtree(selection);
+            self.apply_edit(result);
         }
     }
 }

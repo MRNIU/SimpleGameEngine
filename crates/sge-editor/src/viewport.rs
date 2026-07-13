@@ -16,9 +16,12 @@ const HANDLE_LENGTH: f32 = 46.0;
 const HANDLE_SIZE: f32 = 14.0;
 const UNITS_PER_PIXEL: f32 = 0.01;
 const WORLD_AXIS_LENGTH: f32 = 1.0;
+const CAMERA_MOVE_SPEED: f32 = 4.0;
+const CAMERA_SPEED_MULTIPLIERS: [f32; 8] = [0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum GizmoMode {
+    Select,
     #[default]
     Move,
     Rotate,
@@ -62,6 +65,8 @@ pub(crate) struct EditorViewport {
     drag: Option<GizmoDrag>,
     orbiting: bool,
     cube_pointer_active: bool,
+    camera_speed_level: u8,
+    game_view: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -119,6 +124,8 @@ impl Default for EditorViewport {
             drag: None,
             orbiting: false,
             cube_pointer_active: false,
+            camera_speed_level: 4,
+            game_view: false,
         }
     }
 }
@@ -158,9 +165,13 @@ impl EditorViewport {
         frame: &PreviewFrame,
         session: &mut EditSession,
     ) -> Result<(), crate::EditError> {
-        draw_world_axes(ui, response.rect, frame);
-        let overlay_consumed = self.draw_view_cube(ui, response.rect);
         self.update_mode(ui, response);
+        let overlay_consumed = if self.game_view {
+            false
+        } else {
+            draw_world_axes(ui, response.rect, frame);
+            self.draw_view_cube(ui, response.rect)
+        };
         let camera_consumed = self.navigate(ui, response, session);
         let gizmo_consumed = if camera_consumed {
             false
@@ -174,7 +185,9 @@ impl EditorViewport {
     }
 
     pub(crate) fn paint_background(&self, ui: &egui::Ui, rect: egui::Rect, frame: &PreviewFrame) {
-        draw_grid(ui, rect, frame);
+        if !self.game_view {
+            draw_grid(ui, rect, frame);
+        }
     }
 
     fn navigate(
@@ -183,18 +196,29 @@ impl EditorViewport {
         response: &egui::Response,
         session: &EditSession,
     ) -> bool {
-        let (delta, primary_down, secondary_down, alt, scroll, escape, frame_selected) =
-            ui.input(|input| {
-                (
-                    input.pointer.delta(),
-                    input.pointer.primary_down(),
-                    input.pointer.secondary_down(),
-                    input.modifiers.alt,
-                    input.smooth_scroll_delta.y,
-                    input.key_pressed(egui::Key::Escape),
-                    input.key_pressed(egui::Key::F),
-                )
-            });
+        let (
+            delta,
+            primary_down,
+            middle_down,
+            secondary_down,
+            alt,
+            scroll,
+            escape,
+            frame_selected,
+            stable_dt,
+        ) = ui.input(|input| {
+            (
+                input.pointer.delta(),
+                input.pointer.primary_down(),
+                input.pointer.middle_down(),
+                input.pointer.secondary_down(),
+                input.modifiers.alt,
+                input.smooth_scroll_delta.y,
+                input.key_pressed(egui::Key::Escape),
+                input.key_pressed(egui::Key::F),
+                input.stable_dt,
+            )
+        });
         if escape {
             self.drag = None;
         }
@@ -212,7 +236,14 @@ impl EditorViewport {
         }
         let finishing_orbit = self.orbiting && !primary_down;
         let orbit = self.orbiting && primary_down;
-        let look = response.dragged_by(egui::PointerButton::Secondary);
+        let pan = alt && middle_down && response.dragged_by(egui::PointerButton::Middle);
+        let dolly = alt && secondary_down && response.dragged_by(egui::PointerButton::Secondary);
+        let vertical = !alt && primary_down && secondary_down;
+        let look = !alt && !primary_down && response.dragged_by(egui::PointerButton::Secondary);
+        let lmb_navigate = !alt
+            && !secondary_down
+            && self.drag.is_none()
+            && response.dragged_by(egui::PointerButton::Primary);
         if orbit || look {
             let rotation = Quat::from_rotation_z(-delta.x * 0.01)
                 * Quat::from_array(self.transform.rotation)
@@ -224,11 +255,43 @@ impl EditorViewport {
                 self.sync_pivot_from_position();
             }
         }
-        if response.hovered() && scroll != 0.0 {
-            let forward = Quat::from_array(self.transform.rotation) * Vec3::Z;
+        if pan {
+            let rotation = Quat::from_array(self.transform.rotation);
+            let movement = camera_pan_motion(rotation, self.distance, delta);
             self.transform.translation =
-                (Vec3::from_array(self.transform.translation) + forward * scroll * 0.02).to_array();
+                (Vec3::from_array(self.transform.translation) + movement).to_array();
+            self.pivot += movement;
+        }
+        if dolly {
+            self.distance = dolly_distance(self.distance, delta.y);
+            self.sync_position_from_pivot();
+        }
+        if vertical {
+            let movement = Vec3::Z * -delta.y * self.effective_camera_speed() * 0.01;
+            self.transform.translation =
+                (Vec3::from_array(self.transform.translation) + movement).to_array();
+            self.pivot += movement;
+        }
+        if lmb_navigate {
+            let rotation =
+                Quat::from_rotation_z(-delta.x * 0.01) * Quat::from_array(self.transform.rotation);
+            self.transform.rotation = rotation.normalize().to_array();
+            let forward = rotation * Vec3::Z;
+            let movement = forward * -delta.y.signum() * self.effective_camera_speed() * 0.25;
+            self.transform.translation =
+                (Vec3::from_array(self.transform.translation) + movement).to_array();
             self.sync_pivot_from_position();
+        }
+        if response.hovered() && scroll != 0.0 {
+            if secondary_down {
+                self.adjust_camera_speed(scroll.signum() as i8);
+            } else {
+                let forward = Quat::from_array(self.transform.rotation) * Vec3::Z;
+                self.transform.translation = (Vec3::from_array(self.transform.translation)
+                    + forward * scroll.signum() * self.effective_camera_speed() * 0.25)
+                    .to_array();
+                self.sync_pivot_from_position();
+            }
         }
         if response.hovered() && secondary_down {
             let movement = ui.input(|input| {
@@ -245,14 +308,22 @@ impl EditorViewport {
             let motion = rotation * Vec3::X * movement.x
                 + Vec3::Z * movement.y
                 + rotation * Vec3::Z * movement.z;
+            let motion = camera_fly_motion(motion, self.effective_camera_speed(), stable_dt);
             self.transform.translation =
-                (Vec3::from_array(self.transform.translation) + motion * 0.08).to_array();
+                (Vec3::from_array(self.transform.translation) + motion).to_array();
             self.sync_pivot_from_position();
         }
         if finishing_orbit {
             self.orbiting = false;
         }
-        orbit || finishing_orbit || look || (response.hovered() && secondary_down)
+        orbit
+            || finishing_orbit
+            || pan
+            || dolly
+            || vertical
+            || look
+            || lmb_navigate
+            || (response.hovered() && secondary_down)
     }
 
     fn update_mode(&mut self, ui: &egui::Ui, response: &egui::Response) {
@@ -263,14 +334,30 @@ impl EditorViewport {
             return;
         }
         ui.input(|input| {
-            if input.key_pressed(egui::Key::W) {
+            if input.key_pressed(egui::Key::Q) {
+                self.gizmo = GizmoMode::Select;
+            } else if input.key_pressed(egui::Key::W) {
                 self.gizmo = GizmoMode::Move;
             } else if input.key_pressed(egui::Key::E) {
                 self.gizmo = GizmoMode::Rotate;
             } else if input.key_pressed(egui::Key::R) {
                 self.gizmo = GizmoMode::Scale;
+            } else if input.key_pressed(egui::Key::Space) {
+                self.gizmo = self.gizmo.next();
+            } else if input.key_pressed(egui::Key::G) {
+                self.game_view = !self.game_view;
             }
         });
+    }
+
+    fn effective_camera_speed(&self) -> f32 {
+        CAMERA_MOVE_SPEED
+            * CAMERA_SPEED_MULTIPLIERS[usize::from(self.camera_speed_level.saturating_sub(1))]
+    }
+
+    fn adjust_camera_speed(&mut self, delta: i8) {
+        self.camera_speed_level =
+            (i16::from(self.camera_speed_level) + i16::from(delta)).clamp(1, 8) as u8;
     }
 
     fn draw_view_cube(&mut self, ui: &mut egui::Ui, rect: egui::Rect) -> bool {
@@ -365,6 +452,10 @@ impl EditorViewport {
         frame: &PreviewFrame,
         session: &mut EditSession,
     ) -> Result<bool, crate::EditError> {
+        if self.game_view || self.gizmo == GizmoMode::Select {
+            self.drag = None;
+            return Ok(false);
+        }
         if self
             .drag
             .is_some_and(|drag| session.selection() != Some(drag.entity))
@@ -404,6 +495,7 @@ impl EditorViewport {
         if ui.input(|input| input.pointer.primary_released()) {
             let drag = self.drag.take().expect("checked above");
             let (field, value) = match drag.mode {
+                GizmoMode::Select => return Ok(false),
                 GizmoMode::Move => (
                     "translation",
                     Value::Vec3(Vec3::from_array(drag.preview.translation)),
@@ -424,6 +516,7 @@ fn transform_for_drag(mut drag: GizmoDrag, pointer: egui::Pos2) -> Transform {
     let amount = (pointer - drag.pointer).dot(drag.screen_axis) * UNITS_PER_PIXEL;
     drag.preview = drag.start;
     match drag.mode {
+        GizmoMode::Select => {}
         GizmoMode::Move => {
             drag.preview.translation =
                 (Vec3::from_array(drag.start.translation) + drag.axis.vector() * amount).to_array();
@@ -448,6 +541,16 @@ fn transform_for_drag(mut drag: GizmoDrag, pointer: egui::Pos2) -> Transform {
     drag.preview
 }
 
+impl GizmoMode {
+    const fn next(self) -> Self {
+        match self {
+            Self::Select | Self::Scale => Self::Move,
+            Self::Move => Self::Rotate,
+            Self::Rotate => Self::Scale,
+        }
+    }
+}
+
 fn gizmo_transform(
     committed: Transform,
     drag: Option<GizmoDrag>,
@@ -461,6 +564,22 @@ fn update_drag_preview(drag: &mut Option<GizmoDrag>, pointer: Option<egui::Pos2>
     if let (Some(drag), Some(pointer)) = (drag.as_mut(), pointer) {
         drag.preview = transform_for_drag(*drag, pointer);
     }
+}
+
+fn camera_pan_motion(rotation: Quat, distance: f32, delta: egui::Vec2) -> Vec3 {
+    let scale = (distance * 0.0025).clamp(0.0025, 0.2);
+    (-(rotation * Vec3::X) * delta.x + (rotation * Vec3::Y) * delta.y) * scale
+}
+
+fn dolly_distance(distance: f32, delta_y: f32) -> f32 {
+    (distance * (1.0 + delta_y * 0.01)).clamp(0.05, 10_000.0)
+}
+
+fn camera_fly_motion(direction: Vec3, speed: f32, stable_dt: f32) -> Vec3 {
+    if !stable_dt.is_finite() || stable_dt <= 0.0 {
+        return Vec3::ZERO;
+    }
+    direction.normalize_or_zero() * speed * stable_dt
 }
 
 fn gizmo_handles(frame: &PreviewFrame, rect: egui::Rect, transform: Transform) -> Vec<GizmoHandle> {
@@ -513,6 +632,7 @@ fn paint_gizmo(
             egui::Stroke::new(3.0, handle.axis.color()),
         );
         match mode {
+            GizmoMode::Select => {}
             GizmoMode::Move => {
                 painter.rect_filled(handle.hit, 1.0, handle.axis.color());
             }
@@ -1050,6 +1170,25 @@ mod tests {
             ),
             committed
         );
+    }
+
+    #[test]
+    fn ue_transform_tool_cycle_matches_qwer_and_space() {
+        assert_eq!(GizmoMode::Select.next(), GizmoMode::Move);
+        assert_eq!(GizmoMode::Move.next(), GizmoMode::Rotate);
+        assert_eq!(GizmoMode::Rotate.next(), GizmoMode::Scale);
+        assert_eq!(GizmoMode::Scale.next(), GizmoMode::Move);
+    }
+
+    #[test]
+    fn ue_camera_navigation_is_distance_scaled_and_frame_rate_independent() {
+        let pan = camera_pan_motion(Quat::IDENTITY, 8.0, egui::vec2(20.0, -10.0));
+        assert!((pan - Vec3::new(-0.4, -0.2, 0.0)).length() < 0.0001);
+        assert!(dolly_distance(8.0, 10.0) > 8.0);
+        let straight = camera_fly_motion(Vec3::X, 4.0, 0.25);
+        let diagonal = camera_fly_motion(Vec3::new(1.0, 1.0, 0.0), 4.0, 0.25);
+        assert!((straight.length() - 1.0).abs() < 0.0001);
+        assert!((diagonal.length() - straight.length()).abs() < 0.0001);
     }
 
     #[test]
