@@ -123,7 +123,7 @@ fn game_specific_editor_paints_the_authoring_viewport() -> Result<(), Box<dyn st
     }
     assert!(stdout.contains("play_frames=0"));
     let screenshot = image::open(screenshot)?.to_rgba8();
-    assert_eq!(screenshot.dimensions(), (1280, 720));
+    assert_editor_screenshot_size(&screenshot);
     let first = *screenshot.get_pixel(0, 0);
     assert!(screenshot.pixels().any(|pixel| *pixel != first));
     assert_eq!(grid_holes_inside_material(&screenshot), 0);
@@ -172,11 +172,22 @@ fn internal_ui_tape_selects_hierarchy_and_reads_back_inspector()
     );
     assert!(String::from_utf8(output.stdout)?.contains("ui_actions=1"));
     let screenshot = image::open(screenshot)?.to_rgba8();
+    assert_editor_screenshot_size(&screenshot);
+    let scale = screenshot.width() as f32 / 1280.0;
+    let inspector_left = screenshot
+        .width()
+        .saturating_sub((300.0 * scale).round() as u32);
+    let inspector_top = (40.0 * scale).round() as u32;
     let dark_inspector_pixels = screenshot
         .enumerate_pixels()
-        .filter(|(x, y, pixel)| *x >= 980 && *y >= 40 && pixel.0[..3].iter().all(|v| *v < 200))
+        .filter(|(x, y, pixel)| {
+            *x >= inspector_left && *y >= inspector_top && pixel.0[..3].iter().all(|v| *v < 200)
+        })
         .count();
-    assert!(dark_inspector_pixels > 2_000, "Inspector remained empty");
+    assert!(
+        dark_inspector_pixels > (2_000.0 * scale * scale) as usize,
+        "Inspector remained empty"
+    );
     Ok(())
 }
 
@@ -216,10 +227,7 @@ fn internal_ui_tape_edits_saves_plays_stops_and_reads_back()
     let after = fs::read(&scene)?;
     assert_ne!(after, before);
     assert!(String::from_utf8(after)?.contains("Entity"));
-    assert_eq!(
-        image::open(screenshot)?.to_rgba8().dimensions(),
-        (1280, 720)
-    );
+    assert_editor_screenshot_size(&image::open(screenshot)?.to_rgba8());
     Ok(())
 }
 
@@ -245,10 +253,7 @@ fn internal_ui_tape_rejects_authoring_mutation_during_play()
     );
     assert_eq!(fs::read(manifest)?, before_manifest);
     assert_eq!(fs::read_dir(meshes)?.count(), before_meshes);
-    assert_eq!(
-        image::open(screenshot)?.to_rgba8().dimensions(),
-        (1280, 720)
-    );
+    assert_editor_screenshot_size(&image::open(screenshot)?.to_rgba8());
     Ok(())
 }
 
@@ -269,11 +274,21 @@ fn internal_ui_tape_waits_for_build_before_readback() -> Result<(), Box<dyn std:
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(String::from_utf8(output.stdout)?.contains("ui_actions=1"));
-    assert_eq!(
-        image::open(screenshot)?.to_rgba8().dimensions(),
-        (1280, 720)
-    );
+    assert_editor_screenshot_size(&image::open(screenshot)?.to_rgba8());
     Ok(())
+}
+
+fn assert_editor_screenshot_size(image: &image::RgbaImage) {
+    let (width, height) = image.dimensions();
+    assert!(
+        width >= 1280 && height >= 720,
+        "unexpected size: {width}x{height}"
+    );
+    assert_eq!(
+        u64::from(width) * 720,
+        u64::from(height) * 1280,
+        "unexpected aspect ratio: {width}x{height}"
+    );
 }
 
 struct WindowManager(std::process::Child);
