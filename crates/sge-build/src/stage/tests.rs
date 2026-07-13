@@ -128,6 +128,7 @@ fn manifest_commit_is_the_last_fallible_step_and_preserves_old_current()
     let _cleanup = Cleanup(root.clone());
     fs::create_dir(&root)?;
     let stage = StageRoot::open(&root)?;
+    let canonical_root = fs::canonicalize(&root)?;
     let artifact = root
         .parent()
         .unwrap()
@@ -159,7 +160,7 @@ fn manifest_commit_is_the_last_fallible_step_and_preserves_old_current()
                 next_generation,
             ),
             |stage_root, _| {
-                assert_eq!(stage_root, root);
+                assert_eq!(stage_root, canonical_root);
                 assert_eq!(
                     fs::read_dir(root.join(super::GENERATIONS_NAME))
                         .expect("generation directory must remain readable")
