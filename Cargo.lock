@@ -513,6 +513,7 @@ dependencies = [
  "demo-game",
  "rfd",
  "sge-editor",
+ "sge-project",
 ]
 
 [[package]]

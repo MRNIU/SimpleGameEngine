@@ -97,15 +97,27 @@ fn create_demo_project(parent: &Path) -> Result<PathBuf, String> {
 }
 
 fn populate_demo_project(root: &Path) -> Result<(), String> {
+    let manifest = sge_project::AuthoringAssetManifest::from_ron(include_str!(
+        "../../Content/asset_manifest.ron"
+    ))
+    .and_then(|manifest| {
+        sge_project::AuthoringAssetManifest::new(
+            manifest
+                .records()
+                .iter()
+                .filter(|record| record.source().as_str() == "Content/Meshes/demo.obj")
+                .cloned()
+                .collect(),
+        )
+    })
+    .and_then(|manifest| manifest.to_ron())
+    .map_err(|error| error.to_string())?;
     let files = [
         (
             "project.sge.ron",
             include_bytes!("../../project.sge.ron").as_slice(),
         ),
-        (
-            "Content/asset_manifest.ron",
-            include_bytes!("../../Content/asset_manifest.ron").as_slice(),
-        ),
+        ("Content/asset_manifest.ron", manifest.as_bytes()),
         (
             "Content/Meshes/demo.obj",
             include_bytes!("../../Content/Meshes/demo.obj").as_slice(),
@@ -199,6 +211,7 @@ mod tests {
         assert!(root.join("Content/asset_manifest.ron").is_file());
         assert!(root.join("Content/Meshes/demo.obj").is_file());
         assert!(root.join("Scenes/main.scene.ron").is_file());
+        let _session = sge_editor::EditSession::open(demo_game::GAME, &root)?;
         assert!(create_demo_project(&parent).is_err());
         fs::remove_dir_all(parent)?;
         Ok(())

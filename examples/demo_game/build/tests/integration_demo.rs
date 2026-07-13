@@ -220,17 +220,14 @@ impl Fixture {
             .join(std::process::id().to_string());
         let _ = fs::remove_dir_all(&root);
         let project = root.join("Project");
-        fs::create_dir_all(project.join("Content/Meshes"))?;
-        fs::create_dir_all(project.join("Scenes"))?;
+        fs::create_dir_all(&project)?;
         let source = workspace.join("examples/demo_game");
-        for relative in [
-            "project.sge.ron",
-            "Content/asset_manifest.ron",
-            "Content/Meshes/demo.obj",
-            "Scenes/main.scene.ron",
-        ] {
-            fs::copy(source.join(relative), project.join(relative))?;
-        }
+        fs::copy(
+            source.join("project.sge.ron"),
+            project.join("project.sge.ron"),
+        )?;
+        copy_tree(&source.join("Content"), &project.join("Content"))?;
+        copy_tree(&source.join("Scenes"), &project.join("Scenes"))?;
         Ok(Self {
             stage: root.join("Stage"),
             copied_stage: root.join("CopiedStage"),

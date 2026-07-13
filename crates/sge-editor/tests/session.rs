@@ -18,7 +18,10 @@ fn demo_project_opens_as_a_preview_candidate() -> Result<(), Box<dyn std::error:
     let frame = session.preview_frame()?;
 
     assert_eq!(session.descriptor().game_id().as_str(), demo_game::GAME_ID);
-    assert_eq!(session.manifest().records().len(), 1);
+    assert!(!session.manifest().records().is_empty());
+    for record in session.manifest().records() {
+        assert!(project.path().join(record.source().as_str()).is_file());
+    }
     assert_eq!(session.snapshot()?.entities().count(), 3);
     assert_eq!(frame.snapshot.meshes().len(), 1);
     assert_eq!(frame.snapshot.lights().len(), 1);
@@ -161,10 +164,16 @@ impl TestProject {
         for relative in [
             "project.sge.ron",
             "Content/asset_manifest.ron",
-            "Content/Meshes/demo.obj",
             "Scenes/main.scene.ron",
         ] {
             fs::copy(demo_root().join(relative), root.join(relative))?;
+        }
+        for entry in fs::read_dir(demo_root().join("Content/Meshes"))? {
+            let entry = entry?;
+            fs::copy(
+                entry.path(),
+                root.join("Content/Meshes").join(entry.file_name()),
+            )?;
         }
         Ok(Self { root })
     }

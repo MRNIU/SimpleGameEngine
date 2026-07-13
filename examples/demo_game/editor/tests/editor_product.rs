@@ -171,10 +171,16 @@ impl TestProject {
         for relative in [
             "project.sge.ron",
             "Content/asset_manifest.ron",
-            "Content/Meshes/demo.obj",
             "Scenes/main.scene.ron",
         ] {
             fs::copy(demo_root().join(relative), root.join(relative))?;
+        }
+        for entry in fs::read_dir(demo_root().join("Content/Meshes"))? {
+            let entry = entry?;
+            fs::copy(
+                entry.path(),
+                root.join("Content/Meshes").join(entry.file_name()),
+            )?;
         }
         Ok(Self { root })
     }
