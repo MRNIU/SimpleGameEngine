@@ -43,8 +43,14 @@ if [ -z "$DEVCONTAINER_BRANCH" ]; then echo "detached HEAD is not supported" >&2
 export DEVCONTAINER_NAME="simple-game-engine-devcontainer-${DEVCONTAINER_USER}-${DEVCONTAINER_BRANCH}"
 
 docker build -t simple-game-engine-devcontainer:latest .devcontainer
+DEVCONTAINER_IMAGE_ID="$(docker image inspect --format '{{.Id}}' simple-game-engine-devcontainer:latest)"
+DEVCONTAINER_CONTAINER_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$DEVCONTAINER_NAME" 2>/dev/null || true)"
+DEVCONTAINER_CONTAINER_INIT="$(docker inspect --format '{{.HostConfig.Init}}' "$DEVCONTAINER_NAME" 2>/dev/null || true)"
+if [ "$DEVCONTAINER_CONTAINER_IMAGE_ID" != "$DEVCONTAINER_IMAGE_ID" ] || [ "$DEVCONTAINER_CONTAINER_INIT" != "true" ]; then
+  docker rm -f "$DEVCONTAINER_NAME" >/dev/null 2>&1 || true
+fi
 docker inspect "$DEVCONTAINER_NAME" >/dev/null 2>&1 || \
-  docker run -d --name "$DEVCONTAINER_NAME" -v "$PWD:/workspace" -w /workspace simple-game-engine-devcontainer:latest sleep infinity
+  docker run -d --init --name "$DEVCONTAINER_NAME" -v "$PWD:/workspace" -w /workspace simple-game-engine-devcontainer:latest sleep infinity
 docker start "$DEVCONTAINER_NAME" >/dev/null 2>&1 || true
 docker exec "$DEVCONTAINER_NAME" bash -lc 'git config --global --add safe.directory /workspace'
 ```
@@ -113,7 +119,7 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p sge-build --bin sge -- b
 # M6 产品 smoke：重复完整Build、复制source-free Stage、注入窗口输入并由staged Player真实present
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-build --test stage_product game_build_produces_a_copied_source_free_stage_that_runs -- --ignored --exact'
 
-# M7 最终 gate：workspace gate/audit、Editor窗口smoke及完整authoring -> Play -> Build -> Stage -> Player单链
+# M7 最终 gate：workspace gate/audit、Editor窗口smoke及完整authoring -> Play -> Build -> Stage -> Player单链；全冷构建默认使用2个Cargo job，可用CARGO_BUILD_JOBS覆盖
 docker exec "$DEVCONTAINER_NAME" bash -lc 'scripts/test-integration-demo.sh'
 ```
 

@@ -8,6 +8,7 @@
     ]
   },
   "runArgs": [
+    "--init",
     "--name",
     "${localEnv:DEVCONTAINER_NAME}"
   ],

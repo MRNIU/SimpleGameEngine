@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
+readonly WINDOW_TEST_TIMEOUT_SECONDS=300
+
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
@@ -12,11 +15,19 @@ run_ignored_exact() {
   local package="$1"
   local target="$2"
   local test_name="$3"
-  local output
-  if ! output="$(xvfb-run -a cargo test -p "$package" --test "$target" \
+  local output status
+  if output="$(timeout --kill-after=15s "${WINDOW_TEST_TIMEOUT_SECONDS}s" \
+    xvfb-run -a cargo test -p "$package" --test "$target" \
     "$test_name" -- --ignored --exact 2>&1)"; then
+    :
+  else
+    status=$?
     printf '%s\n' "$output"
-    return 1
+    if ((status == 124 || status == 137)); then
+      printf 'window test timed out after %ss: %s\n' \
+        "$WINDOW_TEST_TIMEOUT_SECONDS" "$test_name" >&2
+    fi
+    return "$status"
   fi
   printf '%s\n' "$output"
   if ! grep -Fq 'test result: ok. 1 passed;' <<<"$output"; then
