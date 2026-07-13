@@ -7,9 +7,20 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use sge_editor::{EditorBuildLauncher, EditorFileDialogs, EditorRunOptions, run};
+use sge_editor::{
+    EditorBuildLauncher, EditorFileDialogs, EditorLanguage, EditorRunOptions, EditorTranslations,
+    run,
+};
+
+mod localization;
+
+use localization::{DemoText, text};
 
 fn main() -> Result<(), Box<dyn Error>> {
+    localization::validate_catalogs().map_err(std::io::Error::other)?;
+    let translations =
+        EditorTranslations::from_json(localization::ENGLISH, localization::SIMPLIFIED_CHINESE)
+            .map_err(std::io::Error::other)?;
     let Some(arguments) = arguments()? else {
         return Ok(());
     };
@@ -19,6 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         EditorRunOptions {
             max_frames: arguments.max_frames,
             start_in_play: arguments.start_in_play,
+            language: arguments.language,
             screenshot: arguments.screenshot,
             ui_actions: arguments.ui_actions,
             build_launcher: Some(build_launcher()),
@@ -29,6 +41,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 save_scene: save_scene_dialog,
                 import_obj: import_obj_dialog,
             }),
+            translations: Some(translations),
             ..EditorRunOptions::default()
         },
     )?;
@@ -68,38 +81,42 @@ fn build_launcher() -> EditorBuildLauncher {
     .with_build_args([OsString::from("--workspace"), workspace.into_os_string()])
 }
 
-fn new_project_dialog() -> Result<Option<PathBuf>, String> {
+fn new_project_dialog(language: EditorLanguage) -> Result<Option<PathBuf>, String> {
     rfd::FileDialog::new()
-        .set_title("Choose a parent folder for DemoGame")
+        .set_title(text(language, DemoText::ChooseProjectParent))
         .pick_folder()
         .map(|parent| create_demo_project(&parent))
         .transpose()
 }
 
-fn open_project_dialog() -> Option<PathBuf> {
+fn open_project_dialog(language: EditorLanguage) -> Option<PathBuf> {
     rfd::FileDialog::new()
-        .add_filter("SimpleGameEngine Project", &["ron"])
+        .set_title(text(language, DemoText::OpenProject))
+        .add_filter(text(language, DemoText::ProjectFilter), &["ron"])
         .set_file_name("project.sge.ron")
         .pick_file()
         .and_then(|path| path.parent().map(Path::to_path_buf))
 }
 
-fn open_scene_dialog(root: &Path) -> Option<PathBuf> {
+fn open_scene_dialog(language: EditorLanguage, root: &Path) -> Option<PathBuf> {
     rfd::FileDialog::new()
+        .set_title(text(language, DemoText::OpenScene))
         .set_directory(root)
-        .add_filter("Authoring Scene", &["ron"])
+        .add_filter(text(language, DemoText::SceneFilter), &["ron"])
         .pick_file()
 }
 
-fn save_scene_dialog(root: &Path) -> Option<PathBuf> {
+fn save_scene_dialog(language: EditorLanguage, root: &Path) -> Option<PathBuf> {
     rfd::FileDialog::new()
+        .set_title(text(language, DemoText::SaveScene))
         .set_directory(root)
         .set_file_name("scene.scene.ron")
         .save_file()
 }
 
-fn import_obj_dialog(_: &Path) -> Option<PathBuf> {
+fn import_obj_dialog(language: EditorLanguage, _: &Path) -> Option<PathBuf> {
     rfd::FileDialog::new()
+        .set_title(text(language, DemoText::ImportObj))
         .add_filter("Wavefront OBJ", &["obj"])
         .pick_file()
 }
@@ -164,6 +181,7 @@ struct Arguments {
     project_root: PathBuf,
     max_frames: Option<u64>,
     start_in_play: bool,
+    language: EditorLanguage,
     screenshot: Option<PathBuf>,
     ui_actions: Vec<sge_editor::EditorUiAction>,
 }
@@ -180,6 +198,7 @@ fn arguments() -> Result<Option<Arguments>, String> {
     let project_root = PathBuf::from(first);
     let mut max_frames = None;
     let mut start_in_play = false;
+    let mut language = EditorLanguage::English;
     let mut screenshot = None;
     let mut ui_actions = Vec::new();
     while let Some(argument) = values.next() {
@@ -193,6 +212,17 @@ fn arguments() -> Result<Option<Arguments>, String> {
                     .next()
                     .ok_or_else(|| usage("--screenshot requires a path"))?,
             ));
+            continue;
+        }
+        if argument == "--language" {
+            let value = values
+                .next()
+                .ok_or_else(|| usage("--language requires en or zh-CN"))?;
+            let value = value
+                .to_str()
+                .ok_or_else(|| usage("--language must be UTF-8"))?;
+            language = EditorLanguage::from_code(value)
+                .ok_or_else(|| usage("--language must be en or zh-CN"))?;
             continue;
         }
         if argument == "--ui-action" {
@@ -232,6 +262,7 @@ fn arguments() -> Result<Option<Arguments>, String> {
         project_root,
         max_frames,
         start_in_play,
+        language,
         screenshot,
         ui_actions,
     }))
@@ -244,7 +275,7 @@ fn usage(error: &str) -> String {
         format!("{error}\n\n")
     };
     format!(
-        "{prefix}Usage: demo-game-editor PROJECT_ROOT [--play] [--max-frames N] [--screenshot PATH] [--ui-action ACTION]..."
+        "{prefix}Usage: demo-game-editor PROJECT_ROOT [--language en|zh-CN] [--play] [--max-frames N] [--screenshot PATH] [--ui-action ACTION]..."
     )
 }
 
@@ -266,6 +297,8 @@ fn parse_ui_action(value: &str) -> Result<sge_editor::EditorUiAction, String> {
         "build" => EditorUiAction::Build,
         "backend:wgpu" => EditorUiAction::SetRenderBackend(sge_editor::RenderBackend::Wgpu),
         "backend:cpu" => EditorUiAction::SetRenderBackend(sge_editor::RenderBackend::Cpu),
+        "language:en" => EditorUiAction::SetLanguage(EditorLanguage::English),
+        "language:zh-CN" => EditorUiAction::SetLanguage(EditorLanguage::SimplifiedChinese),
         _ => value
             .strip_prefix("select:")
             .and_then(|index| index.parse().ok())

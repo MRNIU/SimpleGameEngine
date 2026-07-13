@@ -1,6 +1,6 @@
 # SimpleGameEngine 架构
 
-最后审阅日期：2026-07-13
+最后审阅日期：2026-07-14
 
 本文是当前 Rust workspace 的架构真值，描述 crate 职责、依赖方向、产品路径和长期约束。当前完成度、验证证据与后续工作见 [`status.md`](status.md)。已经完成的阶段性设计和迁移计划不在当前树中维护，需要时通过 Git 历史查看。
 
@@ -75,7 +75,7 @@ flowchart TB
 | `crates/sge-asset-pipeline/` / `sge-asset-pipeline` | canonical OBJ import、rebuildable cache、dependency closure、full Cook、immutable generation publication | Editor/Player host、GPU、第二 importer facade |
 | `crates/sge-render/` / `sge-render` | reflected render components、owned `RenderSnapshot`、共享投影、窄 backend facade、retained WGPU 与 CPU 光栅器、safe surface | project/source ownership、egui ownership、第二套 snapshot/store/host |
 | `crates/sge-player/` / `sge-player` | identity-first source-free `PlayerSession`、winit presentation/input loop、resize/occlusion/surface policy | project、OBJ parser、Editor、native dialog |
-| `crates/sge-editor/` / `sge-editor` | candidate open、`EditSession`、Inspector/history/save、authoring viewport/gizmo、isolated `PlaySession`、egui input routing、eframe host | arbitrary World mutation、第二 registry/backend/event loop、Play writeback |
+| `crates/sge-editor/` / `sge-editor` | candidate open、`EditSession`、Inspector/history/save、authoring viewport/gizmo、English/简体中文host localization、isolated `PlaySession`、egui input routing、eframe host | arbitrary World mutation、第二 registry/backend/event loop、Play writeback、game content localization |
 | `crates/sge-build/` / `sge-build` | bootstrap launcher、full Cook/Cargo 编排、immutable Stage generation、atomic current manifest | game logic、Editor UI、Player runtime |
 | `examples/demo_game/game/` / `demo-game` | 静态 game composition root、`Rotator`/`PlayerController` systems、固定类型注册 | engine 通用 shortcut |
 | `examples/demo_game/{editor,player,build}/` | game-specific 薄产品入口与 native integration | 复制 engine owner 或数据格式 |
@@ -103,6 +103,7 @@ flowchart TB
 - game-specific Editor 独占 native dialog 依赖；dirty scene replacement 与窗口关闭必须经过 Save/Discard/Cancel。确认modal保留并禁用背景Editor，Save失败保持窗口、EditWorld、selection与history可恢复，Discard不写盘，Cancel不改变session。
 - Editor 只把 Play viewport 已聚焦且未被 egui 消费的输入发送给 gameplay。
 - authoring viewport 的 framing、tool hotkey 与飞行键盘输入同样要求 viewport focus 且无 text edit focus；Play 与 Build 互斥，Build child尚未回收时host禁止authoring mutation、文件写入和project/scene replacement。
+- Editor语言是独立host session状态：默认English，可通过`--language en|zh-CN`或顶栏切换；Editor shell、project identity、viewport状态、确认弹窗、性能面板与内建Reflect元数据读取`sge-editor`内嵌JSON catalog，game-specific native dialogs、Reflect元数据与固定实体Hierarchy显示名读取target通过`EditorTranslations`注入的自有catalog。固定UI使用typed key，Reflect显示使用稳定type/field/enum key，固定实体使用SceneEntityId key，缺失时保留注册方原文；catalog在启动前校验JSON语法、精确key集合与非空值。语言状态不进入project、scene、Cook或Stage，可编辑SceneName值与底层技术诊断保持内容或注册方原文。
 
 ## Render、Player 与 Stage
 
@@ -133,6 +134,6 @@ flowchart TB
 
 ## 延期边界
 
-音频、物理、动画、Gameplay UI、脚本、网络、Prefab、Advanced Render/VFX、AI/Navigation、Asset Streaming/Hot Reload、Localization/Telemetry 等待真实产品纵切。archive/Pak、compression/encryption、signing、installer、patch/DLC/chunk 与远程/交叉编译矩阵等待发行需求。Play writeback、多实例/网络 PIE、action remapping、dynamic ABI、parallel ECS、RenderWorld、incremental Cook 等待真实调用方或可测量的复杂度/性能触发。
+音频、物理、动画、Gameplay UI、脚本、网络、Prefab、Advanced Render/VFX、AI/Navigation、Asset Streaming/Hot Reload、game content localization/Telemetry 等待真实产品纵切。archive/Pak、compression/encryption、signing、installer、patch/DLC/chunk 与远程/交叉编译矩阵等待发行需求。Play writeback、多实例/网络 PIE、action remapping、dynamic ABI、parallel ECS、RenderWorld、incremental Cook 等待真实调用方或可测量的复杂度/性能触发。
 
 延期能力不得预建空 crate、空 trait 或第二套临时架构。

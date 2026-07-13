@@ -10,6 +10,7 @@ demo-game = { path = "../game" }
 rfd = "0.17.2"
 sge-editor = { path = "../../../crates/sge-editor" }
 sge-project = { path = "../../../crates/sge-project" }
+serde_json.workspace = true
 
 [dev-dependencies]
 image.workspace = true

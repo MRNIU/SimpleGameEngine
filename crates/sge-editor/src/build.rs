@@ -2,6 +2,8 @@
 
 use std::{ffi::OsString, path::Path, process::Child, process::Command};
 
+use crate::{EditorLanguage, localization::EditorText};
+
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
@@ -135,12 +137,12 @@ impl BuildProcess {
         self.child.is_some()
     }
 
-    pub(crate) fn status_text(&self) -> &str {
+    pub(crate) fn status_text(&self, language: EditorLanguage) -> &str {
         match &self.status {
-            BuildStatus::Ready => "Build ready",
-            BuildStatus::Running => "Build running",
-            BuildStatus::Succeeded => "Build succeeded",
-            BuildStatus::Cancelled => "Build cancelled",
+            BuildStatus::Ready => language.text(EditorText::BuildReady),
+            BuildStatus::Running => language.text(EditorText::BuildRunning),
+            BuildStatus::Succeeded => language.text(EditorText::BuildSucceeded),
+            BuildStatus::Cancelled => language.text(EditorText::BuildCancelled),
             BuildStatus::Failed(message) => message,
         }
     }

@@ -7,6 +7,7 @@ use std::{
 
 use eframe::egui;
 
+use crate::localization::{EditorLanguage, EditorText};
 use crate::preview;
 
 use super::{
@@ -66,7 +67,7 @@ impl eframe::App for EditorApp {
             }
             self.pending_ui_build = false;
             if build.failed() {
-                self.last_error = Some(build.status_text().to_owned());
+                self.last_error = Some(build.status_text(self.language).to_owned());
                 self.ui_actions.clear();
             } else {
                 self.ui_action_count.fetch_add(1, Ordering::Relaxed);
@@ -131,6 +132,7 @@ impl eframe::App for EditorApp {
             egui::Panel::top("project_identity").show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let [game, project] = project_identity_labels(
+                        self.language,
                         self.session.descriptor().game_id().as_str(),
                         &self.project_root,
                     );
@@ -140,6 +142,39 @@ impl eframe::App for EditorApp {
                         .on_hover_text(self.project_root.display().to_string());
                     ui.separator();
                     self.file_controls(ui);
+                    let before = self.language;
+                    egui::ComboBox::from_id_salt("editor_language")
+                        .selected_text(self.language.display_name())
+                        .show_ui(ui, |ui| {
+                            for language in EditorLanguage::ALL {
+                                let enabled = language != EditorLanguage::SimplifiedChinese
+                                    || self.cjk_font_available;
+                                let response = ui.add_enabled(
+                                    enabled,
+                                    egui::Button::selectable(
+                                        self.language == language,
+                                        language.display_name(),
+                                    ),
+                                );
+                                if !enabled {
+                                    response.clone().on_hover_text(
+                                        self.language.text(EditorText::ChineseFontUnavailable),
+                                    );
+                                }
+                                if response.clicked() {
+                                    self.language = language;
+                                    ui.close();
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text(self.language.text(EditorText::Language));
+                    if self.language != before {
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Title(
+                            self.language.text(EditorText::WindowTitle).to_owned(),
+                        ));
+                        ui.ctx().request_repaint();
+                    }
                     egui::ComboBox::from_id_salt("render_backend")
                         .selected_text(self.backend.label())
                         .show_ui(ui, |ui| {
@@ -153,11 +188,22 @@ impl eframe::App for EditorApp {
                             }
                         });
                     ui.monospace(frame_rate_label(self.probe.frames_per_second()));
-                    ui.toggle_value(&mut self.performance_open, "Perf")
-                        .on_hover_text("Performance");
+                    ui.toggle_value(
+                        &mut self.performance_open,
+                        match self.language {
+                            EditorLanguage::English => "Perf",
+                            EditorLanguage::SimplifiedChinese => {
+                                self.language.text(EditorText::Performance)
+                            }
+                        },
+                    )
+                    .on_hover_text(self.language.text(EditorText::Performance));
                     if self.play.is_some() {
-                        ui.colored_label(egui::Color32::LIGHT_GREEN, "PLAY");
-                        if ui.button("Stop").clicked() {
+                        ui.colored_label(
+                            egui::Color32::LIGHT_GREEN,
+                            self.language.text(EditorText::Playing),
+                        );
+                        if ui.button(self.language.text(EditorText::Stop)).clicked() {
                             let _ = self.apply_ui_action(EditorUiAction::StopPlay);
                         }
                     } else if ui
@@ -166,7 +212,7 @@ impl eframe::App for EditorApp {
                                 .build
                                 .as_ref()
                                 .is_some_and(super::BuildProcess::is_running),
-                            egui::Button::new("Play"),
+                            egui::Button::new(self.language.text(EditorText::Play)),
                         )
                         .clicked()
                     {
@@ -174,27 +220,42 @@ impl eframe::App for EditorApp {
                     }
                     self.build_controls(ui);
                     if ui
-                        .add_enabled(self.authoring_enabled(), egui::Button::new("Save"))
+                        .add_enabled(
+                            self.authoring_enabled(),
+                            egui::Button::new(self.language.text(EditorText::Save)),
+                        )
                         .clicked()
                     {
                         let _ = self.apply_ui_action(EditorUiAction::Save);
                     }
                     if ui
-                        .add_enabled(self.authoring_enabled(), egui::Button::new("Undo"))
+                        .add_enabled(
+                            self.authoring_enabled(),
+                            egui::Button::new(self.language.text(EditorText::Undo)),
+                        )
                         .clicked()
                     {
                         let _ = self.apply_ui_action(EditorUiAction::Undo);
                     }
                     if ui
-                        .add_enabled(self.authoring_enabled(), egui::Button::new("Redo"))
+                        .add_enabled(
+                            self.authoring_enabled(),
+                            egui::Button::new(self.language.text(EditorText::Redo)),
+                        )
                         .clicked()
                     {
                         let _ = self.apply_ui_action(EditorUiAction::Redo);
                     }
                     let (status, color) = if self.session.is_dirty() {
-                        ("Modified", egui::Color32::GOLD)
+                        (
+                            self.language.text(EditorText::Modified),
+                            egui::Color32::GOLD,
+                        )
                     } else {
-                        ("Saved", egui::Color32::from_rgb(80, 170, 100))
+                        (
+                            self.language.text(EditorText::Saved),
+                            egui::Color32::from_rgb(80, 170, 100),
+                        )
                     };
                     ui.colored_label(color, status);
                 });
@@ -212,9 +273,9 @@ impl eframe::App for EditorApp {
             let mut dismiss = false;
             egui::Panel::bottom("editor_error").show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
-                    ui.strong("Error:");
+                    ui.strong(self.language.text(EditorText::Error));
                     ui.colored_label(egui::Color32::LIGHT_RED, error);
-                    dismiss = ui.button("Dismiss").clicked();
+                    dismiss = ui.button(self.language.text(EditorText::Dismiss)).clicked();
                 });
             });
             if dismiss {
@@ -235,7 +296,9 @@ impl eframe::App for EditorApp {
             ui.painter().text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
-                self.diagnostic.as_deref().unwrap_or("Preview unavailable"),
+                self.diagnostic
+                    .as_deref()
+                    .unwrap_or_else(|| self.language.text(EditorText::PreviewUnavailable)),
                 egui::FontId::proportional(16.0),
                 egui::Color32::LIGHT_GRAY,
             );
@@ -244,9 +307,9 @@ impl eframe::App for EditorApp {
         if self.authoring_enabled()
             && let Some(frame) = self.frame.clone()
         {
-            let result = self
-                .viewport
-                .interact(ui, &response, &frame, &mut self.session);
+            let result =
+                self.viewport
+                    .interact(ui, &response, &frame, &mut self.session, self.language);
             if let Err(error) = result {
                 self.last_error = Some(error.to_string());
             } else {

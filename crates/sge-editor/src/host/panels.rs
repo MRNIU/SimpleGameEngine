@@ -4,7 +4,10 @@ use eframe::egui;
 use sge_scene::{AuthoringEntity, SceneEntityId, SceneName};
 
 use super::EditorApp;
-use crate::{inspector, inspector_ui};
+use crate::{
+    inspector, inspector_ui,
+    localization::{EditorText, reflect_type_name, scene_entity_name},
+};
 
 const HIERARCHY_PANEL_ID: &str = "hierarchy";
 const INSPECTOR_PANEL_ID: &str = "inspector";
@@ -101,6 +104,7 @@ impl PanelLayout {
 
 impl EditorApp {
     pub(super) fn hierarchy(&mut self, ui: &mut egui::Ui) {
+        let language = self.language;
         let sizes = self.panel_layout.hierarchy_sizes();
         let response = egui::Panel::left(HIERARCHY_PANEL_ID)
             .resizable(true)
@@ -108,22 +112,22 @@ impl EditorApp {
             .min_size(sizes.minimum)
             .max_size(sizes.maximum)
             .show(ui, |ui| {
-                ui.heading("Hierarchy");
+                ui.heading(language.text(EditorText::Hierarchy));
                 ui.add_enabled_ui(self.authoring_enabled(), |ui| {
-                    ui.menu_button("Place Actors", |ui| {
-                        if ui.button("Empty Actor").clicked() {
+                    ui.menu_button(language.text(EditorText::PlaceActors), |ui| {
+                        if ui.button(language.text(EditorText::EmptyActor)).clicked() {
                             ui.close();
                             let _ = self.apply_ui_action(super::EditorUiAction::CreateEmptyActor);
                         }
                         ui.separator();
-                        ui.label("Basic Shapes");
+                        ui.label(language.text(EditorText::BasicShapes));
                         for (label, primitive) in [
-                            ("Cube", crate::PrimitiveKind::Cube),
-                            ("Sphere", crate::PrimitiveKind::Sphere),
-                            ("Cone", crate::PrimitiveKind::Cone),
-                            ("Cylinder", crate::PrimitiveKind::Cylinder),
+                            (EditorText::Cube, crate::PrimitiveKind::Cube),
+                            (EditorText::Sphere, crate::PrimitiveKind::Sphere),
+                            (EditorText::Cone, crate::PrimitiveKind::Cone),
+                            (EditorText::Cylinder, crate::PrimitiveKind::Cylinder),
                         ] {
-                            if ui.button(label).clicked() {
+                            if ui.button(language.text(label)).clicked() {
                                 ui.close();
                                 let _ = self.apply_ui_action(
                                     super::EditorUiAction::CreatePrimitive(primitive),
@@ -143,6 +147,13 @@ impl EditorApp {
                                     || entity.id().to_string(),
                                     |name| name.as_str().to_owned(),
                                 );
+                            let entity_id = entity.id().to_string();
+                            let label = scene_entity_name(
+                                language,
+                                &entity_id,
+                                &label,
+                                self.translations.as_ref(),
+                            );
                             if ui
                                 .selectable_label(selection == Some(entity.id()), label)
                                 .clicked()
@@ -159,10 +170,13 @@ impl EditorApp {
                     && let Some(selection) = self.session.selection()
                 {
                     ui.horizontal(|ui| {
-                        if ui.button("Duplicate").clicked() {
+                        if ui.button(language.text(EditorText::Duplicate)).clicked() {
                             let _ = self.apply_ui_action(super::EditorUiAction::DuplicateSelection);
                         }
-                        if ui.button("Delete Subtree").clicked() {
+                        if ui
+                            .button(language.text(EditorText::DeleteSubtree))
+                            .clicked()
+                        {
                             let result = self.session.remove_subtree(selection);
                             self.apply_edit(result);
                         }
@@ -178,8 +192,8 @@ impl EditorApp {
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default();
-                    ui.menu_button("Reparent", |ui| {
-                        if ui.button("Root").clicked() {
+                    ui.menu_button(language.text(EditorText::Reparent), |ui| {
+                        if ui.button(language.text(EditorText::Root)).clicked() {
                             ui.close();
                             let result = self.session.reparent_entity(selection, None);
                             self.apply_edit(result);
@@ -215,7 +229,8 @@ impl EditorApp {
     }
 
     fn inspector_contents(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Inspector");
+        let language = self.language;
+        ui.heading(language.text(EditorText::Inspector));
         let mut components = match self.session.inspector() {
             Ok(components) => components,
             Err(error) => {
@@ -238,7 +253,15 @@ impl EditorApp {
         });
         let action = ui
             .add_enabled_ui(authoring_enabled, |ui| {
-                inspector_ui::draw(ui, entity, &components, &mut self.inspector_drafts, true)
+                inspector_ui::draw(
+                    ui,
+                    entity,
+                    &components,
+                    &mut self.inspector_drafts,
+                    true,
+                    language,
+                    self.translations.as_ref(),
+                )
             })
             .inner;
         let Some(action) = action else {
@@ -260,6 +283,7 @@ impl EditorApp {
     }
 
     fn component_picker(&mut self, ui: &mut egui::Ui, components: &[crate::InspectorComponent]) {
+        let language = self.language;
         let available = self
             .session
             .component_types()
@@ -290,18 +314,33 @@ impl EditorApp {
                                 .iter()
                                 .find(|candidate| candidate.type_key() == selected)
                         })
-                        .map_or("No component", |candidate| candidate.display_name()),
+                        .map_or(language.text(EditorText::NoComponent), |candidate| {
+                            reflect_type_name(
+                                language,
+                                candidate.type_key().as_str(),
+                                candidate.display_name(),
+                                self.translations.as_ref(),
+                            )
+                        }),
                 )
                 .show_ui(ui, |ui| {
                     for candidate in &available {
                         ui.selectable_value(
                             &mut self.component_to_add,
                             Some(candidate.type_key().clone()),
-                            candidate.display_name(),
+                            reflect_type_name(
+                                language,
+                                candidate.type_key().as_str(),
+                                candidate.display_name(),
+                                self.translations.as_ref(),
+                            ),
                         );
                     }
                 });
-            configure = self.authoring_enabled() && ui.button("Configure Component").clicked();
+            configure = self.authoring_enabled()
+                && ui
+                    .button(language.text(EditorText::ConfigureComponent))
+                    .clicked();
         });
         if self.component_to_add != before {
             self.component_draft = None;
@@ -320,11 +359,12 @@ impl EditorApp {
     }
 
     fn component_draft(&mut self, ui: &mut egui::Ui, entity: SceneEntityId) {
+        let language = self.language;
         let Some(draft) = self.component_draft.clone() else {
             return;
         };
         ui.separator();
-        ui.strong("New Component Draft");
+        ui.strong(language.text(EditorText::NewComponentDraft));
         let component = match self.session.inspect_component_value(&draft) {
             Ok(component) => component,
             Err(error) => {
@@ -339,6 +379,8 @@ impl EditorApp {
                 std::slice::from_ref(&component),
                 &mut self.inspector_drafts,
                 false,
+                language,
+                self.translations.as_ref(),
             )
         {
             match self
@@ -354,12 +396,16 @@ impl EditorApp {
             }
         }
         ui.horizontal(|ui| {
-            if self.authoring_enabled() && ui.button("Commit Component").clicked() {
+            if self.authoring_enabled()
+                && ui
+                    .button(language.text(EditorText::CommitComponent))
+                    .clicked()
+            {
                 let value = self.component_draft.clone().unwrap_or(draft.clone());
                 let result = self.session.add_component_value(entity, value);
                 self.apply_edit(result);
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(language.text(EditorText::Cancel)).clicked() {
                 self.component_draft = None;
                 self.inspector_drafts.clear();
             }

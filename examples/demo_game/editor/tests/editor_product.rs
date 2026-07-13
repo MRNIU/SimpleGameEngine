@@ -16,7 +16,7 @@ fn editor_cli_has_stable_help() -> Result<(), Box<dyn std::error::Error>> {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout)?,
-        "Usage: demo-game-editor PROJECT_ROOT [--play] [--max-frames N] [--screenshot PATH] [--ui-action ACTION]...\n"
+        "Usage: demo-game-editor PROJECT_ROOT [--language en|zh-CN] [--play] [--max-frames N] [--screenshot PATH] [--ui-action ACTION]...\n"
     );
     assert!(output.stderr.is_empty());
     let conflict = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
@@ -24,6 +24,59 @@ fn editor_cli_has_stable_help() -> Result<(), Box<dyn std::error::Error>> {
         .output()?;
     assert!(!conflict.status.success());
     assert!(String::from_utf8(conflict.stderr)?.contains("cannot be combined"));
+    let invalid_language = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
+        .args([".", "--language", "zh"])
+        .output()?;
+    assert!(!invalid_language.status.success());
+    assert!(String::from_utf8(invalid_language.stderr)?.contains("must be en or zh-CN"));
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires a window system and an installed CJK font; run with xvfb-run"]
+fn simplified_chinese_editor_paints_localized_chrome() -> Result<(), Box<dyn std::error::Error>> {
+    let project = TestProject::new()?;
+    let screenshot = project.path().join("editor-zh-cn.png");
+    let _window_manager = WindowManager::start()?;
+    let output = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
+        .arg(project.path())
+        .args([
+            "--language",
+            "zh-CN",
+            "--ui-action",
+            "language:en",
+            "--ui-action",
+            "language:zh-CN",
+            "--ui-action",
+            "select:1",
+            "--screenshot",
+        ])
+        .arg(&screenshot)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "editor stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        report_value(&String::from_utf8(output.stdout)?, "ui_actions")?,
+        3
+    );
+    let screenshot = image::open(screenshot)?.to_rgba8();
+    assert_editor_screenshot_size(&screenshot);
+    let first = *screenshot.get_pixel(0, 0);
+    assert!(screenshot.pixels().any(|pixel| *pixel != first));
+    let visible_viewport_pixels = (80..screenshot.height())
+        .flat_map(|y| (230..970).map(move |x| (x, y)))
+        .filter(|(x, y)| {
+            screenshot.get_pixel(*x, *y).0[..3]
+                .iter()
+                .copied()
+                .max()
+                .is_some_and(|value| value > 30)
+        })
+        .count();
+    assert!(visible_viewport_pixels > 1_000);
     Ok(())
 }
 

@@ -10,7 +10,7 @@ use sge_reflect::Value;
 use sge_render::{Camera, RenderView, view_projection_matrix};
 use sge_scene::SceneEntityId;
 
-use crate::{EditSession, PreviewFrame};
+use crate::{EditSession, EditorLanguage, PreviewFrame, localization::EditorText};
 
 mod actor_visuals;
 
@@ -166,6 +166,7 @@ impl EditorViewport {
         response: &egui::Response,
         frame: &PreviewFrame,
         session: &mut EditSession,
+        language: EditorLanguage,
     ) -> Result<(), crate::EditError> {
         self.update_mode(ui, response);
         let overlay_consumed = if self.game_view {
@@ -190,7 +191,7 @@ impl EditorViewport {
         if !overlay_consumed && !camera_consumed && !gizmo_consumed {
             self.select(response, frame, session)?;
         }
-        self.paint_status(ui, response.rect);
+        self.paint_status(ui, response.rect, language);
         Ok(())
     }
 
@@ -371,11 +372,11 @@ impl EditorViewport {
             (i16::from(self.camera_speed_level) + i16::from(delta)).clamp(1, 8) as u8;
     }
 
-    fn paint_status(&self, ui: &egui::Ui, viewport: egui::Rect) {
+    fn paint_status(&self, ui: &egui::Ui, viewport: egui::Rect, language: EditorLanguage) {
         let text = if self.game_view {
-            "Game View (G)"
+            format!("{} (G)", language.text(EditorText::GameView))
         } else {
-            self.gizmo.status_text()
+            self.gizmo.status_text(language)
         };
         let rect = egui::Rect::from_min_size(
             viewport.left_top() + egui::vec2(10.0, 10.0),
@@ -386,7 +387,7 @@ impl EditorViewport {
         painter.text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
-            text,
+            &text,
             egui::FontId::proportional(13.0),
             egui::Color32::WHITE,
         );
@@ -589,13 +590,14 @@ impl GizmoMode {
         }
     }
 
-    const fn status_text(self) -> &'static str {
-        match self {
-            Self::Select => "Select (Q)",
-            Self::Move => "Move (W)",
-            Self::Rotate => "Rotate (E)",
-            Self::Scale => "Scale (R)",
-        }
+    fn status_text(self, language: EditorLanguage) -> String {
+        let (text, key) = match self {
+            Self::Select => (EditorText::Select, 'Q'),
+            Self::Move => (EditorText::Move, 'W'),
+            Self::Rotate => (EditorText::Rotate, 'E'),
+            Self::Scale => (EditorText::Scale, 'R'),
+        };
+        format!("{} ({key})", language.text(text))
     }
 }
 
@@ -1243,10 +1245,22 @@ mod tests {
         assert_eq!(GizmoMode::Move.next(), GizmoMode::Rotate);
         assert_eq!(GizmoMode::Rotate.next(), GizmoMode::Scale);
         assert_eq!(GizmoMode::Scale.next(), GizmoMode::Move);
-        assert_eq!(GizmoMode::Select.status_text(), "Select (Q)");
-        assert_eq!(GizmoMode::Move.status_text(), "Move (W)");
-        assert_eq!(GizmoMode::Rotate.status_text(), "Rotate (E)");
-        assert_eq!(GizmoMode::Scale.status_text(), "Scale (R)");
+        assert_eq!(
+            GizmoMode::Select.status_text(EditorLanguage::English),
+            "Select (Q)"
+        );
+        assert_eq!(
+            GizmoMode::Move.status_text(EditorLanguage::English),
+            "Move (W)"
+        );
+        assert_eq!(
+            GizmoMode::Rotate.status_text(EditorLanguage::SimplifiedChinese),
+            "旋转 (E)"
+        );
+        assert_eq!(
+            GizmoMode::Scale.status_text(EditorLanguage::SimplifiedChinese),
+            "缩放 (R)"
+        );
     }
 
     #[test]

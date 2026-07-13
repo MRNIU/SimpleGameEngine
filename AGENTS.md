@@ -36,7 +36,7 @@
 | `crates/sge-asset-pipeline/` | canonical OBJ importer、cache、dependency closure、deterministic full Cook/publication | Editor/Player host、GPU、Cargo build |
 | `crates/sge-render/` | reflected render components、owned RenderSnapshot、共享投影、WGPU/并行CPU backend facade、会话级帧性能采样、safe surface | source/project ownership、egui ownership、第二套 snapshot/store/host |
 | `crates/sge-player/` | source-free PlayerSession、winit loop、input mapping、resize/occlusion/surface policy | project、OBJ parser、Editor、native dialog |
-| `crates/sge-editor/` | candidate open、EditSession、Reflect Inspector/history/save、独立 PlaySession、egui input routing与 eframe/WGPU host | arbitrary World mutation、第二 registry/backend/event loop、Play writeback |
+| `crates/sge-editor/` | candidate open、EditSession、Reflect Inspector/history/save、English/简体中文host localization、独立 PlaySession、egui input routing与 eframe/WGPU host | arbitrary World mutation、第二 registry/backend/event loop、Play writeback、game content localization |
 | `crates/sge-build/` | bootstrap launcher、game-specific Cook/Cargo编排、immutable Stage generation与atomic current manifest | game logic、Editor UI ownership、Player runtime |
 | `examples/demo_game/` | 固定 AssetId project、Rotator/PlayerController game plugin、薄 game-specific Editor/Player/Build | demo-only engine shortcuts |
 
@@ -87,4 +87,6 @@ bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `e
 - `scripts/test-integration-demo.sh` 从 workspace gate/audit、game-specific Editor 窗口 smoke 到 authoring/Play/真实 Build/Cook/copied Stage/staged Player 单链闭合最终目标。
 - Apple Silicon macOS 26.5.1 已有3轮原生自动action-tape编辑/保存/Play/Stop、Build/Stage、cooked scene读回、staged Player 120帧present和Retina-aware surface readback证据；系统级鼠标/键盘事件也已覆盖连续编辑、Play/Stop、dirty close三决策和native Save panel打开/取消。该证据不外推到特定物理输入设备、Intel Mac或其他GPU。
 - Mac Product Hardening H0 已闭合并进入 alpha 评估；下一步补充特定物理输入设备、更多native dialog分支和长时间连续使用证据，在通过完整可用性验收前不得声明“可真正使用”或“产品完成”。
+- Editor host界面支持English/简体中文会话级切换；内建与game-specific Reflect显示元数据按稳定key读取各自catalog，固定game实体可按SceneEntityId key翻译Hierarchy显示名，缺失条目保留注册方原文。可编辑SceneName值与底层技术诊断仍保持内容或注册方原文，不得把Editor localization外推为完整game content localization。
+- Engine host与game-specific翻译分别由各自`i18n/*.json`持有，调用点保留typed key；新增或修改locale时必须通过精确key集合、非空值和窗口smoke门禁，不得改为运行时相对路径查找或静默fallback。
 - 新功能延期项包括但不限于音频、物理、网络、archive/Pak/signing/installer、Play writeback、action remapping、prefab、parallel ECS/RenderWorld/incremental Cook；它们不应混入缺陷清零阶段。

@@ -6,7 +6,10 @@ use eframe::egui;
 use sge_reflect::{FieldKey, FieldKind, TypeKey, Value};
 use sge_scene::SceneEntityId;
 
-use crate::InspectorComponent;
+use crate::{
+    EditorLanguage, EditorTranslations, InspectorComponent,
+    localization::{EditorText, reflect_enum_name, reflect_field_name, reflect_type_name},
+};
 
 pub(crate) enum InspectorAction {
     SetField {
@@ -34,64 +37,97 @@ pub(crate) fn draw(
     components: &[InspectorComponent],
     drafts: &mut InspectorDrafts,
     allow_remove: bool,
+    language: EditorLanguage,
+    translations: Option<&EditorTranslations>,
 ) -> Option<InspectorAction> {
     let mut action = None;
     for component in components {
-        egui::CollapsingHeader::new(component.display_name())
-            .id_salt(component.type_key().as_str())
-            .default_open(true)
-            .show(ui, |ui| {
-                for field in component.fields() {
-                    ui.push_id(field.field_key().as_str(), |ui| {
-                        ui.label(field.display_name());
-                        if let Value::Reference(current) = field.value() {
-                            let key = (
-                                entity,
-                                component.type_key().clone(),
-                                field.field_key().clone(),
-                            );
-                            let draft = drafts
-                                .references
-                                .entry(key.clone())
-                                .or_insert_with(|| current.clone());
-                            let response = ui.text_edit_singleline(draft);
-                            let commit = response.lost_focus()
-                                || (response.has_focus()
-                                    && ui.input(|input| input.key_pressed(egui::Key::Enter)));
-                            if commit {
-                                if draft == current {
-                                    drafts.references.remove(&key);
-                                } else {
-                                    action = Some(InspectorAction::SetField {
-                                        component: component.type_key().clone(),
-                                        field: field.field_key().clone(),
-                                        value: Value::Reference(draft.clone()),
-                                    });
-                                }
-                            }
-                            return;
-                        }
-                        let mut value = field.value().clone();
-                        if edit_value(ui, field.kind(), &mut value) {
-                            action = Some(InspectorAction::SetField {
-                                component: component.type_key().clone(),
-                                field: field.field_key().clone(),
-                                value,
-                            });
-                        }
-                    });
-                }
-                if allow_remove && ui.small_button("Remove Component").clicked() {
-                    action = Some(InspectorAction::RemoveComponent(
-                        component.type_key().clone(),
+        egui::CollapsingHeader::new(reflect_type_name(
+            language,
+            component.type_key().as_str(),
+            component.display_name(),
+            translations,
+        ))
+        .id_salt(component.type_key().as_str())
+        .default_open(true)
+        .show(ui, |ui| {
+            for field in component.fields() {
+                ui.push_id(field.field_key().as_str(), |ui| {
+                    ui.label(reflect_field_name(
+                        language,
+                        component.type_key().as_str(),
+                        field.field_key().as_str(),
+                        field.display_name(),
+                        translations,
                     ));
-                }
-            });
+                    if let Value::Reference(current) = field.value() {
+                        let key = (
+                            entity,
+                            component.type_key().clone(),
+                            field.field_key().clone(),
+                        );
+                        let draft = drafts
+                            .references
+                            .entry(key.clone())
+                            .or_insert_with(|| current.clone());
+                        let response = ui.text_edit_singleline(draft);
+                        let commit = response.lost_focus()
+                            || (response.has_focus()
+                                && ui.input(|input| input.key_pressed(egui::Key::Enter)));
+                        if commit {
+                            if draft == current {
+                                drafts.references.remove(&key);
+                            } else {
+                                action = Some(InspectorAction::SetField {
+                                    component: component.type_key().clone(),
+                                    field: field.field_key().clone(),
+                                    value: Value::Reference(draft.clone()),
+                                });
+                            }
+                        }
+                        return;
+                    }
+                    let mut value = field.value().clone();
+                    if edit_value(
+                        ui,
+                        field.kind(),
+                        &mut value,
+                        language,
+                        component.type_key().as_str(),
+                        field.field_key().as_str(),
+                        translations,
+                    ) {
+                        action = Some(InspectorAction::SetField {
+                            component: component.type_key().clone(),
+                            field: field.field_key().clone(),
+                            value,
+                        });
+                    }
+                });
+            }
+            if allow_remove
+                && ui
+                    .small_button(language.text(EditorText::RemoveComponent))
+                    .clicked()
+            {
+                action = Some(InspectorAction::RemoveComponent(
+                    component.type_key().clone(),
+                ));
+            }
+        });
     }
     action
 }
 
-fn edit_value(ui: &mut egui::Ui, kind: &FieldKind, value: &mut Value) -> bool {
+fn edit_value(
+    ui: &mut egui::Ui,
+    kind: &FieldKind,
+    value: &mut Value,
+    language: EditorLanguage,
+    type_key: &str,
+    field_key: &str,
+    translations: Option<&EditorTranslations>,
+) -> bool {
     match value {
         Value::Bool(value) => ui.checkbox(value, "").changed(),
         Value::I64(value) => ui.add(egui::DragValue::new(value)).changed(),
@@ -127,10 +163,26 @@ fn edit_value(ui: &mut egui::Ui, kind: &FieldKind, value: &mut Value) -> bool {
             let before = value.clone();
             if let FieldKind::Enum { options } = kind {
                 egui::ComboBox::from_id_salt("enum")
-                    .selected_text(value.as_str())
+                    .selected_text(reflect_enum_name(
+                        language,
+                        type_key,
+                        field_key,
+                        value,
+                        translations,
+                    ))
                     .show_ui(ui, |ui| {
                         for option in options {
-                            ui.selectable_value(value, option.clone(), option);
+                            ui.selectable_value(
+                                value,
+                                option.clone(),
+                                reflect_enum_name(
+                                    language,
+                                    type_key,
+                                    field_key,
+                                    option,
+                                    translations,
+                                ),
+                            );
                         }
                     });
             }

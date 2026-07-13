@@ -8,6 +8,7 @@ mod host;
 mod input;
 mod inspector;
 mod inspector_ui;
+mod localization;
 mod play;
 mod preview;
 mod session;
@@ -22,6 +23,7 @@ pub use host::{
     NewProjectDialog, OpenProjectDialog, ProjectFileDialog, run,
 };
 pub use inspector::{InspectorComponent, InspectorField, SceneComponentType};
+pub use localization::{EditorLanguage, EditorTranslations};
 pub use play::{PlaySession, PlayStartError};
 pub use preview::{PreviewProbe, PreviewProbeReport};
 pub use session::{CreatedMeshEntity, EditSession, EditorWorkspace, PreviewFrame, PrimitiveKind};

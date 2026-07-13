@@ -28,6 +28,8 @@ run_ignored_exact() {
 run_ignored_exact demo-game-editor editor_product \
   game_specific_editor_paints_the_authoring_viewport
 run_ignored_exact demo-game-editor editor_product \
+  simplified_chinese_editor_paints_localized_chrome
+run_ignored_exact demo-game-editor editor_product \
   editor_switches_from_wgpu_to_cpu_without_changing_scene_data
 run_ignored_exact demo-game-editor editor_product \
   dirty_native_window_close_waits_for_user_confirmation

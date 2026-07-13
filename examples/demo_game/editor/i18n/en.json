@@ -1,0 +1,16 @@
+{
+  "dialog.import_obj.title": "Import Wavefront OBJ",
+  "dialog.new_project.choose_parent": "Choose a parent folder for DemoGame",
+  "dialog.open_project.filter": "SimpleGameEngine Project",
+  "dialog.open_project.title": "Open Project",
+  "dialog.open_scene.title": "Open Authoring Scene",
+  "dialog.save_scene.title": "Save Authoring Scene",
+  "dialog.scene.filter": "Authoring Scene",
+  "reflect.field.demo.player_controller.movement_speed": "Movement Speed",
+  "reflect.field.demo.rotator.radians_per_second": "Radians Per Second",
+  "reflect.type.demo.player_controller": "Player Controller",
+  "reflect.type.demo.rotator": "Rotator",
+  "scene.entity.50000000-0000-4000-8000-000000000001.name": "Camera",
+  "scene.entity.50000000-0000-4000-8000-000000000002.name": "Demo Cube",
+  "scene.entity.50000000-0000-4000-8000-000000000003.name": "Directional Light"
+}

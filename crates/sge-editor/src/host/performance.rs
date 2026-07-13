@@ -5,6 +5,8 @@ use std::time::Duration;
 use eframe::egui;
 use sge_render::{FramePerformanceSummary, FrameTimeSummary};
 
+use crate::{EditorLanguage, localization::EditorText};
+
 use super::EditorApp;
 
 impl EditorApp {
@@ -14,35 +16,44 @@ impl EditorApp {
         }
         let preview = self.probe.report().performance;
         let play = self.play_performance.summary();
-        egui::Window::new("Performance")
+        let language = self.language;
+        egui::Window::new(language.text(EditorText::Performance))
             .open(&mut self.performance_open)
             .default_width(300.0)
             .show(context, |ui| {
-                summary_ui(ui, "Preview", preview);
+                summary_ui(ui, language.text(EditorText::Preview), preview, language);
                 ui.separator();
-                summary_ui(ui, "Play", play);
+                summary_ui(ui, language.text(EditorText::Play), play, language);
             });
     }
 }
 
-fn summary_ui(ui: &mut egui::Ui, label: &str, summary: FramePerformanceSummary) {
+fn summary_ui(
+    ui: &mut egui::Ui,
+    label: &str,
+    summary: FramePerformanceSummary,
+    language: EditorLanguage,
+) {
     ui.strong(label);
     ui.monospace(format!(
-        "FPS: {}  samples: {}",
+        "FPS: {}  {}: {}",
         summary
             .frames_per_second()
             .map_or_else(|| "--".to_owned(), |fps| fps.to_string()),
-        summary.sample_count()
+        language.text(EditorText::Samples),
+        summary.sample_count(),
     ));
     ui.label(frame_time_label(summary.frame_time()));
     ui.label(format!(
-        "avg advance/extract/render: {}/{}/{}",
+        "{}: {}/{}/{}",
+        language.text(EditorText::AveragePhases),
         optional_duration_label(summary.average_advance()),
         optional_duration_label(summary.average_extract()),
         optional_duration_label(summary.average_render()),
     ));
     ui.label(format!(
-        "over 16.67/33.33 ms: {}/{}",
+        "{}: {}/{}",
+        language.text(EditorText::OverBudgets),
         summary.frames_over_60_fps_budget(),
         summary.frames_over_30_fps_budget(),
     ));

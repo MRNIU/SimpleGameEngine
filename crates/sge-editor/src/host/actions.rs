@@ -6,7 +6,7 @@ use eframe::egui;
 use sge_input::{Button, KeyCode};
 use sge_render::FramePhaseDurations;
 
-use crate::{EditSession, PlaySession, PreviewFrame};
+use crate::{EditSession, PlaySession, PreviewFrame, localization::EditorText};
 
 use super::{EditorApp, EditorUiAction};
 
@@ -33,7 +33,7 @@ impl EditorApp {
         if build.start(&self.project_root) {
             Ok(())
         } else {
-            Err(build.status_text().to_owned())
+            Err(build.status_text(self.language).to_owned())
         }
     }
 
@@ -58,14 +58,15 @@ impl EditorApp {
 
     pub(super) fn build_confirmation_dialog(&mut self, context: &egui::Context) {
         let mut save_and_build = false;
-        egui::Window::new("Save before Build?")
+        let language = self.language;
+        egui::Window::new(language.text(EditorText::SaveBeforeBuildTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("Build reads the saved project entry scene.");
+                ui.label(language.text(EditorText::BuildSavedSceneNote));
                 ui.horizontal(|ui| {
-                    save_and_build = ui.button("Save and Build").clicked();
-                    if ui.button("Cancel").clicked() {
+                    save_and_build = ui.button(language.text(EditorText::SaveAndBuild)).clicked();
+                    if ui.button(language.text(EditorText::Cancel)).clicked() {
                         self.pending_build_confirmation = false;
                     }
                 });
@@ -235,6 +236,17 @@ impl EditorApp {
                 self.backend = backend;
                 Ok(())
             }
+            EditorUiAction::SetLanguage(language) => {
+                if language == crate::EditorLanguage::SimplifiedChinese && !self.cjk_font_available
+                {
+                    return Err(self
+                        .language
+                        .text(EditorText::ChineseFontUnavailable)
+                        .to_owned());
+                }
+                self.language = language;
+                Ok(())
+            }
             EditorUiAction::Build => self.request_build(),
         }
     }
@@ -246,7 +258,7 @@ impl EditorApp {
         let start = ui
             .add_enabled(
                 self.play.is_none() && !build.is_running() && !self.pending_build_confirmation,
-                egui::Button::new("Build"),
+                egui::Button::new(self.language.text(EditorText::Build)),
             )
             .clicked();
         if start && let Err(error) = self.apply_ui_action(EditorUiAction::Build) {
@@ -260,7 +272,7 @@ impl EditorApp {
         } else {
             ui.visuals().text_color()
         };
-        ui.colored_label(color, build.status_text());
+        ui.colored_label(color, build.status_text(self.language));
     }
 
     pub(super) fn advance_play(&mut self, context: &egui::Context, viewport_hovered: bool) {

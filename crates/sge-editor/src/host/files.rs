@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui;
 
-use crate::{EditSession, viewport::EditorViewport};
+use crate::{EditSession, localization::EditorText, viewport::EditorViewport};
 
 use super::{EditorApp, EditorFileDialogs};
 
@@ -37,41 +37,42 @@ impl EditorApp {
     }
 
     pub(super) fn close_confirmation_dialog(&mut self, context: &egui::Context) {
+        let language = self.language;
         let dirty = self.session.is_dirty();
         let build_running = self
             .build
             .as_ref()
             .is_some_and(super::BuildProcess::is_running);
         let mut decision = None;
-        egui::Window::new("Close Editor?")
+        egui::Window::new(language.text(EditorText::CloseEditorTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
                 if dirty {
-                    ui.label("The current scene has unsaved changes.");
+                    ui.label(language.text(EditorText::UnsavedChangesNotice));
                 }
                 if build_running {
-                    ui.label("The running Build will be stopped before the Editor closes.");
+                    ui.label(language.text(EditorText::BuildStopOnCloseNotice));
                 }
                 ui.horizontal(|ui| {
                     let save_label = if build_running {
-                        "Save, Stop Build and Close"
+                        language.text(EditorText::SaveStopBuildClose)
                     } else {
-                        "Save and Close"
+                        language.text(EditorText::SaveClose)
                     };
                     if dirty && ui.button(save_label).clicked() {
                         decision = Some(CloseDecision::Save);
                     }
                     let discard_label = match (dirty, build_running) {
-                        (true, true) => "Discard, Stop Build and Close",
-                        (true, false) => "Discard and Close",
-                        (false, true) => "Stop Build and Close",
-                        (false, false) => "Close",
+                        (true, true) => language.text(EditorText::DiscardStopBuildClose),
+                        (true, false) => language.text(EditorText::DiscardClose),
+                        (false, true) => language.text(EditorText::StopBuildClose),
+                        (false, false) => language.text(EditorText::Close),
                     };
                     if ui.button(discard_label).clicked() {
                         decision = Some(CloseDecision::Discard);
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(language.text(EditorText::Cancel)).clicked() {
                         decision = Some(CloseDecision::Cancel);
                     }
                 });
@@ -104,6 +105,7 @@ impl EditorApp {
     }
 
     pub(super) fn file_controls(&mut self, ui: &mut egui::Ui) {
+        let language = self.language;
         if !self.authoring_enabled() {
             return;
         }
@@ -111,26 +113,26 @@ impl EditorApp {
             return;
         };
         let mut replacement = None;
-        ui.menu_button("File", |ui| {
-            if ui.button("New Project…").clicked() {
+        ui.menu_button(language.text(EditorText::File), |ui| {
+            if ui.button(language.text(EditorText::NewProject)).clicked() {
                 ui.close();
                 replacement = Some(ReplacementDialog::NewProject);
             }
-            if ui.button("Open Project…").clicked() {
+            if ui.button(language.text(EditorText::OpenProject)).clicked() {
                 ui.close();
                 replacement = Some(ReplacementDialog::OpenProject);
             }
-            if ui.button("Open Scene…").clicked() {
+            if ui.button(language.text(EditorText::OpenScene)).clicked() {
                 ui.close();
                 replacement = Some(ReplacementDialog::OpenScene);
             }
-            if ui.button("Save Scene As…").clicked() {
+            if ui.button(language.text(EditorText::SaveSceneAs)).clicked() {
                 ui.close();
                 self.save_scene_as(dialogs);
             }
-            if ui.button("Import OBJ…").clicked() {
+            if ui.button(language.text(EditorText::ImportObj)).clicked() {
                 ui.close();
-                if let Some(path) = (dialogs.import_obj)(&self.project_root) {
+                if let Some(path) = (dialogs.import_obj)(language, &self.project_root) {
                     match self.session.import_obj(path) {
                         Ok(created) => {
                             let result = self.session.select(Some(created.entity));
@@ -155,7 +157,7 @@ impl EditorApp {
             self.last_error = Some("Save As is unavailable while Play or Build is running".into());
             return;
         }
-        if let Some(path) = (dialogs.save_scene)(&self.project_root) {
+        if let Some(path) = (dialogs.save_scene)(self.language, &self.project_root) {
             match project_path(&self.project_root, &path).and_then(|path| {
                 self.session
                     .save_as(path)
@@ -168,23 +170,24 @@ impl EditorApp {
     }
 
     pub(super) fn unsaved_changes_dialog(&mut self, context: &egui::Context) {
+        let language = self.language;
         let Some(replacement) = self.pending_replacement else {
             return;
         };
         let mut decision = None;
-        egui::Window::new("Unsaved scene changes")
+        egui::Window::new(language.text(EditorText::UnsavedSceneChangesTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("Save the current scene before continuing?");
+                ui.label(language.text(EditorText::SaveCurrentBeforeContinue));
                 ui.horizontal(|ui| {
-                    if ui.button("Save").clicked() {
+                    if ui.button(language.text(EditorText::Save)).clicked() {
                         decision = Some(true);
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui.button(language.text(EditorText::Discard)).clicked() {
                         decision = Some(false);
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(language.text(EditorText::Cancel)).clicked() {
                         self.pending_replacement = None;
                     }
                 });
@@ -215,19 +218,21 @@ impl EditorApp {
             return;
         }
         match replacement {
-            ReplacementDialog::NewProject => match (dialogs.new_project)().and_then(|path| {
-                path.map_or(Ok(None), |path| {
-                    EditSession::open(self.session.game(), &path)
-                        .map_err(|error| error.to_string())
-                        .map(|session| Some((session, path)))
-                })
-            }) {
-                Ok(Some((session, path))) => self.replace_session(session, path),
-                Ok(None) => {}
-                Err(error) => self.last_error = Some(error),
-            },
+            ReplacementDialog::NewProject => {
+                match (dialogs.new_project)(self.language).and_then(|path| {
+                    path.map_or(Ok(None), |path| {
+                        EditSession::open(self.session.game(), &path)
+                            .map_err(|error| error.to_string())
+                            .map(|session| Some((session, path)))
+                    })
+                }) {
+                    Ok(Some((session, path))) => self.replace_session(session, path),
+                    Ok(None) => {}
+                    Err(error) => self.last_error = Some(error),
+                }
+            }
             ReplacementDialog::OpenProject => {
-                if let Some(root) = (dialogs.open_project)() {
+                if let Some(root) = (dialogs.open_project)(self.language) {
                     match EditSession::open(self.session.game(), &root) {
                         Ok(session) => self.replace_session(session, root),
                         Err(error) => self.last_error = Some(error.to_string()),
@@ -235,7 +240,7 @@ impl EditorApp {
                 }
             }
             ReplacementDialog::OpenScene => {
-                if let Some(path) = (dialogs.open_scene)(&self.project_root) {
+                if let Some(path) = (dialogs.open_scene)(self.language, &self.project_root) {
                     match project_path(&self.project_root, &path)
                         .and_then(|path| self.session.open_scene(path).map_err(|e| e.to_string()))
                     {

@@ -5,6 +5,8 @@
 - 文档、提交信息、PR 描述和 agent 汇报默认使用中文。
 - 代码标识符遵循 Rust 生态和当前 Cargo workspace 风格。
 - Rust crate、Cargo target、API、CLI、CI、JSON、RON、egui、winit、wgpu 等稳定术语保留英文。
+- Editor产品界面支持English与简体中文；语言只属于host session，不进入project、scene、Cook或Stage。Reflect组件、字段与枚举显示名按稳定type/field/value key翻译，固定game实体可按SceneEntityId key翻译Hierarchy显示名，缺少game-specific条目时保留注册方原文；可编辑SceneName值与底层技术诊断保持内容或注册真值，不按英文字符串猜测翻译。
+- Engine host与内建Reflect翻译放在`crates/sge-editor/i18n/`，game-specific dialog与Reflect翻译由对应target在自己的`i18n/`目录持有并通过`EditorTranslations`注入；Rust固定调用点使用typed key，JSON catalog必须与默认语言保持完全相同的key集合且值非空。catalog构建时嵌入，产品运行时不搜索外部翻译文件。
 
 ## 开发环境
 

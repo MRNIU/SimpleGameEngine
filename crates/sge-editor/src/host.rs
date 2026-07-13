@@ -18,7 +18,13 @@ use sge_render::{FramePerformanceMonitor, RenderBackend};
 
 use crate::{
     EditSession, EditorBuildLauncher, EditorInputAccumulator, EditorOpenError, PlaySession,
-    PlayStartError, PreviewFrame, PreviewProbe, build::BuildProcess, inspector_ui, preview,
+    PlayStartError, PreviewFrame, PreviewProbe,
+    build::BuildProcess,
+    inspector_ui,
+    localization::{
+        EditorLanguage, EditorText, EditorTranslations, install_cjk_font, load_cjk_font,
+    },
+    preview,
     viewport::EditorViewport,
 };
 
@@ -34,9 +40,9 @@ mod test_support;
 use actions::current_frame;
 use files::ReplacementDialog;
 
-pub type NewProjectDialog = fn() -> Result<Option<PathBuf>, String>;
-pub type OpenProjectDialog = fn() -> Option<PathBuf>;
-pub type ProjectFileDialog = fn(&Path) -> Option<PathBuf>;
+pub type NewProjectDialog = fn(EditorLanguage) -> Result<Option<PathBuf>, String>;
+pub type OpenProjectDialog = fn(EditorLanguage) -> Option<PathBuf>;
+pub type ProjectFileDialog = fn(EditorLanguage, &Path) -> Option<PathBuf>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct EditorFileDialogs {
@@ -53,10 +59,12 @@ pub struct EditorRunOptions {
     pub initial_size: [u32; 2],
     pub start_in_play: bool,
     pub backend: RenderBackend,
+    pub language: EditorLanguage,
     pub screenshot: Option<PathBuf>,
     pub ui_actions: Vec<EditorUiAction>,
     pub build_launcher: Option<EditorBuildLauncher>,
     pub file_dialogs: Option<EditorFileDialogs>,
+    pub translations: Option<EditorTranslations>,
 }
 
 impl Default for EditorRunOptions {
@@ -66,10 +74,12 @@ impl Default for EditorRunOptions {
             initial_size: [1280, 720],
             start_in_play: false,
             backend: RenderBackend::Wgpu,
+            language: EditorLanguage::English,
             screenshot: None,
             ui_actions: Vec::new(),
             build_launcher: None,
             file_dialogs: None,
+            translations: None,
         }
     }
 }
@@ -87,6 +97,7 @@ pub enum EditorUiAction {
     StartPlay,
     StopPlay,
     SetRenderBackend(RenderBackend),
+    SetLanguage(EditorLanguage),
     Build,
 }
 
@@ -104,11 +115,16 @@ pub fn run(
     project_root: impl AsRef<Path>,
     options: EditorRunOptions,
 ) -> Result<EditorRunReport, EditorRunError> {
+    crate::localization::validate_catalogs().map_err(EditorRunError::Localization)?;
     if options.initial_size.contains(&0) {
         return Err(EditorRunError::InvalidInitialSize);
     }
     if options.screenshot.is_some() && options.max_frames.is_some() {
         return Err(EditorRunError::ScreenshotWithFrameLimit);
+    }
+    let cjk_font = load_cjk_font();
+    if options.language == EditorLanguage::SimplifiedChinese && cjk_font.is_none() {
+        return Err(EditorRunError::ChineseFontUnavailable);
     }
     let project_root = project_root.as_ref().to_path_buf();
     let session = EditSession::open(game, &project_root)?;
@@ -149,10 +165,15 @@ pub fn run(
         ]),
         ..Default::default()
     };
+    let window_title = options.language.text(EditorText::WindowTitle).to_owned();
     eframe::run_native(
-        "SimpleGameEngine Demo Editor",
+        &window_title,
         native_options,
         Box::new(move |creation_context| {
+            let cjk_font_available = cjk_font.is_some();
+            if let Some(font) = cjk_font {
+                install_cjk_font(&creation_context.egui_ctx, font);
+            }
             preview::install_renderer(creation_context).map_err(|error| error.to_owned())?;
             let (frame, diagnostic) = match initial_frame {
                 Ok(frame) => (Some(frame), None),
@@ -185,11 +206,14 @@ pub fn run(
                 inspector_drafts: inspector_ui::InspectorDrafts::default(),
                 build,
                 file_dialogs: options.file_dialogs,
+                translations: options.translations,
                 pending_replacement: None,
                 pending_close_confirmation: false,
                 close_authorized: false,
                 pending_build_confirmation: false,
                 backend: options.backend,
+                language: options.language,
+                cjk_font_available,
                 performance_open: false,
                 play_performance: FramePerformanceMonitor::new(),
                 viewport,
@@ -255,11 +279,14 @@ struct EditorApp {
     inspector_drafts: inspector_ui::InspectorDrafts,
     build: Option<BuildProcess>,
     file_dialogs: Option<EditorFileDialogs>,
+    translations: Option<EditorTranslations>,
     pending_replacement: Option<ReplacementDialog>,
     pending_close_confirmation: bool,
     close_authorized: bool,
     pending_build_confirmation: bool,
     backend: RenderBackend,
+    language: EditorLanguage,
+    cjk_font_available: bool,
     performance_open: bool,
     play_performance: FramePerformanceMonitor,
     viewport: EditorViewport,
@@ -267,7 +294,11 @@ struct EditorApp {
     panel_layout: panels::PanelLayout,
 }
 
-fn project_identity_labels(game_id: &str, project_root: &Path) -> [String; 2] {
+fn project_identity_labels(
+    language: EditorLanguage,
+    game_id: &str,
+    project_root: &Path,
+) -> [String; 2] {
     let project = project_root
         .file_name()
         .and_then(|name| name.to_str())
@@ -276,7 +307,10 @@ fn project_identity_labels(game_id: &str, project_root: &Path) -> [String; 2] {
             || project_root.display().to_string(),
             |name| name.to_owned(),
         );
-    [format!("game_id: {game_id}"), format!("project: {project}")]
+    [
+        format!("{}: {game_id}", language.text(EditorText::GameId)),
+        format!("{}: {project}", language.text(EditorText::Project)),
+    ]
 }
 
 fn request_screenshot(context: &egui::Context) {
@@ -310,6 +344,10 @@ pub enum EditorRunError {
     InvalidInitialSize,
     #[error("Editor screenshot cannot be combined with a frame limit")]
     ScreenshotWithFrameLimit,
+    #[error("Simplified Chinese requires an installed CJK system font or SGE_CJK_FONT")]
+    ChineseFontUnavailable,
+    #[error("Editor localization catalog is invalid: {0}")]
+    Localization(String),
     #[error("eframe Editor failed: {0}")]
     Eframe(String),
     #[error("Editor preview WGPU callback failed: {0}")]
@@ -350,12 +388,24 @@ mod tests {
     fn toolbar_identity_contains_only_game_and_project_context() {
         assert_eq!(
             project_identity_labels(
+                EditorLanguage::English,
                 "demo.game",
                 Path::new("/a/very/long/workspace/examples/demo_game")
             ),
             [
                 "game_id: demo.game".to_owned(),
                 "project: demo_game".to_owned(),
+            ]
+        );
+        assert_eq!(
+            project_identity_labels(
+                EditorLanguage::SimplifiedChinese,
+                "demo.game",
+                Path::new("/workspace/demo_game")
+            ),
+            [
+                "游戏 ID: demo.game".to_owned(),
+                "项目: demo_game".to_owned()
             ]
         );
     }

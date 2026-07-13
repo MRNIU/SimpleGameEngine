@@ -1,0 +1,16 @@
+{
+  "dialog.import_obj.title": "导入 Wavefront OBJ",
+  "dialog.new_project.choose_parent": "选择 DemoGame 的父文件夹",
+  "dialog.open_project.filter": "SimpleGameEngine 项目",
+  "dialog.open_project.title": "打开项目",
+  "dialog.open_scene.title": "打开编辑场景",
+  "dialog.save_scene.title": "保存编辑场景",
+  "dialog.scene.filter": "编辑场景",
+  "reflect.field.demo.player_controller.movement_speed": "移动速度",
+  "reflect.field.demo.rotator.radians_per_second": "每秒弧度",
+  "reflect.type.demo.player_controller": "玩家控制器",
+  "reflect.type.demo.rotator": "旋转器",
+  "scene.entity.50000000-0000-4000-8000-000000000001.name": "相机",
+  "scene.entity.50000000-0000-4000-8000-000000000002.name": "演示立方体",
+  "scene.entity.50000000-0000-4000-8000-000000000003.name": "方向光"
+}

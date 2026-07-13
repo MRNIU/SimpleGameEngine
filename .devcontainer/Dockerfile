@@ -5,6 +5,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       bash \
       ca-certificates \
+      fonts-noto-cjk \
       git \
       libasound2-dev \
       libgl1-mesa-dri \
