@@ -80,7 +80,7 @@ bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `e
 
 - M1 Core Kernel、M2 Project And Data、M3 Asset Pipeline And Runtime Products、M4 Render And Hosts、M5 Editor Play、M6 Build And Stage、M7 Integration Demo 已完成。
 - M1–M7 完成只证明架构、数据和产品链路闭合，不代表 Editor/Player 已达到日常可用或发布质量。
-- 旧版P1 Editor能力已按当前边界初步吸纳：SceneName与entity workflow、game-specific native file dialogs、world-space authoring viewport、geometry selection、六向ViewCube和三轴transform gizmo；Mac实机仍存在未系统清零的交互、视觉、状态和文件工作流缺陷。
+- 旧版P1 Editor能力已按当前边界初步吸纳：SceneName与entity workflow、game-specific native file dialogs、world-space authoring viewport、geometry selection、scene Camera/Directional Light的editor-only三维表示、六向ViewCube和三轴transform gizmo；Mac实机仍存在未系统清零的交互、视觉、状态和文件工作流缺陷。
 - `demo-game-editor --play` 打开 target project、运行独立 PlayWorld/game systems并真实执行 WGPU prepare/paint；Stop isolation有 headless roundtrip证据。
 - `demo-game-player` 从 source-free cooked root加载，使用 winit input adapter、advance/extract并真实 present。
 - `sge build` 启动 game-specific Build，full Cook后只接受本次Cargo Player artifact，并以immutable generation + atomic manifest发布可复制Stage。

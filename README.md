@@ -21,7 +21,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前实现
 - `sge-render` 同时服务 eframe offscreen callback 与 winit surface；retained GPU cache 以 `AssetId` 为 key，store replacement 会清 cache，Player surface 只通过安全 `Arc<Window>` 创建。
 - `sge-player` 只读取 cooked root并把 winit event映射为逐帧 `InputFrame`；production dependency 不包含 project、source pipeline、OBJ parser、Editor 或 native dialog。
 - `sge-editor` identity-first 打开 target project；EditWorld 是唯一 live authoring truth，Reflect Inspector、entity/component mutation、Undo/Redo、atomic save与独立 PlaySession共用 scene validation/factory。
-- authoring viewport提供独立camera、world grid/axis、六向ViewCube、mesh geometry click selection与三轴Move/Rotate/Scale gizmo；P1文件工作流由game-specific Editor提供native dialogs，替换dirty scene前要求Save/Discard/Cancel。
+- authoring viewport提供独立camera、world grid/axis、六向ViewCube、mesh geometry click selection与三轴Move/Rotate/Scale gizmo；scene Camera和Directional Light具有editor-only三维线框表示，可在viewport直接选择和变换且不进入Game View/Player渲染；P1文件工作流由game-specific Editor提供native dialogs，替换dirty scene前要求Save/Discard/Cancel。
 - `examples/demo_game/` 包含固定 `AssetId` OBJ、带 `Rotator` / `PlayerController` 的 authoring scene、静态 game library 和薄 game-specific Editor/Player/Build targets；同一 plugin在 headless、Editor Play、Player与Cook validation运行。
 - bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与旧 sample 已删除，不保留第二套 schema、ECS 或 WGPU backend。
 - 最终 integration demo 从临时 authoring project 经 Inspector edit、Play、真实 `sge build`、copied Stage 到 staged Player 串联同一公开产品路径。延期项包括但不限于 archive/Pak、签名、installer、远程/交叉编译矩阵和完整 build settings UI；完整清单与触发条件见当前架构文档。

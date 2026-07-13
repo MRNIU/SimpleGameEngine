@@ -12,6 +12,8 @@ use sge_scene::SceneEntityId;
 
 use crate::{EditSession, PreviewFrame};
 
+mod actor_visuals;
+
 const HANDLE_LENGTH: f32 = 46.0;
 const HANDLE_SIZE: f32 = 14.0;
 const UNITS_PER_PIXEL: f32 = 0.01;
@@ -170,6 +172,13 @@ impl EditorViewport {
             false
         } else {
             draw_world_axes(ui, response.rect, frame);
+            actor_visuals::paint(
+                ui,
+                response.rect,
+                frame,
+                session.selection(),
+                self.drag_preview(),
+            );
             self.draw_view_cube(ui, response.rect)
         };
         let camera_consumed = self.navigate(ui, response, session);
@@ -465,7 +474,10 @@ impl EditorViewport {
         let Some(pointer) = response.interact_pointer_pos() else {
             return Ok(());
         };
-        session.select(pick_mesh(frame, response.rect, pointer))
+        session.select(
+            actor_visuals::pick(frame, response.rect, pointer, self.drag_preview())
+                .or_else(|| pick_mesh(frame, response.rect, pointer)),
+        )
     }
 
     fn gizmo(
@@ -939,12 +951,25 @@ fn scene_bounds(frame: &PreviewFrame) -> Option<(Vec3, Vec3)> {
         let model = instance.transform().matrix();
         for vertex in mesh.vertices() {
             let point = model.transform_point3(Vec3::from_array(*vertex.position()));
-            bounds = Some(bounds.map_or((point, point), |(minimum, maximum)| {
-                (minimum.min(point), maximum.max(point))
-            }));
+            extend_bounds(&mut bounds, point);
         }
     }
+    for camera in frame.snapshot.cameras() {
+        extend_bounds(
+            &mut bounds,
+            Vec3::from_array(camera.transform().translation),
+        );
+    }
+    for light in frame.snapshot.lights() {
+        extend_bounds(&mut bounds, Vec3::from_array(light.transform().translation));
+    }
     bounds
+}
+
+fn extend_bounds(bounds: &mut Option<(Vec3, Vec3)>, point: Vec3) {
+    *bounds = Some(bounds.map_or((point, point), |(minimum, maximum)| {
+        (minimum.min(point), maximum.max(point))
+    }));
 }
 
 fn frame_distance(minimum: Vec3, maximum: Vec3, vertical_fov_radians: f32) -> f32 {
@@ -1309,6 +1334,18 @@ mod tests {
         );
         assert!(small >= 2.5);
         assert!(large > small * 5.0);
+    }
+
+    #[test]
+    fn scene_bounds_include_non_mesh_actor_positions() {
+        let mut bounds = None;
+        extend_bounds(&mut bounds, Vec3::new(-2.0, 1.0, 3.0));
+        extend_bounds(&mut bounds, Vec3::new(4.0, -5.0, 2.0));
+
+        assert_eq!(
+            bounds,
+            Some((Vec3::new(-2.0, -5.0, 2.0), Vec3::new(4.0, 1.0, 3.0)))
+        );
     }
 
     #[test]
