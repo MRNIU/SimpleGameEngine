@@ -14,7 +14,7 @@ use std::{
 use eframe::egui;
 use sge_app::GameDescriptor;
 use sge_reflect::{ReflectedValue, TypeKey};
-use sge_render::RenderBackend;
+use sge_render::{FramePerformanceMonitor, RenderBackend};
 
 use crate::{
     EditSession, EditorBuildLauncher, EditorInputAccumulator, EditorOpenError, PlaySession,
@@ -26,6 +26,7 @@ mod actions;
 mod app;
 mod files;
 mod panels;
+mod performance;
 mod shortcuts;
 #[cfg(test)]
 mod test_support;
@@ -189,6 +190,8 @@ pub fn run(
                 close_authorized: false,
                 pending_build_confirmation: false,
                 backend: options.backend,
+                performance_open: false,
+                play_performance: FramePerformanceMonitor::new(),
                 viewport,
                 immersive_viewport: false,
                 panel_layout: panels::PanelLayout::default(),
@@ -257,6 +260,8 @@ struct EditorApp {
     close_authorized: bool,
     pending_build_confirmation: bool,
     backend: RenderBackend,
+    performance_open: bool,
+    play_performance: FramePerformanceMonitor,
     viewport: EditorViewport,
     immersive_viewport: bool,
     panel_layout: panels::PanelLayout,

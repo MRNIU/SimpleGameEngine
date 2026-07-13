@@ -4,6 +4,7 @@ use std::{sync::atomic::Ordering, time::Instant};
 
 use eframe::egui;
 use sge_input::{Button, KeyCode};
+use sge_render::FramePhaseDurations;
 
 use crate::{EditSession, PlaySession, PreviewFrame};
 
@@ -111,6 +112,7 @@ impl EditorApp {
         match self.session.start_play() {
             Ok(play) => {
                 self.play = Some(play);
+                self.play_performance.reset();
                 self.input.reset();
                 self.play_viewport_focused = false;
                 self.last_tick = Instant::now();
@@ -283,10 +285,19 @@ impl EditorApp {
         if input.is_held(Button::Key(KeyCode::KeyW)) {
             self.gameplay_key_w_frames.fetch_add(1, Ordering::Relaxed);
         }
-        match play.advance(delta, input) {
+        let advance_started = Instant::now();
+        let advance = play.advance(delta, input);
+        let advance_duration = advance_started.elapsed();
+        match advance {
             Ok(()) => {
                 self.play_frames.fetch_add(1, Ordering::Relaxed);
+                let extract_started = Instant::now();
                 self.refresh_frame();
+                self.play_performance
+                    .record_completed(FramePhaseDurations::play(
+                        advance_duration,
+                        extract_started.elapsed(),
+                    ));
             }
             Err(error) => {
                 self.input.reset();

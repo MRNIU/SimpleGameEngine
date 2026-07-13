@@ -18,7 +18,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前实现
 > 当前状态：M1–M7 架构和 integration demo 链路已经闭合，但产品可用性 hardening 尚未完成。自动 smoke 证明路径能够运行，不证明 Editor/Player 的全部交互、视觉结果、文件工作流和异常恢复已经可用于日常生产。
 
 - M1–M7 已完成：typed ECS / Reflect / EngineApp、strict project/authoring data、canonical OBJ import/full Cook/runtime products、owned `RenderSnapshot`、WGPU/CPU 双渲染后端、Edit/Play target Editor 架构路径、game-specific Build/self-contained Stage 和最终 integration demo 已形成一条产品路径。
-- `sge-render` 的窄 backend facade 让 WGPU 与 CPU 光栅器共用 `RenderSnapshot`、`RenderView`、`RuntimeAssetStore` 和投影逻辑；GPU retained cache 以 `AssetId` 为 key，CPU 实现六平面三角形裁剪、背面剔除、深度测试与当前 Lambert 光照，并用无锁水平 tile 并行光栅化。两者都通过现有 eframe callback 或安全 `Arc<Window>` surface 显示，CPU 路径只用 WGPU 上传/合成最终 RGBA 帧。Editor 顶栏和 Player 窗口标题显示最近 500ms 已完成帧样本的实时 FPS。
+- `sge-render` 的窄 backend facade 让 WGPU 与 CPU 光栅器共用 `RenderSnapshot`、`RenderView`、`RuntimeAssetStore` 和投影逻辑；GPU retained cache 以 `AssetId` 为 key，CPU 实现六平面三角形裁剪、背面剔除、深度测试与当前 Lambert 光照，并用无锁水平 tile 并行光栅化。两者都通过现有 eframe callback 或安全 `Arc<Window>` surface 显示，CPU 路径只用 WGPU 上传/合成最终 RGBA 帧。共享的会话级性能监控统计最近240个已完成帧间隔的FPS、p50/p95/max、advance/extract/render CPU wall time和Player surface跳帧；Editor的Play与Preview保持独立统计流。
 - `sge-player` 只读取 cooked root并把 winit event映射为逐帧 `InputFrame`；production dependency 不包含 project、source pipeline、OBJ parser、Editor 或 native dialog。
 - `sge-editor` identity-first 打开 target project；EditWorld 是唯一 live authoring truth，Reflect Inspector、entity/component mutation、Undo/Redo、atomic save与独立 PlaySession共用 scene validation/factory。
 - authoring viewport提供独立camera、world grid/axis、六向ViewCube、mesh geometry click selection与三轴Move/Rotate/Scale gizmo；scene Camera和Directional Light具有editor-only三维线框表示，可在viewport直接选择和变换且不进入Game View/Player渲染；P1文件工作流由game-specific Editor提供native dialogs，替换dirty scene前要求Save/Discard/Cancel。
@@ -131,7 +131,7 @@ cargo build --workspace
 # 打开 game-specific Editor
 cargo run -p demo-game-editor -- examples/demo_game
 
-# Editor 顶栏 Renderer 下拉框可在 WGPU/CPU 间实时切换并显示 FPS，不修改 scene
+# Editor 顶栏 Renderer 下拉框可在 WGPU/CPU 间实时切换；Perf 打开会话级 Performance 面板，不修改 scene
 
 # 打开 Editor 并直接进入独立 PlaySession
 cargo run -p demo-game-editor -- examples/demo_game --play
@@ -147,7 +147,7 @@ STAGE=build/demo-game-build/dev/Stage
 PLAYER_REL="$(sed -n 's/^[[:space:]]*executable_path: "\([^"]*\)",$/\1/p' "$STAGE/stage_manifest.ron")"
 "$STAGE/$PLAYER_REL"
 
-# 选择 CPU 并行光栅化；默认值是 wgpu；Player 标题实时显示 backend 和 FPS
+# 选择 CPU 并行光栅化；默认值是 wgpu；Player 标题显示backend/FPS，退出报告包含帧耗时、阶段均值和surface跳帧
 "$STAGE/$PLAYER_REL" --backend cpu
 
 # 不依赖系统录屏，从Player surface texture直接保存PNG后退出

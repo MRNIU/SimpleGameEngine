@@ -4,11 +4,13 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
+use std::time::{Duration, Instant};
 
 use eframe::{egui, egui_wgpu, wgpu};
 use sge_asset::RuntimeAssetStore;
 use sge_render::{
-    BackendFrame, BackendRenderContext, BackendRenderer, FrameRateCounter, RenderBackend,
+    BackendFrame, BackendRenderContext, BackendRenderer, FramePerformanceMonitor,
+    FramePhaseDurations, RenderBackend,
 };
 
 use crate::PreviewFrame;
@@ -61,6 +63,7 @@ impl egui_wgpu::CallbackTrait for PreviewCallback {
         ];
         gpu.renderer.set_backend(self.backend);
         gpu.select_assets(&self.frame.assets);
+        let started = Instant::now();
         let result = gpu
             .renderer
             .render_offscreen(
@@ -77,8 +80,9 @@ impl egui_wgpu::CallbackTrait for PreviewCallback {
                 },
             )
             .map_err(|error| error.to_string());
+        let duration = started.elapsed();
         match result {
-            Ok(()) => self.probe.mark_prepared(self.backend),
+            Ok(()) => self.probe.mark_prepared(self.backend, duration),
             Err(error) => self.probe.fail(error),
         }
         Vec::new()
@@ -94,8 +98,9 @@ impl egui_wgpu::CallbackTrait for PreviewCallback {
             self.probe.fail("preview GPU resources are missing");
             return;
         };
+        let started = Instant::now();
         match gpu.renderer.composite(pass) {
-            Ok(()) => self.probe.mark_painted(self.backend),
+            Ok(()) => self.probe.mark_painted(self.backend, started.elapsed()),
             Err(error) => self.probe.fail(error.to_string()),
         }
     }
@@ -167,24 +172,49 @@ struct PreviewProbeInner {
     painted: AtomicUsize,
     wgpu_prepared: AtomicUsize,
     cpu_prepared: AtomicUsize,
-    frame_rate: Mutex<FrameRateCounter>,
+    performance: Mutex<PreviewPerformanceState>,
     error: Mutex<Option<String>>,
 }
 
+#[derive(Debug, Default)]
+struct PreviewPerformanceState {
+    backend: Option<RenderBackend>,
+    pending_prepare: Option<Duration>,
+    monitor: FramePerformanceMonitor,
+}
+
 impl PreviewProbe {
-    fn mark_prepared(&self, backend: RenderBackend) {
+    fn mark_prepared(&self, backend: RenderBackend, duration: Duration) {
         self.inner.prepared.fetch_add(1, Ordering::Relaxed);
         match backend {
             RenderBackend::Wgpu => &self.inner.wgpu_prepared,
             RenderBackend::Cpu => &self.inner.cpu_prepared,
         }
         .fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut performance) = self.inner.performance.lock() {
+            if performance.backend != Some(backend) {
+                performance.monitor.reset();
+                performance.backend = Some(backend);
+            }
+            performance.pending_prepare = Some(duration);
+        }
     }
 
-    fn mark_painted(&self, _backend: RenderBackend) {
+    fn mark_painted(&self, backend: RenderBackend, duration: Duration) {
         self.inner.painted.fetch_add(1, Ordering::Relaxed);
-        if let Ok(mut frame_rate) = self.inner.frame_rate.lock() {
-            frame_rate.record_frame();
+        if let Ok(mut performance) = self.inner.performance.lock() {
+            if performance.backend != Some(backend) {
+                performance.monitor.reset();
+                performance.backend = Some(backend);
+            }
+            let render = performance
+                .pending_prepare
+                .take()
+                .unwrap_or(Duration::ZERO)
+                .saturating_add(duration);
+            performance
+                .monitor
+                .record_completed(FramePhaseDurations::render(render));
         }
     }
 
@@ -197,22 +227,45 @@ impl PreviewProbe {
     }
 
     #[must_use]
+    pub fn frames_per_second(&self) -> Option<u32> {
+        self.inner
+            .performance
+            .lock()
+            .ok()
+            .and_then(|performance| performance.monitor.frames_per_second())
+    }
+
+    #[must_use]
+    pub fn error(&self) -> Option<String> {
+        self.inner.error.lock().map_or_else(
+            |_| Some("preview probe lock poisoned".to_owned()),
+            |slot| slot.clone(),
+        )
+    }
+
+    #[must_use]
     pub fn report(&self) -> PreviewProbeReport {
+        let performance = self
+            .inner
+            .performance
+            .lock()
+            .map(|performance| performance.monitor.summary());
+        let mut error = self.inner.error.lock().map_or_else(
+            |_| Some("preview probe lock poisoned".to_owned()),
+            |slot| slot.clone(),
+        );
+        if performance.is_err() && error.is_none() {
+            error = Some("preview performance lock poisoned".to_owned());
+        }
+        let performance = performance.unwrap_or_default();
         PreviewProbeReport {
             prepare_count: self.inner.prepared.load(Ordering::Relaxed),
             paint_count: self.inner.painted.load(Ordering::Relaxed),
             wgpu_prepare_count: self.inner.wgpu_prepared.load(Ordering::Relaxed),
             cpu_prepare_count: self.inner.cpu_prepared.load(Ordering::Relaxed),
-            frames_per_second: self
-                .inner
-                .frame_rate
-                .lock()
-                .ok()
-                .and_then(|frame_rate| frame_rate.rounded_frames_per_second()),
-            error: self.inner.error.lock().map_or_else(
-                |_| Some("preview probe lock poisoned".to_owned()),
-                |slot| slot.clone(),
-            ),
+            frames_per_second: performance.frames_per_second(),
+            performance,
+            error,
         }
     }
 }
@@ -294,6 +347,34 @@ mod tests {
         assert!(store_replaced(Some(&first), &replacement));
         assert!(store_replaced(None, &first));
     }
+
+    #[test]
+    fn preview_performance_resets_when_the_backend_changes() {
+        let probe = super::PreviewProbe::default();
+        probe.mark_prepared(
+            sge_render::RenderBackend::Wgpu,
+            std::time::Duration::from_millis(2),
+        );
+        probe.mark_painted(
+            sge_render::RenderBackend::Wgpu,
+            std::time::Duration::from_millis(1),
+        );
+        probe.mark_prepared(
+            sge_render::RenderBackend::Wgpu,
+            std::time::Duration::from_millis(2),
+        );
+        probe.mark_painted(
+            sge_render::RenderBackend::Wgpu,
+            std::time::Duration::from_millis(1),
+        );
+        assert_eq!(probe.report().performance.sample_count(), 1);
+
+        probe.mark_prepared(
+            sge_render::RenderBackend::Cpu,
+            std::time::Duration::from_millis(4),
+        );
+        assert_eq!(probe.report().performance.sample_count(), 0);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -303,5 +384,6 @@ pub struct PreviewProbeReport {
     pub wgpu_prepare_count: usize,
     pub cpu_prepare_count: usize,
     pub frames_per_second: Option<u32>,
+    pub performance: sge_render::FramePerformanceSummary,
     pub error: Option<String>,
 }

@@ -8,8 +8,8 @@ use std::{
 
 use sge_app::{AdvanceError, GameDescriptor};
 use sge_render::{
-    FrameRateCounter, RenderBackend, SkippedSurfaceFrame, SurfaceRenderError, SurfaceRenderOutcome,
-    SurfaceRenderer,
+    FramePerformanceMonitor, FramePerformanceSummary, FramePhaseDurations, RenderBackend,
+    SkippedSurfaceFrame, SurfaceRenderError, SurfaceRenderOutcome, SurfaceRenderer,
 };
 use winit::{
     application::ApplicationHandler,
@@ -20,6 +20,8 @@ use winit::{
 };
 
 use crate::{PlayerFrameError, PlayerLoadError, PlayerSession, input::InputAccumulator};
+
+const TITLE_UPDATE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunOptions {
@@ -44,6 +46,7 @@ impl Default for RunOptions {
 pub struct RunReport {
     presented_frames: u64,
     input_frames: u64,
+    performance: FramePerformanceSummary,
 }
 
 impl RunReport {
@@ -55,6 +58,11 @@ impl RunReport {
     #[must_use]
     pub const fn input_frames(self) -> u64 {
         self.input_frames
+    }
+
+    #[must_use]
+    pub const fn performance(self) -> FramePerformanceSummary {
+        self.performance
     }
 }
 
@@ -86,6 +94,7 @@ pub fn run_session(
     Ok(RunReport {
         presented_frames: host.presented_frames,
         input_frames: host.input_frames,
+        performance: host.performance.summary(),
     })
 }
 
@@ -105,9 +114,10 @@ struct PlayerHost {
     window: Option<Arc<Window>>,
     surface: Option<SurfaceRenderer<Window>>,
     last_redraw: Instant,
+    last_title_update: Instant,
     presented_frames: u64,
     input_frames: u64,
-    frame_rate: FrameRateCounter,
+    performance: FramePerformanceMonitor,
     occluded: bool,
     error: Option<PlayerRunError>,
     input: InputAccumulator,
@@ -121,9 +131,10 @@ impl PlayerHost {
             window: None,
             surface: None,
             last_redraw: Instant::now(),
+            last_title_update: Instant::now(),
             presented_frames: 0,
             input_frames: 0,
-            frame_rate: FrameRateCounter::new(),
+            performance: FramePerformanceMonitor::new(),
             occluded: false,
             error: None,
             input: InputAccumulator::default(),
@@ -146,10 +157,13 @@ impl PlayerHost {
         if !input.is_empty() {
             self.input_frames = self.input_frames.saturating_add(1);
         }
+        let advance_started = Instant::now();
         if let Err(error) = self.session.advance(delta, input) {
             self.fail(event_loop, error);
             return;
         }
+        let advance = advance_started.elapsed();
+        let extract_started = Instant::now();
         let (snapshot, view) = match self.session.render_frame() {
             Ok(frame) => frame,
             Err(error) => {
@@ -157,9 +171,11 @@ impl PlayerHost {
                 return;
             }
         };
+        let extract = extract_started.elapsed();
         let Some(surface) = self.surface.as_mut() else {
             return;
         };
+        let render_started = Instant::now();
         let render = if self.options.screenshot.is_some() {
             surface.render_with_readback(&snapshot, view, self.session.assets())
         } else {
@@ -167,16 +183,24 @@ impl PlayerHost {
                 .render(&snapshot, view, self.session.assets())
                 .map(|outcome| (outcome, None))
         };
+        let render_duration = render_started.elapsed();
+        let phases = FramePhaseDurations::new(advance, extract, render_duration);
         match render {
             Ok((SurfaceRenderOutcome::Presented, readback)) => {
+                record_surface_outcome(
+                    &mut self.performance,
+                    SurfaceRenderOutcome::Presented,
+                    phases,
+                );
                 self.presented_frames = self.presented_frames.saturating_add(1);
-                if self.frame_rate.record_frame()
+                if self.last_title_update.elapsed() >= TITLE_UPDATE_INTERVAL
                     && let Some(window) = &self.window
                 {
+                    self.last_title_update = Instant::now();
                     window.set_title(&player_window_title(
                         self.session.game_id(),
                         self.options.backend,
-                        self.frame_rate.rounded_frames_per_second(),
+                        self.performance.summary().frames_per_second(),
                     ));
                 }
                 if let Some(path) = self.options.screenshot.take() {
@@ -208,19 +232,17 @@ impl PlayerHost {
                     window.request_redraw();
                 }
             }
-            Ok((
-                SurfaceRenderOutcome::Skipped(
-                    SkippedSurfaceFrame::ZeroSize | SkippedSurfaceFrame::Occluded,
-                ),
-                _,
-            )) => {}
-            Ok((
-                SurfaceRenderOutcome::Skipped(
-                    SkippedSurfaceFrame::Timeout | SkippedSurfaceFrame::Outdated,
-                ),
-                _,
-            )) => {
-                if let Some(window) = &self.window {
+            Ok((SurfaceRenderOutcome::Skipped(reason), _)) => {
+                record_surface_outcome(
+                    &mut self.performance,
+                    SurfaceRenderOutcome::Skipped(reason),
+                    phases,
+                );
+                if matches!(
+                    reason,
+                    SkippedSurfaceFrame::Timeout | SkippedSurfaceFrame::Outdated
+                ) && let Some(window) = &self.window
+                {
                     window.request_redraw();
                 }
             }
@@ -275,7 +297,6 @@ impl ApplicationHandler for PlayerHost {
             match surface {
                 Ok(surface) => {
                     self.surface = Some(surface);
-                    self.frame_rate = FrameRateCounter::new();
                 }
                 Err(error) => {
                     self.fail(event_loop, error);
@@ -284,6 +305,7 @@ impl ApplicationHandler for PlayerHost {
             }
         }
         self.last_redraw = Instant::now();
+        self.last_title_update = Instant::now();
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -340,6 +362,17 @@ impl ApplicationHandler for PlayerHost {
     }
 }
 
+fn record_surface_outcome(
+    performance: &mut FramePerformanceMonitor,
+    outcome: SurfaceRenderOutcome,
+    phases: FramePhaseDurations,
+) {
+    match outcome {
+        SurfaceRenderOutcome::Presented => performance.record_completed(phases),
+        SurfaceRenderOutcome::Skipped(reason) => performance.record_surface_skip(reason),
+    }
+}
+
 fn player_window_title(
     game_id: &str,
     backend: RenderBackend,
@@ -363,6 +396,20 @@ mod tests {
             player_window_title("demo", RenderBackend::Wgpu, None),
             "demo | WGPU | FPS: --"
         );
+    }
+
+    #[test]
+    fn skipped_surface_outcomes_do_not_record_completed_frames() {
+        let mut performance = FramePerformanceMonitor::new();
+        record_surface_outcome(
+            &mut performance,
+            SurfaceRenderOutcome::Skipped(SkippedSurfaceFrame::Timeout),
+            FramePhaseDurations::default(),
+        );
+
+        let summary = performance.summary();
+        assert_eq!(summary.sample_count(), 0);
+        assert_eq!(summary.surface_skips().timeout(), 1);
     }
 }
 

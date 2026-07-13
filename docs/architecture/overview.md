@@ -112,7 +112,8 @@ flowchart TB
 - WGPU mesh cache 以 `AssetId` retained；direct surface 与 offscreen/composite 共享 mesh draw path 和 depth policy。
 - CPU 后端直接读取同一个 `RuntimeAssetStore`，先顺序生成屏幕空间三角形，再由 Rayon worker 对互不重叠的水平 tile 并行执行光栅化、透视校正法线插值、深度测试、alpha blend 与首个方向光 Lambert 光照。每个 tile 仍按 snapshot 三角形顺序处理，因此无需 framebuffer 锁或跨线程合并，并保持单线程/多线程输出一致；完成后的 RGBA 帧交给既有 presentation 层。
 - Editor 顶栏实时选择 WGPU/CPU；Player 使用 `--backend wgpu|cpu`，默认 WGPU。该选择是 host session 状态，不进入 project、authoring/runtime scene 或 Cook/Stage 数据。
-- `sge-render::FrameRateCounter` 统一按已完成帧采样最近 500ms 帧率；Editor 顶栏显示 preview paint FPS，Player 窗口标题显示 backend 与 surface present FPS。该运行时观测状态同样不进入 scene。
+- `sge-render::FramePerformanceMonitor` 是唯一会话级性能采样 owner：固定保留最近240个已完成帧间隔，汇总FPS、p50/p95/max、60/30 FPS预算超限、advance/extract/render CPU wall time和surface跳帧。Player在同一redraw链路聚合完整帧；Editor分别显示UI thread的Play advance/extract与eframe callback的Preview prepare/paint，不伪造跨线程帧关联。
+- 性能数据只描述host侧CPU wall time和已完成/跳过的surface事实；WGPU command encoding、`present()`返回不代表GPU执行完成。本地监控状态不进入project、scene、Cook或Stage，也不通过GPU readback、timestamp query或遥测扩张边界。
 - Player redraw 固定为 advance → extract/view → acquire → render → submit → present；只有 present 成功才累计 frame。
 - `sge build` 通过 `ProjectBootstrap` 定位 game-specific Build target；目标进程重新验证 identity 并执行 full Cook。
 - Editor 独占本次 Build 生命周期；Unix launcher 使用独立进程组，取消、关闭或 drop 会终止整棵 Cargo/Build 子进程树并回收直接子进程。

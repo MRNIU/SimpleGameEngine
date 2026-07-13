@@ -34,7 +34,7 @@
 | `crates/sge-project/` | project identity、portable path/root、manifest v2、atomic single-file writes | importer、Editor session、multi-file transaction |
 | `crates/sge-scene/` | authoring/runtime scene、SceneEntityId/Parent、prepare/instantiate/snapshot | project/Cook I/O、GPU |
 | `crates/sge-asset-pipeline/` | canonical OBJ importer、cache、dependency closure、deterministic full Cook/publication | Editor/Player host、GPU、Cargo build |
-| `crates/sge-render/` | reflected render components、owned RenderSnapshot、共享投影、WGPU/并行CPU backend facade、共享FPS采样、safe surface | source/project ownership、egui ownership、第二套 snapshot/store/host |
+| `crates/sge-render/` | reflected render components、owned RenderSnapshot、共享投影、WGPU/并行CPU backend facade、会话级帧性能采样、safe surface | source/project ownership、egui ownership、第二套 snapshot/store/host |
 | `crates/sge-player/` | source-free PlayerSession、winit loop、input mapping、resize/occlusion/surface policy | project、OBJ parser、Editor、native dialog |
 | `crates/sge-editor/` | candidate open、EditSession、Reflect Inspector/history/save、独立 PlaySession、egui input routing与 eframe/WGPU host | arbitrary World mutation、第二 registry/backend/event loop、Play writeback |
 | `crates/sge-build/` | bootstrap launcher、game-specific Cook/Cargo编排、immutable Stage generation与atomic current manifest | game logic、Editor UI ownership、Player runtime |
@@ -81,7 +81,7 @@ bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `e
 - M1 Core Kernel、M2 Project And Data、M3 Asset Pipeline And Runtime Products、M4 Render And Hosts、M5 Editor Play、M6 Build And Stage、M7 Integration Demo 已完成。
 - M1–M7 完成只证明架构、数据和产品链路闭合，不代表 Editor/Player 已达到日常可用或发布质量。
 - 旧版P1 Editor能力已按当前边界初步吸纳：SceneName与entity workflow、game-specific native file dialogs、world-space authoring viewport、geometry selection、scene Camera/Directional Light的editor-only三维表示、六向ViewCube和三轴transform gizmo；Mac实机仍存在未系统清零的交互、视觉、状态和文件工作流缺陷。
-- `demo-game-editor --play` 打开 target project、运行独立 PlayWorld/game systems并可通过 WGPU/并行CPU backend prepare/paint；Editor顶栏与Player标题实时显示frame FPS；Stop isolation有headless roundtrip证据。
+- `demo-game-editor --play` 打开 target project、运行独立 PlayWorld/game systems并可通过 WGPU/并行CPU backend prepare/paint；Editor Performance面板与Player报告提供会话级frame/phase统计；Stop isolation有headless roundtrip证据。
 - `demo-game-player` 从 source-free cooked root加载，使用 winit input adapter、advance/extract并真实 present。
 - `sge build` 启动 game-specific Build，full Cook后只接受本次Cargo Player artifact，并以immutable generation + atomic manifest发布可复制Stage。
 - `scripts/test-integration-demo.sh` 从 workspace gate/audit、game-specific Editor 窗口 smoke 到 authoring/Play/真实 Build/Cook/copied Stage/staged Player 单链闭合最终目标。

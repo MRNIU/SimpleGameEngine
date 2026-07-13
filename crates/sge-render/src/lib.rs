@@ -6,8 +6,8 @@ mod backend;
 mod components;
 mod cpu;
 mod extract;
-mod frame_rate;
 mod gpu;
+mod performance;
 mod plugin;
 mod projection;
 mod snapshot;
@@ -20,10 +20,13 @@ pub use backend::{
 pub use components::{Camera, Light, Material, MeshRenderer, Projection};
 pub use cpu::{CpuFrame, CpuRenderError, CpuRenderer};
 pub use extract::{RenderComponentKind, RenderExtractionError, RenderItemKind, extract};
-pub use frame_rate::FrameRateCounter;
 pub use gpu::{
     FrameNotPreparedError, GpuAssetError, GpuBufferKind, RenderFrameError, RenderTargetError,
     ViewProjectionError, WgpuRenderer,
+};
+pub use performance::{
+    FramePerformanceMonitor, FramePerformanceSummary, FramePhaseDurations, FrameTimeSummary,
+    SurfaceSkipCounters,
 };
 pub use plugin::RenderPlugin;
 pub use projection::view_projection_matrix;

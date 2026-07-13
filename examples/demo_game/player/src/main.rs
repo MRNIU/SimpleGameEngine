@@ -22,12 +22,31 @@ fn main() -> Result<(), Box<dyn Error>> {
             ..RunOptions::default()
         },
     )?;
+    let performance = report.performance();
+    let frame_time = performance.frame_time();
     println!(
-        "presented_frames={} input_frames={}",
+        "presented_frames={} input_frames={} fps={} frame_p50_ms={} frame_p95_ms={} frame_max_ms={} advance_avg_ms={} extract_avg_ms={} render_avg_ms={} surface_skips={}",
         report.presented_frames(),
-        report.input_frames()
+        report.input_frames(),
+        performance
+            .frames_per_second()
+            .map_or_else(|| "--".to_owned(), |fps| fps.to_string()),
+        duration_ms(frame_time.map(|summary| summary.p50())),
+        duration_ms(frame_time.map(|summary| summary.p95())),
+        duration_ms(frame_time.map(|summary| summary.max())),
+        duration_ms(performance.average_advance()),
+        duration_ms(performance.average_extract()),
+        duration_ms(performance.average_render()),
+        performance.surface_skips().total(),
     );
     Ok(())
+}
+
+fn duration_ms(duration: Option<std::time::Duration>) -> String {
+    duration.map_or_else(
+        || "--".to_owned(),
+        |duration| format!("{:.2}", duration.as_secs_f64() * 1_000.0),
+    )
 }
 
 struct Arguments {

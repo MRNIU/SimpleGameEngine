@@ -143,6 +143,8 @@ fn real_window_advances_extracts_renders_and_presents_before_exit()
     )?;
 
     assert_eq!(report.presented_frames(), 2);
+    assert_eq!(report.performance().sample_count(), 1);
+    assert_eq!(report.performance().surface_skips().total(), 0);
     assert!(ADVANCES.load(Ordering::SeqCst) >= 2);
     Ok(())
 }

@@ -111,9 +111,7 @@ impl eframe::App for EditorApp {
             request_screenshot(context);
             return;
         }
-        if self.probe.report().error.is_some()
-            || self.max_frames.is_some_and(|max| self.frames >= max)
-        {
+        if self.probe.error().is_some() || self.max_frames.is_some_and(|max| self.frames >= max) {
             self.close_now(context);
         } else {
             context.request_repaint();
@@ -154,7 +152,9 @@ impl eframe::App for EditorApp {
                                 }
                             }
                         });
-                    ui.monospace(frame_rate_label(self.probe.report().frames_per_second));
+                    ui.monospace(frame_rate_label(self.probe.frames_per_second()));
+                    ui.toggle_value(&mut self.performance_open, "Perf")
+                        .on_hover_text("Performance");
                     if self.play.is_some() {
                         ui.colored_label(egui::Color32::LIGHT_GREEN, "PLAY");
                         if ui.button("Stop").clicked() {
@@ -206,6 +206,7 @@ impl eframe::App for EditorApp {
             self.inspector(ui);
             self.hierarchy(ui);
         }
+        self.performance_panel(ui.ctx());
 
         if let Some(error) = self.last_error.clone() {
             let mut dismiss = false;
