@@ -9,7 +9,7 @@ repository.workspace = true
 ron.workspace = true
 serde.workspace = true
 sha2.workspace = true
-sge-reflect = { path = "../reflect" }
+sge-reflect = { path = "../sge-reflect" }
 thiserror.workspace = true
 uuid.workspace = true
 

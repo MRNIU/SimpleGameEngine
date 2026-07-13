@@ -17,33 +17,27 @@
 |------|------|
 | `README.md` | 安装、编译、运行、测试与 smoke 命令 |
 | `docs/conventions.md` | 代码、文档、测试和环境约定 |
-| `docs/superpowers/specs/2026-07-11-rust-engine-target-architecture-design.md` | 总目标、crate/产品边界、延期子系统与 M1–M7 顺序 |
-| `docs/superpowers/specs/2026-07-12-project-and-data-m2-design.md` | M2 Project/Data canonical 合同 |
-| `docs/superpowers/specs/2026-07-12-asset-pipeline-and-runtime-products-m3-design.md` | M3 import/cache/Cook/runtime product canonical 合同 |
-| `docs/superpowers/specs/2026-07-12-render-and-hosts-m4-design.md` | M4 render、Player、Editor preview canonical 合同 |
-| `docs/superpowers/specs/2026-07-13-editor-play-m5-design.md` | M5 EditSession、Inspector/history、Play/input canonical 合同 |
-| `docs/superpowers/specs/2026-07-13-build-and-stage-m6-design.md` | M6 Cargo Build、immutable Stage、atomic current canonical 合同 |
-| `docs/superpowers/specs/2026-07-13-integration-demo-m7-design.md` | M7 独立 demo 单链与最终产品 gate canonical 合同 |
-| `docs/architecture/rewrite-status-and-legacy-features.md` | C++ / Rust prototype / 当前版本特性迁移与剩余工作 |
+| `docs/architecture/overview.md` | crate 命名、职责、依赖、产品与数据流、长期架构约束 |
+| `docs/architecture/status.md` | 当前能力、验证证据、产品缺口与下一阶段 |
 | `.gitmessage` | commit message 模板 |
 
 ## 当前实现边界
 
 | 模块/目录 | 职责 | 不负责 |
 |-----------|------|--------|
-| `crates/app/` | `sge-app` EngineApp、Plugin、fixed schedules、GameDescriptor；Ready app 的受限 initializer | window、renderer、Editor/Player ownership |
-| `crates/math/` | Transform 与 glam re-export | ECS storage、Reflect metadata |
+| `crates/sge-app/` | `sge-app` EngineApp、Plugin、fixed schedules、GameDescriptor；Ready app 的受限 initializer | window、renderer、Editor/Player ownership |
+| `crates/sge-math/` | Transform 与 glam re-export | ECS storage、Reflect metadata |
 | `crates/sge-ecs/` | typed World、opaque Entity、resources/query、受限 WorldInitializer | scene 格式、任意 `world_mut()` host seam |
-| `crates/reflect/` | metadata、codec、clone、validation、scene-saveable/reference semantics | ECS、Inspector UI |
-| `crates/input/` | 平台无关逐帧 InputFrame | winit/egui adapter |
+| `crates/sge-reflect/` | metadata、codec、clone、validation、scene-saveable/reference semantics | ECS、Inspector UI |
+| `crates/sge-input/` | 平台无关逐帧 InputFrame | winit/egui adapter |
 | `crates/sge-asset/` | AssetId、AssetRef、MeshAsset、runtime catalog/content/store | source import、Cook、GPU handles |
-| `crates/project/` | project identity、portable path/root、manifest v2、atomic single-file writes | importer、Editor session、multi-file transaction |
+| `crates/sge-project/` | project identity、portable path/root、manifest v2、atomic single-file writes | importer、Editor session、multi-file transaction |
 | `crates/sge-scene/` | authoring/runtime scene、SceneEntityId/Parent、prepare/instantiate/snapshot | project/Cook I/O、GPU |
 | `crates/sge-asset-pipeline/` | canonical OBJ importer、cache、dependency closure、deterministic full Cook/publication | Editor/Player host、GPU、Cargo build |
 | `crates/sge-render/` | reflected render components、owned RenderSnapshot、retained WGPU backend、safe surface | source/project ownership、egui ownership、多 backend facade |
-| `crates/player/` | source-free PlayerSession、winit loop、input mapping、resize/occlusion/surface policy | project、OBJ parser、Editor、native dialog |
+| `crates/sge-player/` | source-free PlayerSession、winit loop、input mapping、resize/occlusion/surface policy | project、OBJ parser、Editor、native dialog |
 | `crates/sge-editor/` | candidate open、EditSession、Reflect Inspector/history/save、独立 PlaySession、egui input routing与 eframe/WGPU host | arbitrary World mutation、第二 registry/backend/event loop、Play writeback |
-| `crates/build/` | bootstrap launcher、game-specific Cook/Cargo编排、immutable Stage generation与atomic current manifest | game logic、Editor UI ownership、Player runtime |
+| `crates/sge-build/` | bootstrap launcher、game-specific Cook/Cargo编排、immutable Stage generation与atomic current manifest | game logic、Editor UI ownership、Player runtime |
 | `examples/demo_game/` | 固定 AssetId project、Rotator/PlayerController game plugin、薄 game-specific Editor/Player/Build | demo-only engine shortcuts |
 
 bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `examples/editor_smoke/` 已删除。不得恢复兼容 adapter、第二 registry、mirrored writes 或第二 WGPU backend。
@@ -64,9 +58,9 @@ bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `e
 
 开始前：
 
-1. 阅读本文件、`README.md`、`docs/conventions.md`、`.gitmessage` 和当前 milestone spec。
+1. 阅读本文件、`README.md`、`docs/conventions.md`、`.gitmessage`、`docs/architecture/overview.md` 和 `docs/architecture/status.md`。
 2. 检查 `git status --short`，保护用户和其他贡献者改动。
-3. 以当前源码、tests 和 tracked docs 为真值；旧 `docs/superpowers/plans/` 与 `.superpowers/` scratch 已删除，不得恢复为状态真值。
+3. 以当前源码、tests 和 tracked architecture docs 为真值；已执行的 superpowers、plan、阶段 spec 与 scratch 已删除，不得恢复为状态真值。
 
 实施中：
 

@@ -7,15 +7,15 @@ repository.workspace = true
 
 [dependencies]
 demo-game = { path = "../game" }
-sge-build = { path = "../../../crates/build" }
+sge-build = { path = "../../../crates/sge-build" }
 
 [dev-dependencies]
 sge-asset = { path = "../../../crates/sge-asset" }
 sge-editor = { path = "../../../crates/sge-editor" }
-sge-input = { path = "../../../crates/input" }
-sge-math = { path = "../../../crates/math" }
-sge-player = { path = "../../../crates/player" }
-sge-reflect = { path = "../../../crates/reflect" }
+sge-input = { path = "../../../crates/sge-input" }
+sge-math = { path = "../../../crates/sge-math" }
+sge-player = { path = "../../../crates/sge-player" }
+sge-reflect = { path = "../../../crates/sge-reflect" }
 sge-render = { path = "../../../crates/sge-render" }
 sge-scene = { path = "../../../crates/sge-scene" }
 

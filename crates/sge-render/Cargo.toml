@@ -6,11 +6,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-sge-app = { path = "../app" }
+sge-app = { path = "../sge-app" }
 sge-asset = { path = "../sge-asset" }
 sge-ecs = { path = "../sge-ecs" }
-sge-math = { path = "../math" }
-sge-reflect = { path = "../reflect" }
+sge-math = { path = "../sge-math" }
+sge-reflect = { path = "../sge-reflect" }
 pollster.workspace = true
 raw-window-handle.workspace = true
 thiserror.workspace = true

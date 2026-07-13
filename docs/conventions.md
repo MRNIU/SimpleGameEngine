@@ -17,6 +17,7 @@
 
 - 使用 Rust stable channel。
 - 使用 Cargo workspace 管理 crate。
+- 通用 engine package 和 `crates/` 下目录统一使用 `sge-*` 名称；Rust import 使用 Cargo 映射后的 `sge_*` 标识符。
 - 格式化使用 `cargo fmt`。
 - 静态检查使用 `cargo clippy --workspace --all-targets -- -D warnings`。
 - 新增 crate 必须有真实 public API 和测试；不为未来可能需要的能力创建空壳 crate。
@@ -38,6 +39,9 @@
 
 - 命令变化更新 `README.md`。
 - 项目规则、架构边界或 agent 工作流变化更新 `AGENTS.md`。
+- `docs/architecture/overview.md` 是 crate 职责、依赖和长期架构约束的唯一真值。
+- `docs/architecture/status.md` 是当前完成度、验证证据、限制和下一阶段的唯一真值。
+- 已执行的 plan、阶段 spec 和迁移过程不保留在当前 tracked tree，通过 Git 历史查看。
 - Commit 模板变化更新 `.gitmessage`。
 - 易过期内容写明日期。
 

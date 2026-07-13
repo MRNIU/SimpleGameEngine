@@ -6,9 +6,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-sge-app = { path = "../app" }
+sge-app = { path = "../sge-app" }
 sge-asset = { path = "../sge-asset" }
-sge-input = { path = "../input" }
+sge-input = { path = "../sge-input" }
 sge-render = { path = "../sge-render" }
 sge-scene = { path = "../sge-scene" }
 image.workspace = true
@@ -17,9 +17,9 @@ winit.workspace = true
 
 [dev-dependencies]
 sge-asset-pipeline = { path = "../sge-asset-pipeline" }
-sge-math = { path = "../math" }
-sge-project = { path = "../project" }
-sge-reflect = { path = "../reflect" }
+sge-math = { path = "../sge-math" }
+sge-project = { path = "../sge-project" }
+sge-reflect = { path = "../sge-reflect" }
 
 [lints]
 workspace = true

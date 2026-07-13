@@ -6,10 +6,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-sge-app = { path = "../../../crates/app" }
-sge-input = { path = "../../../crates/input" }
-sge-math = { path = "../../../crates/math" }
-sge-reflect = { path = "../../../crates/reflect" }
+sge-app = { path = "../../../crates/sge-app" }
+sge-input = { path = "../../../crates/sge-input" }
+sge-math = { path = "../../../crates/sge-math" }
+sge-reflect = { path = "../../../crates/sge-reflect" }
 sge-render = { path = "../../../crates/sge-render" }
 sge-scene = { path = "../../../crates/sge-scene" }
 

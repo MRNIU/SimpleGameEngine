@@ -7,8 +7,8 @@ repository.workspace = true
 
 [dependencies]
 sge-ecs = { path = "../sge-ecs" }
-sge-input = { path = "../input" }
-sge-reflect = { path = "../reflect" }
+sge-input = { path = "../sge-input" }
+sge-reflect = { path = "../sge-reflect" }
 thiserror.workspace = true
 
 [lints]

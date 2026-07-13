@@ -12,14 +12,14 @@ serde.workspace = true
 sha2.workspace = true
 sge-asset = { path = "../sge-asset" }
 sge-ecs = { path = "../sge-ecs" }
-sge-project = { path = "../project" }
-sge-reflect = { path = "../reflect" }
+sge-project = { path = "../sge-project" }
+sge-reflect = { path = "../sge-reflect" }
 sge-scene = { path = "../sge-scene" }
 thiserror.workspace = true
 tobj.workspace = true
 
 [dev-dependencies]
-sge-app = { path = "../app" }
+sge-app = { path = "../sge-app" }
 
 [lints]
 workspace = true

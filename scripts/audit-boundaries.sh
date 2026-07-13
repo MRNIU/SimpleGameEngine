@@ -110,34 +110,34 @@ audit_tree demo-game-editor \
   '^(asset|ecs|scene|runtime|sge-build|editor|render) v'
 
 target_sources=(
-  crates/app/src
-  crates/reflect/src
+  crates/sge-app/src
+  crates/sge-reflect/src
   crates/sge-asset/src
   crates/sge-ecs/src
   crates/sge-scene/src
-  crates/project/src
+  crates/sge-project/src
   crates/sge-render/src
-  crates/player/src
+  crates/sge-player/src
   crates/sge-editor/src
-  crates/build/src
+  crates/sge-build/src
 )
 audit_source 'target production source' \
   'EntityRecord|AssetUuid|asset:<|tobj|load_obj' "${target_sources[@]}"
 audit_source 'runtime World mutation' 'world_mut' \
-  crates/app/src crates/sge-ecs/src crates/sge-scene/src
+  crates/sge-app/src crates/sge-ecs/src crates/sge-scene/src
 audit_source 'durable Data recovery' 'unwrap_or_default' \
-  crates/sge-asset/src crates/project/src crates/sge-scene/src
+  crates/sge-asset/src crates/sge-project/src crates/sge-scene/src
 audit_source 'runtime product source ownership' \
   'ProjectRoot|SourceAssetRecord|ObjImportSettings|tobj|load_obj' \
-  crates/sge-asset/src crates/sge-scene/src crates/player/src
+  crates/sge-asset/src crates/sge-scene/src crates/sge-player/src
 audit_source 'safe surface creation' 'create_surface_unsafe|SurfaceTargetUnsafe' \
-  crates/sge-render/src crates/player/src
+  crates/sge-render/src crates/sge-player/src
 audit_source 'Player direct WGPU ownership' 'wgpu(\.workspace)?[[:space:]]*=' \
-  crates/player/Cargo.toml examples/demo_game/player/Cargo.toml
+  crates/sge-player/Cargo.toml examples/demo_game/player/Cargo.toml
 audit_source 'Editor second native event loop' 'EventLoop|run_app|create_window' \
   crates/sge-editor/src
 audit_source 'Player build/source ownership' 'ProjectRoot|full_cook|StageRoot|BuildLauncher|tobj' \
-  crates/player/src examples/demo_game/player/src
+  crates/sge-player/src examples/demo_game/player/src
 
 audit_exact_files 'canonical OBJ importer owner' 'tobj::load_obj_buf' \
   'crates/sge-asset-pipeline/src/obj.rs' crates/sge-asset-pipeline/src

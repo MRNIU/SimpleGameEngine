@@ -10,13 +10,13 @@ ron.workspace = true
 serde.workspace = true
 sge-asset = { path = "../sge-asset" }
 sge-ecs = { path = "../sge-ecs" }
-sge-reflect = { path = "../reflect" }
+sge-reflect = { path = "../sge-reflect" }
 thiserror.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-sge-app = { path = "../app" }
-sge-project = { path = "../project" }
+sge-app = { path = "../sge-app" }
+sge-project = { path = "../sge-project" }
 
 [lints]
 workspace = true

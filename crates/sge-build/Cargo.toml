@@ -12,11 +12,11 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
-sge-app = { path = "../app" }
+sge-app = { path = "../sge-app" }
 sge-asset = { path = "../sge-asset" }
 sge-asset-pipeline = { path = "../sge-asset-pipeline" }
-sge-project = { path = "../project" }
-sge-reflect = { path = "../reflect" }
+sge-project = { path = "../sge-project" }
+sge-reflect = { path = "../sge-reflect" }
 
 [lints]
 workspace = true
