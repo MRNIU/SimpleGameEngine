@@ -38,6 +38,7 @@ pub(super) fn prepare_triangle(
     triangle: [ClipVertex; 3],
     size: [u32; 2],
     material: [f32; 4],
+    cull_back_faces: bool,
 ) -> Option<RasterTriangle> {
     let screen = triangle.map(|vertex| {
         let inverse_w = vertex.position.w.recip();
@@ -54,7 +55,7 @@ pub(super) fn prepare_triangle(
         }
     });
     let area = edge(screen[0].position, screen[1].position, screen[2].position);
-    if area >= -EDGE_EPSILON {
+    if area.abs() <= EDGE_EPSILON || (cull_back_faces && area > 0.0) {
         return None;
     }
     let minimum = screen
@@ -145,18 +146,6 @@ pub(super) fn rasterize_triangle_tile(
     }
 }
 
-pub(super) fn rasterize_triangle_depth_tile(
-    triangle: RasterTriangle,
-    tile: RasterTile,
-    depths: &mut [f32],
-) {
-    visit_triangle_pixels(triangle, tile, |index, _, depth| {
-        if depth <= depths[index] {
-            depths[index] = depth;
-        }
-    });
-}
-
 pub(super) fn rasterize_triangle_wire_tile(
     triangle: RasterTriangle,
     tile: RasterTile,
@@ -164,9 +153,10 @@ pub(super) fn rasterize_triangle_wire_tile(
     color: [f32; 4],
     colors: &mut [[f32; 4]],
     depths: &[f32],
+    depth_test: bool,
 ) {
     visit_triangle_pixels(triangle, tile, |index, point, depth| {
-        if depth > depths[index] + 1.0e-5 {
+        if depth_test && depth > depths[index] + 1.0e-5 {
             return;
         }
         let barycentric = interpolate_barycentric(triangle, barycentric_weights(triangle, point));

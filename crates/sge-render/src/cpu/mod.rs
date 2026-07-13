@@ -14,8 +14,8 @@ use sge_math::{Mat3, Mat4, Quat, Vec3, Vec4};
 use self::{
     clip::{ClipVertex, clip_triangle},
     raster::{
-        RASTER_TILE_ROWS, RasterTile, prepare_triangle, rasterize_triangle_depth_tile,
-        rasterize_triangle_tile, rasterize_triangle_wire_tile,
+        RASTER_TILE_ROWS, RasterTile, prepare_triangle, rasterize_triangle_tile,
+        rasterize_triangle_wire_tile,
     },
     shade::{FrameLight, linear_rgba_to_srgb8},
 };
@@ -111,6 +111,7 @@ impl CpuRenderer {
         clear: [f32; 4],
     ) -> Result<CpuFrame, CpuRenderError> {
         let pixel_count = pixel_count(target_size)?;
+        let mode = settings.mode();
         let view_projection = Mat4::from_cols_array(&view_projection_matrix(view, target_size)?);
         let light = FrameLight::from_snapshot(snapshot);
         let mut triangles = Vec::new();
@@ -149,9 +150,12 @@ impl CpuRenderer {
                     vertex.barycentric = barycentric;
                 }
                 for clipped in clip_triangle(triangle) {
-                    if let Some(triangle) =
-                        prepare_triangle(clipped, target_size, instance.material().base_color())
-                    {
+                    if let Some(triangle) = prepare_triangle(
+                        clipped,
+                        target_size,
+                        instance.material().base_color(),
+                        mode != RenderMode::Wireframe,
+                    ) {
                         triangles.push(triangle);
                     }
                 }
@@ -161,21 +165,20 @@ impl CpuRenderer {
         let mut depths = vec![1.0_f32; pixel_count];
         let width = target_size[0] as usize;
         let tile_pixels = width * RASTER_TILE_ROWS;
-        let mode = settings.mode();
-        colors
-            .par_chunks_mut(tile_pixels)
-            .zip(depths.par_chunks_mut(tile_pixels))
-            .enumerate()
-            .for_each(|(tile_index, (tile_colors, tile_depths))| {
-                let first_row = (tile_index * RASTER_TILE_ROWS) as u32;
-                let last_row = (first_row + RASTER_TILE_ROWS as u32).min(target_size[1]);
-                let tile = RasterTile {
-                    width: target_size[0],
-                    first_row,
-                    last_row,
-                };
-                for triangle in &triangles {
-                    if mode.has_fill() {
+        if mode.has_fill() {
+            colors
+                .par_chunks_mut(tile_pixels)
+                .zip(depths.par_chunks_mut(tile_pixels))
+                .enumerate()
+                .for_each(|(tile_index, (tile_colors, tile_depths))| {
+                    let first_row = (tile_index * RASTER_TILE_ROWS) as u32;
+                    let last_row = (first_row + RASTER_TILE_ROWS as u32).min(target_size[1]);
+                    let tile = RasterTile {
+                        width: target_size[0],
+                        first_row,
+                        last_row,
+                    };
+                    for triangle in &triangles {
                         rasterize_triangle_tile(
                             *triangle,
                             tile,
@@ -184,11 +187,9 @@ impl CpuRenderer {
                             tile_colors,
                             tile_depths,
                         );
-                    } else {
-                        rasterize_triangle_depth_tile(*triangle, tile, tile_depths);
                     }
-                }
-            });
+                });
+        }
         if mode.has_wireframe() {
             let wire_color = match mode {
                 RenderMode::Wireframe => WIREFRAME_COLOR,
@@ -216,6 +217,7 @@ impl CpuRenderer {
                             wire_color,
                             tile_colors,
                             tile_depths,
+                            mode == RenderMode::LitWireframe,
                         );
                     }
                 });

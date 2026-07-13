@@ -132,15 +132,19 @@ fn real_offscreen_adapter_reads_back_all_render_modes() -> Result<(), Box<dyn st
             .count()
     };
 
+    let [lit, unlit, lit_wireframe, wireframe] = images.as_slice() else {
+        panic!("all four render modes must be read back");
+    };
     assert!(images.iter().all(|image| changed(image) > 0));
-    assert!(changed(&images[2]) < changed(&images[1]));
-    assert_ne!(images[0], images[1]);
-    assert_ne!(images[0], images[3]);
+    assert!(changed(wireframe) < changed(unlit));
+    assert_ne!(lit, unlit);
+    assert_ne!(lit, lit_wireframe);
     Ok(())
 }
 
 #[test]
-fn wgpu_wireframe_readback_hides_far_edges() -> Result<(), Box<dyn std::error::Error>> {
+fn wgpu_wireframe_is_xray_while_lit_wireframe_hides_far_edges()
+-> Result<(), Box<dyn std::error::Error>> {
     let (device, queue) = gpu()?;
     let asset = AssetId::new_v4();
     let store = RuntimeAssetStore::from_meshes([(asset, triangle_mesh()?)])?;
@@ -150,7 +154,7 @@ fn wgpu_wireframe_readback_hides_far_edges() -> Result<(), Box<dyn std::error::E
     let hidden_view = RenderView::from_active_camera(&hidden)?;
     let mut renderer = WgpuRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
     renderer.prepare_assets(&device, &queue, &hidden, &store)?;
-    let near = render_mode_readback(
+    let near_wireframe = render_mode_readback(
         &device,
         &queue,
         &mut renderer,
@@ -159,7 +163,7 @@ fn wgpu_wireframe_readback_hides_far_edges() -> Result<(), Box<dyn std::error::E
         &store,
         RenderMode::Wireframe,
     )?;
-    let hidden = render_mode_readback(
+    let xray_wireframe = render_mode_readback(
         &device,
         &queue,
         &mut renderer,
@@ -169,10 +173,63 @@ fn wgpu_wireframe_readback_hides_far_edges() -> Result<(), Box<dyn std::error::E
         RenderMode::Wireframe,
     )?;
 
-    assert_eq!(
-        hidden, near,
-        "far edges must stay hidden behind the near face"
+    let near_overlay = render_mode_readback(
+        &device,
+        &queue,
+        &mut renderer,
+        &near,
+        near_view,
+        &store,
+        RenderMode::LitWireframe,
+    )?;
+    let hidden_overlay = render_mode_readback(
+        &device,
+        &queue,
+        &mut renderer,
+        &hidden,
+        hidden_view,
+        &store,
+        RenderMode::LitWireframe,
+    )?;
+    let changed = |bytes: &[u8]| {
+        let clear = &bytes[..4];
+        bytes
+            .chunks_exact(4)
+            .filter(|pixel| *pixel != clear)
+            .count()
+    };
+
+    assert!(
+        xray_wireframe != near_wireframe,
+        "X-Ray wireframe must reveal the far triangle"
     );
+    assert!(changed(&xray_wireframe) > changed(&near_wireframe));
+    assert_eq!(hidden_overlay, near_overlay);
+    Ok(())
+}
+
+#[test]
+fn wgpu_wireframe_includes_back_facing_polygon_edges() -> Result<(), Box<dyn std::error::Error>> {
+    let (device, queue) = gpu()?;
+    let asset = AssetId::new_v4();
+    let mut mesh = triangle_mesh()?;
+    mesh = MeshAsset::new(mesh.vertices().to_vec(), vec![0, 2, 1])?;
+    let store = RuntimeAssetStore::from_meshes([(asset, mesh)])?;
+    let snapshot = hidden_line_snapshot(asset, &store, false)?;
+    let view = RenderView::from_active_camera(&snapshot)?;
+    let mut renderer = WgpuRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    renderer.prepare_assets(&device, &queue, &snapshot, &store)?;
+    let image = render_mode_readback(
+        &device,
+        &queue,
+        &mut renderer,
+        &snapshot,
+        view,
+        &store,
+        RenderMode::Wireframe,
+    )?;
+    let clear = &image[..4];
+    assert!(image.chunks_exact(4).any(|pixel| pixel != clear));
     Ok(())
 }
 

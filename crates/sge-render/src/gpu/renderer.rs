@@ -14,10 +14,7 @@ use super::{
     frame::{
         create_depth_target, extent, normalized_model_matrix, uniform_bytes, validate_target_size,
     },
-    pipeline::{
-        create_composite_pipeline, create_depth_pipeline, create_mesh_pipeline,
-        create_wireframe_pipeline,
-    },
+    pipeline::{create_composite_pipeline, create_mesh_pipeline, create_wireframe_pipeline},
 };
 
 const SURFACE_CLEAR_COLOR: wgpu::Color = wgpu::Color {
@@ -31,8 +28,8 @@ const OFFSCREEN_CLEAR_COLOR: wgpu::Color = wgpu::Color::TRANSPARENT;
 pub struct WgpuRenderer {
     target_format: wgpu::TextureFormat,
     mesh_pipeline: wgpu::RenderPipeline,
-    depth_pipeline: wgpu::RenderPipeline,
-    wireframe_pipeline: wgpu::RenderPipeline,
+    wireframe_xray_pipeline: wgpu::RenderPipeline,
+    wireframe_overlay_pipeline: wgpu::RenderPipeline,
     frame_layout: wgpu::BindGroupLayout,
     composite_pipeline: wgpu::RenderPipeline,
     composite_layout: wgpu::BindGroupLayout,
@@ -101,9 +98,10 @@ impl WgpuRenderer {
             ],
         });
         let mesh_pipeline = create_mesh_pipeline(device, &shader, &frame_layout, target_format);
-        let depth_pipeline = create_depth_pipeline(device, &shader, &frame_layout, target_format);
-        let wireframe_pipeline =
-            create_wireframe_pipeline(device, &shader, &frame_layout, target_format);
+        let wireframe_xray_pipeline =
+            create_wireframe_pipeline(device, &shader, &frame_layout, target_format, false);
+        let wireframe_overlay_pipeline =
+            create_wireframe_pipeline(device, &shader, &frame_layout, target_format, true);
         let composite_pipeline =
             create_composite_pipeline(device, &shader, &composite_layout, target_format);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -115,8 +113,8 @@ impl WgpuRenderer {
         Self {
             target_format,
             mesh_pipeline,
-            depth_pipeline,
-            wireframe_pipeline,
+            wireframe_xray_pipeline,
+            wireframe_overlay_pipeline,
             frame_layout,
             composite_pipeline,
             composite_layout,
@@ -236,14 +234,16 @@ impl WgpuRenderer {
                 },
                 depth_slice: None,
             })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &depth_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
+            depth_stencil_attachment: (settings.mode() != crate::RenderMode::Wireframe).then_some(
+                wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                },
+            ),
             occlusion_query_set: None,
             timestamp_writes: None,
             multiview_mask: None,
@@ -253,12 +253,15 @@ impl WgpuRenderer {
         if settings.mode().has_fill() {
             pass.set_pipeline(&self.mesh_pipeline);
             draw_filled_batches(&mut pass, &self.meshes, &batches);
-        } else {
-            pass.set_pipeline(&self.depth_pipeline);
-            draw_filled_batches(&mut pass, &self.meshes, &batches);
         }
         if settings.mode().has_wireframe() {
-            pass.set_pipeline(&self.wireframe_pipeline);
+            pass.set_pipeline(match settings.mode() {
+                crate::RenderMode::Wireframe => &self.wireframe_xray_pipeline,
+                crate::RenderMode::LitWireframe => &self.wireframe_overlay_pipeline,
+                crate::RenderMode::Lit | crate::RenderMode::Unlit => {
+                    unreachable!("wireframe mode required")
+                }
+            });
             for batch in &batches {
                 let mesh = &self.meshes[&batch.asset];
                 pass.set_vertex_buffer(0, mesh.wireframe_vertex_buffer.slice(..));

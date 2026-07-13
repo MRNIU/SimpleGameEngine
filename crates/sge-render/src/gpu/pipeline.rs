@@ -80,52 +80,25 @@ pub(super) fn create_mesh_pipeline(
     })
 }
 
-pub(super) fn create_depth_pipeline(
-    device: &wgpu::Device,
-    shader: &wgpu::ShaderModule,
-    frame_layout: &wgpu::BindGroupLayout,
-    format: wgpu::TextureFormat,
-) -> wgpu::RenderPipeline {
-    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("sge_render_depth_pipeline_layout"),
-        bind_group_layouts: &[Some(frame_layout)],
-        immediate_size: 0,
-    });
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("sge_render_depth_pipeline"),
-        layout: Some(&layout),
-        vertex: mesh_vertex_state(shader),
-        fragment: Some(wgpu::FragmentState {
-            module: shader,
-            entry_point: Some("fs_depth"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format,
-                blend: None,
-                write_mask: wgpu::ColorWrites::empty(),
-            })],
-        }),
-        primitive: mesh_primitive_state(),
-        depth_stencil: Some(depth_state(true)),
-        multisample: wgpu::MultisampleState::default(),
-        multiview_mask: None,
-        cache: None,
-    })
-}
-
 pub(super) fn create_wireframe_pipeline(
     device: &wgpu::Device,
     shader: &wgpu::ShaderModule,
     frame_layout: &wgpu::BindGroupLayout,
     format: wgpu::TextureFormat,
+    depth_test: bool,
 ) -> wgpu::RenderPipeline {
+    let label = if depth_test {
+        "sge_render_wireframe_overlay_pipeline"
+    } else {
+        "sge_render_wireframe_xray_pipeline"
+    };
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("sge_render_wireframe_pipeline_layout"),
+        label: Some(label),
         bind_group_layouts: &[Some(frame_layout)],
         immediate_size: 0,
     });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("sge_render_wireframe_pipeline"),
+        label: Some(label),
         layout: Some(&layout),
         vertex: wgpu::VertexState {
             module: shader,
@@ -154,32 +127,16 @@ pub(super) fn create_wireframe_pipeline(
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
-        primitive: mesh_primitive_state(),
-        depth_stencil: Some(depth_state(false)),
+        primitive: if depth_test {
+            mesh_primitive_state()
+        } else {
+            wgpu::PrimitiveState::default()
+        },
+        depth_stencil: depth_test.then(|| depth_state(false)),
         multisample: wgpu::MultisampleState::default(),
         multiview_mask: None,
         cache: None,
     })
-}
-
-fn mesh_vertex_state(shader: &wgpu::ShaderModule) -> wgpu::VertexState<'_> {
-    wgpu::VertexState {
-        module: shader,
-        entry_point: Some("vs_mesh"),
-        compilation_options: wgpu::PipelineCompilationOptions::default(),
-        buffers: &[
-            wgpu::VertexBufferLayout {
-                array_stride: 24,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &VERTEX_ATTRIBUTES,
-            },
-            wgpu::VertexBufferLayout {
-                array_stride: 128,
-                step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &INSTANCE_ATTRIBUTES,
-            },
-        ],
-    }
 }
 
 fn mesh_primitive_state() -> wgpu::PrimitiveState {

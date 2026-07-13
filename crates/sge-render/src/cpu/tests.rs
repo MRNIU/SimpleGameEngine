@@ -38,5 +38,6 @@ fn back_faces_do_not_touch_color_or_depth() {
         vertex([0.0, 0.5, 0.5, 1.0]),
         vertex([0.5, -0.5, 0.5, 1.0]),
     ];
-    assert!(prepare_triangle(triangle, [4, 4], [1.0; 4]).is_none());
+    assert!(prepare_triangle(triangle, [4, 4], [1.0; 4], true).is_none());
+    assert!(prepare_triangle(triangle, [4, 4], [1.0; 4], false).is_some());
 }

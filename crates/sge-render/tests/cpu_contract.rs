@@ -107,7 +107,8 @@ fn cpu_backface_culling_leaves_only_the_clear_color() -> Result<(), Box<dyn std:
 }
 
 #[test]
-fn cpu_modes_share_depth_and_hidden_line_contract() -> Result<(), Box<dyn std::error::Error>> {
+fn cpu_wireframe_is_xray_while_lit_wireframe_hides_far_edges()
+-> Result<(), Box<dyn std::error::Error>> {
     let asset = AssetId::new_v4();
     let store = RuntimeAssetStore::from_meshes([(asset, triangle(false)?)])?;
     let near = mode_fixture(asset, false)?;
@@ -116,33 +117,58 @@ fn cpu_modes_share_depth_and_hidden_line_contract() -> Result<(), Box<dyn std::e
     let far_snapshot = extract(with_hidden_far.world(), &store)?;
     let near_view = RenderView::from_active_camera(&near_snapshot)?;
     let far_view = RenderView::from_active_camera(&far_snapshot)?;
-    let settings = RenderSettings::new(RenderMode::Wireframe, 1);
-
-    let near = CpuRenderer::new().render_with_settings(
-        [64, 64],
-        &near_snapshot,
-        near_view,
-        &store,
-        settings,
-    )?;
-    let hidden = CpuRenderer::new().render_with_settings(
-        [64, 64],
-        &far_snapshot,
-        far_view,
-        &store,
-        settings,
-    )?;
-
-    assert_eq!(
-        hidden, near,
-        "far edges must stay hidden behind the near face"
-    );
-    assert_eq!(pixel(&near, 32, 32), &near.rgba()[..4]);
-    assert!(
-        near.rgba()
+    let render = |snapshot, view, mode| {
+        CpuRenderer::new().render_with_settings(
+            [64, 64],
+            snapshot,
+            view,
+            &store,
+            RenderSettings::new(mode, 1),
+        )
+    };
+    let near_wireframe = render(&near_snapshot, near_view, RenderMode::Wireframe)?;
+    let xray_wireframe = render(&far_snapshot, far_view, RenderMode::Wireframe)?;
+    let near_overlay = render(&near_snapshot, near_view, RenderMode::LitWireframe)?;
+    let hidden_overlay = render(&far_snapshot, far_view, RenderMode::LitWireframe)?;
+    let changed = |frame: &sge_render::CpuFrame| {
+        let clear = &frame.rgba()[..4];
+        frame
+            .rgba()
             .chunks_exact(4)
-            .any(|pixel| pixel != &near.rgba()[..4])
+            .filter(|pixel| *pixel != clear)
+            .count()
+    };
+
+    assert!(
+        xray_wireframe != near_wireframe,
+        "X-Ray wireframe must reveal the far triangle"
     );
+    assert!(changed(&xray_wireframe) > changed(&near_wireframe));
+    assert_eq!(hidden_overlay, near_overlay);
+    Ok(())
+}
+
+#[test]
+fn cpu_wireframe_includes_back_facing_polygon_edges() -> Result<(), Box<dyn std::error::Error>> {
+    let asset = AssetId::new_v4();
+    let store = RuntimeAssetStore::from_meshes([(asset, triangle(true)?)])?;
+    let mut app = render_app()?;
+    {
+        let mut world = app.world_initializer()?;
+        spawn_camera(&mut world)?;
+        spawn_mesh(&mut world, asset, [0.0, 0.0, 2.0], [1.0, 0.0, 0.0, 1.0])?;
+    }
+    let snapshot = extract(app.world(), &store)?;
+    let view = RenderView::from_active_camera(&snapshot)?;
+    let frame = CpuRenderer::new().render_with_settings(
+        [32, 32],
+        &snapshot,
+        view,
+        &store,
+        RenderSettings::new(RenderMode::Wireframe, 1),
+    )?;
+    let clear = &frame.rgba()[..4];
+    assert!(frame.rgba().chunks_exact(4).any(|pixel| pixel != clear));
     Ok(())
 }
 

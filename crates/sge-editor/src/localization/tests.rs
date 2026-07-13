@@ -69,6 +69,14 @@ fn simplified_chinese_catalog_translates_editor_and_viewport_labels() {
     assert_eq!(language.text(EditorText::GameId), "游戏 ID");
     assert_eq!(language.text(EditorText::Project), "项目");
     assert_eq!(
+        EditorLanguage::English.text(EditorText::RenderModeLitWireframe),
+        "Lit Wireframe"
+    );
+    assert_eq!(
+        language.text(EditorText::RenderModeLitWireframe),
+        "光照线框"
+    );
+    assert_eq!(
         reflect_type_name(language, "sge.transform", "Transform", None),
         "变换"
     );

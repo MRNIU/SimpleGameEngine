@@ -57,7 +57,7 @@
   "performance.samples": "samples",
   "preview.unavailable": "Preview unavailable",
   "render_mode.lit": "Lit",
-  "render_mode.lit_wireframe": "Lit + Wireframe",
+  "render_mode.lit_wireframe": "Lit Wireframe",
   "render_mode.unlit": "Unlit",
   "render_mode.wireframe": "Wireframe",
   "reflect.enum.sge.camera.projection.Orthographic": "Orthographic",

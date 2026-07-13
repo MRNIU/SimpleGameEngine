@@ -50,11 +50,6 @@ fn fs_mesh(input: MeshOutput) -> @location(0) vec4<f32> {
   return vec4<f32>(input.color.rgb * frame.light_color.rgb * strength, input.color.a);
 }
 
-@fragment
-fn fs_depth() -> @location(0) vec4<f32> {
-  return vec4<f32>(0.0);
-}
-
 struct WireInput {
   @location(0) position: vec3<f32>,
   @location(2) model_0: vec4<f32>,

@@ -195,7 +195,7 @@ impl eframe::App for EditorApp {
                                     .selectable_value(
                                         &mut self.render_mode,
                                         mode,
-                                        render_mode_label(self.language, mode),
+                                        render_mode_menu_label(self.language, mode),
                                     )
                                     .changed()
                                 {
@@ -370,17 +370,47 @@ fn render_mode_label(language: EditorLanguage, mode: sge_render::RenderMode) -> 
     })
 }
 
+fn render_mode_menu_label(language: EditorLanguage, mode: sge_render::RenderMode) -> String {
+    let label = render_mode_label(language, mode);
+    match mode {
+        sge_render::RenderMode::Wireframe => format!("{label}  Alt+2"),
+        sge_render::RenderMode::Unlit => format!("{label}  Alt+3"),
+        sge_render::RenderMode::Lit => format!("{label}  Alt+4"),
+        sge_render::RenderMode::LitWireframe => label.to_owned(),
+    }
+}
+
 fn frame_rate_label(frames_per_second: Option<u32>) -> String {
     frames_per_second.map_or_else(|| "FPS: --".to_owned(), |fps| format!("FPS: {fps}"))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::frame_rate_label;
+    use super::{frame_rate_label, render_mode_menu_label};
+    use crate::EditorLanguage;
+    use sge_render::RenderMode;
 
     #[test]
     fn frame_rate_label_has_pending_and_live_states() {
         assert_eq!(frame_rate_label(None), "FPS: --");
         assert_eq!(frame_rate_label(Some(60)), "FPS: 60");
+    }
+
+    #[test]
+    fn render_mode_menu_uses_ue_order_labels_and_shortcuts() {
+        assert_eq!(
+            RenderMode::ALL.map(|mode| render_mode_menu_label(EditorLanguage::English, mode)),
+            [
+                "Lit  Alt+4",
+                "Unlit  Alt+3",
+                "Lit Wireframe",
+                "Wireframe  Alt+2",
+            ]
+        );
+        assert_eq!(
+            RenderMode::ALL
+                .map(|mode| render_mode_menu_label(EditorLanguage::SimplifiedChinese, mode)),
+            ["光照  Alt+4", "无光照  Alt+3", "光照线框", "线框  Alt+2"]
+        );
     }
 }

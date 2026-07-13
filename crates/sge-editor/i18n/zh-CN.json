@@ -57,7 +57,7 @@
   "performance.samples": "样本",
   "preview.unavailable": "预览不可用",
   "render_mode.lit": "光照",
-  "render_mode.lit_wireframe": "光照 + 线框",
+  "render_mode.lit_wireframe": "光照线框",
   "render_mode.unlit": "无光照",
   "render_mode.wireframe": "线框",
   "reflect.enum.sge.camera.projection.Orthographic": "正交",

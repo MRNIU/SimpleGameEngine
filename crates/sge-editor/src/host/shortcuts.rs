@@ -13,6 +13,9 @@ enum EditorShortcut {
     Duplicate,
     Delete,
     TogglePlay,
+    ViewWireframe,
+    ViewUnlit,
+    ViewLit,
 }
 
 impl EditorApp {
@@ -23,13 +26,24 @@ impl EditorApp {
         if ui.ctx().text_edit_focused() {
             return;
         }
+        let shortcut = editor_shortcut(ui);
+        let render_mode = match shortcut {
+            Some(EditorShortcut::ViewWireframe) => Some(sge_render::RenderMode::Wireframe),
+            Some(EditorShortcut::ViewUnlit) => Some(sge_render::RenderMode::Unlit),
+            Some(EditorShortcut::ViewLit) => Some(sge_render::RenderMode::Lit),
+            _ => None,
+        };
+        if let Some(render_mode) = render_mode {
+            let _ = self.apply_ui_action(EditorUiAction::SetRenderMode(render_mode));
+            return;
+        }
         if self.build_running() {
-            if editor_shortcut(ui) == Some(EditorShortcut::TogglePlay) {
+            if shortcut == Some(EditorShortcut::TogglePlay) {
                 let _ = self.apply_ui_action(EditorUiAction::StartPlay);
             }
             return;
         }
-        match editor_shortcut(ui) {
+        match shortcut {
             Some(EditorShortcut::TogglePlay) if self.play.is_some() => self.stop_play(),
             Some(EditorShortcut::TogglePlay) => {
                 let _ = self.apply_ui_action(EditorUiAction::StartPlay);
@@ -58,7 +72,10 @@ impl EditorApp {
                     self.apply_edit(result);
                 }
             }
-            None => {}
+            Some(
+                EditorShortcut::ViewWireframe | EditorShortcut::ViewUnlit | EditorShortcut::ViewLit,
+            )
+            | None => {}
         }
     }
 }
@@ -68,7 +85,13 @@ fn editor_shortcut(ui: &egui::Ui) -> Option<EditorShortcut> {
         let command = input.modifiers.command;
         let alt = input.modifiers.alt;
         let shift = input.modifiers.shift;
-        if alt && !command && input.key_pressed(egui::Key::P) {
+        if alt && !command && input.key_pressed(egui::Key::Num2) {
+            Some(EditorShortcut::ViewWireframe)
+        } else if alt && !command && input.key_pressed(egui::Key::Num3) {
+            Some(EditorShortcut::ViewUnlit)
+        } else if alt && !command && input.key_pressed(egui::Key::Num4) {
+            Some(EditorShortcut::ViewLit)
+        } else if alt && !command && input.key_pressed(egui::Key::P) {
             Some(EditorShortcut::TogglePlay)
         } else if command && alt && input.key_pressed(egui::Key::S) {
             Some(EditorShortcut::SaveAs)
@@ -113,6 +136,18 @@ mod tests {
         assert_eq!(
             shortcut_for(egui::Key::P, egui::Modifiers::ALT),
             Some(EditorShortcut::TogglePlay)
+        );
+        assert_eq!(
+            shortcut_for(egui::Key::Num2, egui::Modifiers::ALT),
+            Some(EditorShortcut::ViewWireframe)
+        );
+        assert_eq!(
+            shortcut_for(egui::Key::Num3, egui::Modifiers::ALT),
+            Some(EditorShortcut::ViewUnlit)
+        );
+        assert_eq!(
+            shortcut_for(egui::Key::Num4, egui::Modifiers::ALT),
+            Some(EditorShortcut::ViewLit)
         );
     }
 

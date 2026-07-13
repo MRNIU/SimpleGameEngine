@@ -12,7 +12,7 @@ pub enum RenderMode {
 }
 
 impl RenderMode {
-    pub const ALL: [Self; 4] = [Self::Lit, Self::Unlit, Self::Wireframe, Self::LitWireframe];
+    pub const ALL: [Self; 4] = [Self::Lit, Self::Unlit, Self::LitWireframe, Self::Wireframe];
 
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -98,7 +98,7 @@ mod tests {
         );
         assert_eq!(
             RenderMode::ALL.map(RenderMode::as_str),
-            ["lit", "unlit", "wireframe", "lit-wireframe",]
+            ["lit", "unlit", "lit-wireframe", "wireframe",]
         );
     }
 }
