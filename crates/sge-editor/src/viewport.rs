@@ -276,8 +276,8 @@ impl EditorViewport {
             let rotation =
                 Quat::from_rotation_z(-delta.x * 0.01) * Quat::from_array(self.transform.rotation);
             self.transform.rotation = rotation.normalize().to_array();
-            let forward = rotation * Vec3::Z;
-            let movement = forward * -delta.y.signum() * self.effective_camera_speed() * 0.25;
+            let movement =
+                camera_lmb_forward_motion(rotation, self.effective_camera_speed(), delta.y);
             self.transform.translation =
                 (Vec3::from_array(self.transform.translation) + movement).to_array();
             self.sync_pivot_from_position();
@@ -580,6 +580,10 @@ fn camera_fly_motion(direction: Vec3, speed: f32, stable_dt: f32) -> Vec3 {
         return Vec3::ZERO;
     }
     direction.normalize_or_zero() * speed * stable_dt
+}
+
+fn camera_lmb_forward_motion(rotation: Quat, speed: f32, delta_y: f32) -> Vec3 {
+    rotation * Vec3::Z * -delta_y * speed * 0.01
 }
 
 fn gizmo_handles(frame: &PreviewFrame, rect: egui::Rect, transform: Transform) -> Vec<GizmoHandle> {
@@ -1189,6 +1193,18 @@ mod tests {
         let diagonal = camera_fly_motion(Vec3::new(1.0, 1.0, 0.0), 4.0, 0.25);
         assert!((straight.length() - 1.0).abs() < 0.0001);
         assert!((diagonal.length() - straight.length()).abs() < 0.0001);
+    }
+
+    #[test]
+    fn lmb_forward_motion_tracks_pointer_distance_without_frame_acceleration() {
+        let rotation = Quat::IDENTITY;
+        let whole = camera_lmb_forward_motion(rotation, 4.0, 20.0);
+        let split = camera_lmb_forward_motion(rotation, 4.0, 8.0)
+            + camera_lmb_forward_motion(rotation, 4.0, 12.0);
+
+        assert_eq!(whole, split);
+        assert_eq!(camera_lmb_forward_motion(rotation, 4.0, 0.0), Vec3::ZERO);
+        assert!((whole.length() - 0.8).abs() < 0.0001);
     }
 
     #[test]
