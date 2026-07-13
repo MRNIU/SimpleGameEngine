@@ -499,15 +499,13 @@ impl eframe::App for EditorApp {
         }
         egui::Panel::top("project_identity").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.heading("SimpleGameEngine Editor");
-                ui.separator();
-                ui.label(format!(
-                    "game_id: {}",
-                    self.session.descriptor().game_id().as_str()
-                ));
-                ui.separator();
-                ui.label(self.project_root.display().to_string());
-                ui.separator();
+                for label in project_identity_labels(
+                    self.session.descriptor().game_id().as_str(),
+                    &self.project_root,
+                ) {
+                    ui.label(label);
+                    ui.separator();
+                }
                 self.file_controls(ui);
                 if self.play.is_some() {
                     if ui.button("Stop").clicked() {
@@ -595,6 +593,13 @@ impl eframe::App for EditorApp {
             self.advance_play(ui.ctx(), response.hovered());
         }
     }
+}
+
+fn project_identity_labels(game_id: &str, project_root: &Path) -> [String; 2] {
+    [
+        format!("game_id: {game_id}"),
+        project_root.display().to_string(),
+    ]
 }
 
 fn request_screenshot(context: &egui::Context) {
@@ -876,5 +881,16 @@ mod tests {
                     .any(|command| matches!(command, egui::ViewportCommand::Screenshot(_)))
             );
         }
+    }
+
+    #[test]
+    fn toolbar_identity_contains_only_game_and_project_context() {
+        assert_eq!(
+            project_identity_labels("demo.game", Path::new("examples/demo_game")),
+            [
+                "game_id: demo.game".to_owned(),
+                "examples/demo_game".to_owned(),
+            ]
+        );
     }
 }
