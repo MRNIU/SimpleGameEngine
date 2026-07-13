@@ -37,6 +37,7 @@ enum BuildStatus {
     Ready,
     Running,
     Succeeded,
+    Cancelled,
     Failed(String),
 }
 
@@ -99,6 +100,33 @@ impl BuildProcess {
         }
     }
 
+    pub(crate) fn cancel(&mut self) -> Result<(), String> {
+        let Some(child) = self.child.as_mut() else {
+            return Ok(());
+        };
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("failed to poll Build before stopping it: {error}"))?
+        {
+            self.child = None;
+            self.status = if status.success() {
+                BuildStatus::Succeeded
+            } else {
+                BuildStatus::Failed(format!("Build exited with {status}"))
+            };
+            return Ok(());
+        }
+        child
+            .kill()
+            .map_err(|error| format!("failed to stop Build: {error}"))?;
+        child
+            .wait()
+            .map_err(|error| format!("failed to wait for stopped Build: {error}"))?;
+        self.child = None;
+        self.status = BuildStatus::Cancelled;
+        Ok(())
+    }
+
     pub(crate) fn is_running(&self) -> bool {
         self.child.is_some()
     }
@@ -108,6 +136,7 @@ impl BuildProcess {
             BuildStatus::Ready => "Build ready",
             BuildStatus::Running => "Build running",
             BuildStatus::Succeeded => "Build succeeded",
+            BuildStatus::Cancelled => "Build cancelled",
             BuildStatus::Failed(message) => message,
         }
     }
@@ -119,6 +148,12 @@ impl BuildProcess {
     #[cfg(test)]
     fn status(&self) -> &BuildStatus {
         &self.status
+    }
+}
+
+impl Drop for BuildProcess {
+    fn drop(&mut self) {
+        let _ = self.cancel();
     }
 }
 
@@ -180,6 +215,34 @@ mod tests {
             nonzero.status(),
             BuildStatus::Failed(message) if message.contains('7')
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn cancel_stops_a_running_build_and_drop_does_not_leave_it_alive()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let marker = output_path("cancelled-child");
+        let _stale_cleanup = fs::remove_file(&marker);
+        let script = r#"sleep 2; printf completed > "$0""#;
+        let mut process = BuildProcess::new(EditorBuildLauncher::new(
+            "sh",
+            ["-c".into(), script.into(), marker.as_os_str().to_owned()],
+        ));
+
+        assert!(process.start(PathBuf::from("project").as_path()));
+        process.cancel()?;
+        assert!(matches!(process.status(), BuildStatus::Cancelled));
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(!marker.exists());
+
+        let mut dropped = BuildProcess::new(EditorBuildLauncher::new(
+            "sh",
+            ["-c".into(), script.into(), marker.as_os_str().to_owned()],
+        ));
+        assert!(dropped.start(PathBuf::from("project").as_path()));
+        drop(dropped);
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(!marker.exists());
         Ok(())
     }
 

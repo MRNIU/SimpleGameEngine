@@ -21,6 +21,7 @@ impl eframe::App for EditorApp {
         if let Some(build) = self.build.as_mut() {
             build.poll();
         }
+        self.intercept_close_request(context);
         if self.screenshot_requested_at.is_some()
             && let Some(image) = context.input(|input| {
                 input.events.iter().find_map(|event| match event {
@@ -33,7 +34,7 @@ impl eframe::App for EditorApp {
             if let Some(sender) = self.screenshot_result.take() {
                 let _ = sender.send(result);
             }
-            context.send_viewport_cmd(egui::ViewportCommand::Close);
+            self.close_now(context);
             return;
         }
         if self
@@ -43,7 +44,7 @@ impl eframe::App for EditorApp {
             if let Some(sender) = self.screenshot_result.take() {
                 let _ = sender.send(Err("GPU screenshot readback timed out".to_owned()));
             }
-            context.send_viewport_cmd(egui::ViewportCommand::Close);
+            self.close_now(context);
             return;
         }
         if self.screenshot_requested_at.is_some() {
@@ -80,7 +81,15 @@ impl eframe::App for EditorApp {
             match self.apply_ui_action(action) {
                 Ok(()) => {
                     if build {
-                        self.pending_ui_build = true;
+                        if self.pending_build_confirmation {
+                            self.last_error = Some(
+                                "Build action tape requires interactive save confirmation"
+                                    .to_owned(),
+                            );
+                            self.ui_actions.clear();
+                        } else {
+                            self.pending_ui_build = true;
+                        }
                     } else {
                         self.ui_action_count.fetch_add(1, Ordering::Relaxed);
                     }
@@ -105,15 +114,23 @@ impl eframe::App for EditorApp {
         if self.probe.report().error.is_some()
             || self.max_frames.is_some_and(|max| self.frames >= max)
         {
-            context.send_viewport_cmd(egui::ViewportCommand::Close);
+            self.close_now(context);
         } else {
             context.request_repaint();
         }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if self.pending_close_confirmation {
+            self.close_confirmation_dialog(ui.ctx());
+            return;
+        }
         if self.pending_replacement.is_some() {
             self.unsaved_changes_dialog(ui.ctx());
+            return;
+        }
+        if self.pending_build_confirmation {
+            self.build_confirmation_dialog(ui.ctx());
             return;
         }
         self.apply_editor_shortcuts(ui);
