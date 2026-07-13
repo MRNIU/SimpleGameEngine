@@ -125,6 +125,10 @@ impl Default for EditorViewport {
 }
 
 impl EditorViewport {
+    pub(crate) fn drag_preview(&self) -> Option<(SceneEntityId, Transform)> {
+        self.drag.map(|drag| (drag.entity, drag.preview))
+    }
+
     pub(crate) fn prepare(&mut self, frame: &mut PreviewFrame) {
         if !self.initialized {
             self.camera = frame.view.camera();
@@ -371,12 +375,14 @@ impl EditorViewport {
         let Some(entity) = session.selection() else {
             return Ok(false);
         };
-        let Some(transform) = session.component::<Transform>(entity).copied() else {
+        let Some(committed) = session.component::<Transform>(entity).copied() else {
             return Ok(false);
         };
+        let pointer = ui.input(|input| input.pointer.interact_pos());
+        update_drag_preview(&mut self.drag, pointer);
+        let transform = gizmo_transform(committed, self.drag, entity);
         let handles = gizmo_handles(frame, response.rect, transform);
         paint_gizmo(ui, transform, frame, response.rect, &handles, self.gizmo);
-        let pointer = ui.input(|input| input.pointer.interact_pos());
         let pressed = ui.input(|input| input.pointer.primary_pressed());
         if self.drag.is_none()
             && pressed
@@ -393,11 +399,8 @@ impl EditorViewport {
                 pointer,
             });
         }
-        let Some(drag) = self.drag.as_mut() else {
+        if self.drag.is_none() {
             return Ok(false);
-        };
-        if let Some(pointer) = pointer {
-            drag.preview = transform_for_drag(*drag, pointer);
         }
         if ui.input(|input| input.pointer.primary_released()) {
             let drag = self.drag.take().expect("checked above");
@@ -444,6 +447,21 @@ fn transform_for_drag(mut drag: GizmoDrag, pointer: egui::Pos2) -> Transform {
         }
     }
     drag.preview
+}
+
+fn gizmo_transform(
+    committed: Transform,
+    drag: Option<GizmoDrag>,
+    entity: SceneEntityId,
+) -> Transform {
+    drag.filter(|drag| drag.entity == entity)
+        .map_or(committed, |drag| drag.preview)
+}
+
+fn update_drag_preview(drag: &mut Option<GizmoDrag>, pointer: Option<egui::Pos2>) {
+    if let (Some(drag), Some(pointer)) = (drag.as_mut(), pointer) {
+        drag.preview = transform_for_drag(*drag, pointer);
+    }
 }
 
 fn gizmo_handles(frame: &PreviewFrame, rect: egui::Rect, transform: Transform) -> Vec<GizmoHandle> {
@@ -887,6 +905,28 @@ mod tests {
         assert_eq!(scaled.scale, [1.0, 1.0, 2.0]);
         let rotated = transform_for_drag(drag(GizmoMode::Rotate, Axis::X), egui::pos2(100.0, 0.0));
         assert_ne!(rotated.rotation, Transform::identity().rotation);
+    }
+
+    #[test]
+    fn active_drag_preview_is_the_gizmo_transform() {
+        let committed = Transform::identity();
+        let mut active = Some(drag(GizmoMode::Move, Axis::X));
+        update_drag_preview(&mut active, Some(egui::pos2(100.0, 0.0)));
+        let active = active.unwrap();
+
+        assert_eq!(
+            gizmo_transform(committed, Some(active), active.entity),
+            active.preview
+        );
+        assert_eq!(active.preview.translation, [1.0, 0.0, 0.0]);
+        assert_eq!(
+            gizmo_transform(
+                committed,
+                Some(active),
+                "50000000-0000-4000-8000-000000000002".parse().unwrap()
+            ),
+            committed
+        );
     }
 
     #[test]

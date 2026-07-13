@@ -4,7 +4,7 @@ use eframe::egui;
 use sge_scene::{AuthoringEntity, SceneEntityId, SceneName};
 
 use super::EditorApp;
-use crate::inspector_ui;
+use crate::{inspector, inspector_ui};
 
 impl EditorApp {
     pub(super) fn hierarchy(&mut self, ui: &mut egui::Ui) {
@@ -112,7 +112,7 @@ impl EditorApp {
 
     fn inspector_contents(&mut self, ui: &mut egui::Ui) {
         ui.heading("Inspector");
-        let components = match self.session.inspector() {
+        let mut components = match self.session.inspector() {
             Ok(components) => components,
             Err(error) => {
                 self.last_error = Some(error.to_string());
@@ -122,6 +122,11 @@ impl EditorApp {
         let Some(entity) = self.session.selection() else {
             return;
         };
+        if let Some((preview_entity, transform)) = self.viewport.drag_preview()
+            && preview_entity == entity
+        {
+            inspector::apply_transform_preview(&mut components, transform);
+        }
         self.component_picker(ui, &components);
         self.component_draft(ui, entity);
         let action = ui
