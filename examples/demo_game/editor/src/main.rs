@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         EditorRunOptions {
             max_frames: arguments.max_frames,
             start_in_play: arguments.start_in_play,
+            screenshot: arguments.screenshot,
             build_launcher: Some(EditorBuildLauncher::new(
                 "cargo",
                 ["run", "--package", "sge-build", "--bin", "sge", "--"],
@@ -139,6 +140,7 @@ struct Arguments {
     project_root: PathBuf,
     max_frames: Option<u64>,
     start_in_play: bool,
+    screenshot: Option<PathBuf>,
 }
 
 fn arguments() -> Result<Option<Arguments>, String> {
@@ -153,9 +155,18 @@ fn arguments() -> Result<Option<Arguments>, String> {
     let project_root = PathBuf::from(first);
     let mut max_frames = None;
     let mut start_in_play = false;
+    let mut screenshot = None;
     while let Some(argument) = values.next() {
         if argument == "--play" {
             start_in_play = true;
+            continue;
+        }
+        if argument == "--screenshot" {
+            screenshot = Some(PathBuf::from(
+                values
+                    .next()
+                    .ok_or_else(|| usage("--screenshot requires a path"))?,
+            ));
             continue;
         }
         if argument != "--max-frames" {
@@ -176,10 +187,16 @@ fn arguments() -> Result<Option<Arguments>, String> {
                 .map_err(|_| usage("--max-frames must be an unsigned integer"))?,
         );
     }
+    if screenshot.is_some() && max_frames.is_some() {
+        return Err(usage(
+            "--screenshot cannot be combined with --max-frames because capture controls window exit",
+        ));
+    }
     Ok(Some(Arguments {
         project_root,
         max_frames,
         start_in_play,
+        screenshot,
     }))
 }
 
@@ -189,7 +206,9 @@ fn usage(error: &str) -> String {
     } else {
         format!("{error}\n\n")
     };
-    format!("{prefix}Usage: demo-game-editor PROJECT_ROOT [--play] [--max-frames N]")
+    format!(
+        "{prefix}Usage: demo-game-editor PROJECT_ROOT [--play] [--max-frames N] [--screenshot PATH]"
+    )
 }
 
 #[cfg(test)]

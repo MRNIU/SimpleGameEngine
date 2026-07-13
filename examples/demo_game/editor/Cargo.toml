@@ -11,5 +11,8 @@ rfd = "0.17.2"
 sge-editor = { path = "../../../crates/sge-editor" }
 sge-project = { path = "../../../crates/project" }
 
+[dev-dependencies]
+image.workspace = true
+
 [lints]
 workspace = true

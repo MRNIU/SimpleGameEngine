@@ -7,6 +7,7 @@ repository.workspace = true
 
 [dependencies]
 eframe.workspace = true
+image.workspace = true
 sge-app = { path = "../app" }
 sge-asset = { path = "../sge-asset" }
 sge-asset-pipeline = { path = "../sge-asset-pipeline" }

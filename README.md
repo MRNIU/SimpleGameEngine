@@ -85,6 +85,9 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p demo-game-editor -- --he
 # 直接启动 game-specific Editor并进入 Play
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p demo-game-editor -- examples/demo_game --play'
 
+# 由 Editor 自身捕获完整 WGPU 窗口截图
+docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo run -p demo-game-editor -- examples/demo_game --screenshot target/tmp/editor.png'
+
 # 通用 launcher：bootstrap -> game-specific Build -> full Cook -> Cargo Player build -> atomic Stage
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p sge-build --bin sge -- build examples/demo_game'
 
@@ -118,6 +121,9 @@ cargo run -p demo-game-editor -- examples/demo_game
 
 # 打开 Editor 并直接进入独立 PlaySession
 cargo run -p demo-game-editor -- examples/demo_game --play
+
+# 不依赖macOS录屏权限，捕获Editor完整WGPU窗口后退出
+cargo run -p demo-game-editor -- examples/demo_game --screenshot target/tmp/editor.png
 
 # 完整 Cook、dev Player build 与 self-contained Stage；发布构建追加 --release
 cargo run -p sge-build --bin sge -- build examples/demo_game

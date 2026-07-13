@@ -5,8 +5,9 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
+        mpsc::{self, Sender},
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use eframe::egui;
@@ -40,6 +41,7 @@ pub struct EditorRunOptions {
     pub max_frames: Option<u64>,
     pub initial_size: [u32; 2],
     pub start_in_play: bool,
+    pub screenshot: Option<PathBuf>,
     pub build_launcher: Option<EditorBuildLauncher>,
     pub file_dialogs: Option<EditorFileDialogs>,
 }
@@ -50,6 +52,7 @@ impl Default for EditorRunOptions {
             max_frames: None,
             initial_size: [1280, 720],
             start_in_play: false,
+            screenshot: None,
             build_launcher: None,
             file_dialogs: None,
         }
@@ -71,6 +74,9 @@ pub fn run(
 ) -> Result<EditorRunReport, EditorRunError> {
     if options.initial_size.contains(&0) {
         return Err(EditorRunError::InvalidInitialSize);
+    }
+    if options.screenshot.is_some() && options.max_frames.is_some() {
+        return Err(EditorRunError::ScreenshotWithFrameLimit);
     }
     let project_root = project_root.as_ref().to_path_buf();
     let session = EditSession::open(game, &project_root)?;
@@ -94,6 +100,12 @@ pub fn run(
     let gameplay_key_w_frames = Arc::new(AtomicU64::new(0));
     let report_gameplay_key_w_frames = Arc::clone(&gameplay_key_w_frames);
     let build = options.build_launcher.map(BuildProcess::new);
+    let (screenshot_result, screenshot_receiver) = if options.screenshot.is_some() {
+        let (sender, receiver) = mpsc::channel();
+        (Some(sender), Some(receiver))
+    } else {
+        (None, None)
+    };
     let native_options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         viewport: egui::ViewportBuilder::default().with_inner_size([
@@ -121,6 +133,9 @@ pub fn run(
                 project_root,
                 max_frames: options.max_frames,
                 frames: 0,
+                screenshot: options.screenshot,
+                screenshot_requested_at: None,
+                screenshot_result,
                 play_frames,
                 gameplay_input_frames,
                 gameplay_key_w_frames,
@@ -138,6 +153,12 @@ pub fn run(
         }),
     )
     .map_err(|error| EditorRunError::Eframe(error.to_string()))?;
+    if let Some(receiver) = screenshot_receiver {
+        receiver
+            .recv()
+            .map_err(|_| EditorRunError::ScreenshotIncomplete)?
+            .map_err(EditorRunError::Screenshot)?;
+    }
     let preview = report_probe.report();
     if let Some(error) = &preview.error {
         return Err(EditorRunError::Preview(error.clone()));
@@ -163,6 +184,9 @@ struct EditorApp {
     project_root: PathBuf,
     max_frames: Option<u64>,
     frames: u64,
+    screenshot: Option<PathBuf>,
+    screenshot_requested_at: Option<Instant>,
+    screenshot_result: Option<Sender<Result<(), String>>>,
     play_frames: Arc<AtomicU64>,
     gameplay_input_frames: Arc<AtomicU64>,
     gameplay_key_w_frames: Arc<AtomicU64>,
@@ -244,7 +268,38 @@ impl eframe::App for EditorApp {
         if let Some(build) = self.build.as_mut() {
             build.poll();
         }
+        if self.screenshot_requested_at.is_some()
+            && let Some(image) = context.input(|input| {
+                input.events.iter().find_map(|event| match event {
+                    egui::Event::Screenshot { image, .. } => Some(Arc::clone(image)),
+                    _ => None,
+                })
+            })
+        {
+            let result = save_screenshot(self.screenshot.take(), image.as_ref());
+            if let Some(sender) = self.screenshot_result.take() {
+                let _ = sender.send(result);
+            }
+            context.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+        if self
+            .screenshot_requested_at
+            .is_some_and(|requested| requested.elapsed() >= Duration::from_secs(5))
+        {
+            if let Some(sender) = self.screenshot_result.take() {
+                let _ = sender.send(Err("GPU screenshot readback timed out".to_owned()));
+            }
+            context.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
         self.frames = self.frames.saturating_add(1);
+        if self.screenshot.is_some() && self.screenshot_requested_at.is_none() && self.frames >= 3 {
+            self.screenshot_requested_at = Some(Instant::now());
+            context.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+            context.request_repaint();
+            return;
+        }
         if self.probe.report().error.is_some()
             || self.max_frames.is_some_and(|max| self.frames >= max)
         {
@@ -358,6 +413,23 @@ impl eframe::App for EditorApp {
             self.advance_play(ui.ctx(), response.hovered());
         }
     }
+}
+
+fn save_screenshot(path: Option<PathBuf>, screenshot: &egui::ColorImage) -> Result<(), String> {
+    let path = path.ok_or_else(|| "missing screenshot output path".to_owned())?;
+    let rgba = screenshot
+        .pixels
+        .iter()
+        .flat_map(|pixel| pixel.to_array())
+        .collect::<Vec<_>>();
+    image::save_buffer(
+        &path,
+        &rgba,
+        screenshot.size[0] as u32,
+        screenshot.size[1] as u32,
+        image::ColorType::Rgba8,
+    )
+    .map_err(|error| format!("cannot save Editor screenshot {}: {error}", path.display()))
 }
 
 impl EditorApp {
@@ -578,10 +650,16 @@ pub enum EditorRunError {
     Play(#[from] PlayStartError),
     #[error("initial Editor window size must be non-zero")]
     InvalidInitialSize,
+    #[error("Editor screenshot cannot be combined with a frame limit")]
+    ScreenshotWithFrameLimit,
     #[error("eframe Editor failed: {0}")]
     Eframe(String),
     #[error("Editor preview WGPU callback failed: {0}")]
     Preview(String),
     #[error("Editor preview WGPU callback did not prepare and paint")]
     PreviewIncomplete,
+    #[error("cannot save Editor screenshot: {0}")]
+    Screenshot(String),
+    #[error("Editor screenshot was not captured before the window closed")]
+    ScreenshotIncomplete,
 }
