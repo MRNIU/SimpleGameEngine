@@ -15,7 +15,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前实现
 
 ## 当前实现
 
-> 当前状态：M1–M7 架构和 integration demo 链路已经闭合，但产品可用性 hardening 尚未完成。自动 smoke 证明路径能够运行，不证明 Editor/Player 的全部交互、视觉结果、文件工作流和异常恢复已经可用于日常生产。
+> 当前状态摘要：M1–M7 架构和 integration demo 链路已经闭合，Apple Silicon Mac alpha baseline 已于 2026-07-14 验收闭合；后续发现的缺陷增量处理。该结论不代表发布质量、跨平台支持或 API/格式冻结；完整状态、证据、限制与下一阶段以 [`docs/architecture/status.md`](docs/architecture/status.md) 为唯一真值。
 
 - M1–M7 已完成：typed ECS / Reflect / EngineApp、strict project/authoring data、canonical OBJ import/full Cook/runtime products、owned `RenderSnapshot`、WGPU/CPU 双渲染后端、Edit/Play target Editor 架构路径、game-specific Build/self-contained Stage 和最终 integration demo 已形成一条产品路径。
 - `sge-render` 的窄 backend facade 让 WGPU 与 CPU 光栅器共用 `RenderSnapshot`、`RenderView`、`RuntimeAssetStore` 和投影逻辑；GPU retained cache 以 `AssetId` 为 key，CPU 实现六平面三角形裁剪、背面剔除、深度测试与当前 Lambert 光照，并用无锁水平 tile 并行光栅化。两者都通过现有 eframe callback 或安全 `Arc<Window>` surface 显示，CPU 路径只用 WGPU 上传/合成最终 RGBA 帧；Editor CPU 预览按逻辑像素光栅化后缩放显示，避免 Retina 物理像素造成四倍工作量，WGPU 仍使用物理像素。共享的会话级性能监控统计最近240个已完成帧间隔的FPS、p50/p95/max、advance/extract/render CPU wall time和Player surface跳帧；Editor的Play与Preview保持独立统计流。
@@ -30,7 +30,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前实现
 当前文档真值：
 
 - `docs/architecture/overview.md`：crate 命名、职责、依赖、产品与数据流、长期约束
-- `docs/architecture/status.md`：当前能力、验证证据、产品缺口与下一阶段
+- `docs/architecture/status.md`：当前能力、验证证据、产品缺口与下一阶段的唯一真值
 
 ## 快速开始
 
