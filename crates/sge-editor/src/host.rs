@@ -427,6 +427,10 @@ impl eframe::App for EditorApp {
             context.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
+        if self.screenshot_requested_at.is_some() {
+            request_screenshot(context);
+            return;
+        }
         self.frames = self.frames.saturating_add(1);
         if self.pending_ui_build {
             let Some(build) = self.build.as_ref() else {
@@ -476,8 +480,7 @@ impl eframe::App for EditorApp {
             && self.ui_actions.is_empty()
         {
             self.screenshot_requested_at = Some(Instant::now());
-            context.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
-            context.request_repaint();
+            request_screenshot(context);
             return;
         }
         if self.probe.report().error.is_some()
@@ -592,6 +595,11 @@ impl eframe::App for EditorApp {
             self.advance_play(ui.ctx(), response.hovered());
         }
     }
+}
+
+fn request_screenshot(context: &egui::Context) {
+    context.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+    context.request_repaint();
 }
 
 fn save_screenshot(path: Option<PathBuf>, screenshot: &egui::ColorImage) -> Result<(), String> {
@@ -846,4 +854,27 @@ pub enum EditorRunError {
     ScreenshotIncomplete,
     #[error("Editor UI action tape stopped after {completed} of {expected} actions")]
     UiActionsIncomplete { expected: u64, completed: u64 },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_screenshot_is_requested_on_every_poll() {
+        let context = egui::Context::default();
+        for _ in 0..2 {
+            let output = context.run_ui(Default::default(), |ui| request_screenshot(ui.ctx()));
+            let commands = &output
+                .viewport_output
+                .get(&egui::ViewportId::ROOT)
+                .expect("root viewport output")
+                .commands;
+            assert!(
+                commands
+                    .iter()
+                    .any(|command| matches!(command, egui::ViewportCommand::Screenshot(_)))
+            );
+        }
+    }
 }
