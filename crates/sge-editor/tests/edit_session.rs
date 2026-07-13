@@ -10,6 +10,7 @@ use sge_input::{Button, InputFrame, KeyCode};
 use sge_math::Transform;
 use sge_project::ProjectPath;
 use sge_reflect::{FieldKind, Value};
+use sge_render::Material;
 use sge_scene::{AuthoringEntity, SceneEntityId, SceneName};
 
 const CAMERA: &str = "50000000-0000-4000-8000-000000000001";
@@ -292,6 +293,8 @@ fn authoring_workflow_uses_generic_history_and_formal_assets()
     );
     assert!(has_entity(&session, cube.entity)?);
     assert_eq!(mesh_asset(&session, cube.entity)?, cube.asset.to_string());
+    assert!(session.component::<Material>(cube.entity).is_some());
+    session.preview_frame()?;
     for primitive in [
         PrimitiveKind::Sphere,
         PrimitiveKind::Cone,
@@ -303,6 +306,8 @@ fn authoring_workflow_uses_generic_history_and_formal_assets()
             mesh_asset(&session, created.entity)?,
             created.asset.to_string()
         );
+        assert!(session.component::<Material>(created.entity).is_some());
+        session.preview_frame()?;
     }
     let empty = session.create_entity("Empty")?;
     assert_eq!(

@@ -193,6 +193,7 @@ impl EditSession {
             vec![
                 self.component_draft("sge.transform")?,
                 mesh_value,
+                self.component_draft("sge.material")?,
                 name_value,
             ],
         )?;
