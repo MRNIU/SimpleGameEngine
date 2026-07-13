@@ -166,19 +166,19 @@ impl eframe::App for EditorApp {
                     }
                     self.build_controls(ui);
                     if ui
-                        .add_enabled(self.play.is_none(), egui::Button::new("Save"))
+                        .add_enabled(self.authoring_enabled(), egui::Button::new("Save"))
                         .clicked()
                     {
                         let _ = self.apply_ui_action(EditorUiAction::Save);
                     }
                     if ui
-                        .add_enabled(self.play.is_none(), egui::Button::new("Undo"))
+                        .add_enabled(self.authoring_enabled(), egui::Button::new("Undo"))
                         .clicked()
                     {
                         let _ = self.apply_ui_action(EditorUiAction::Undo);
                     }
                     if ui
-                        .add_enabled(self.play.is_none(), egui::Button::new("Redo"))
+                        .add_enabled(self.authoring_enabled(), egui::Button::new("Redo"))
                         .clicked()
                     {
                         let _ = self.apply_ui_action(EditorUiAction::Redo);
@@ -237,7 +237,7 @@ impl eframe::App for EditorApp {
             );
             response
         };
-        if self.play.is_none()
+        if self.authoring_enabled()
             && let Some(frame) = self.frame.clone()
         {
             let result = self

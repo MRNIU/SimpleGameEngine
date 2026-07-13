@@ -23,6 +23,12 @@ impl EditorApp {
         if ui.ctx().text_edit_focused() {
             return;
         }
+        if self.build_running() {
+            if editor_shortcut(ui) == Some(EditorShortcut::TogglePlay) {
+                let _ = self.apply_ui_action(EditorUiAction::StartPlay);
+            }
+            return;
+        }
         match editor_shortcut(ui) {
             Some(EditorShortcut::TogglePlay) if self.play.is_some() => self.stop_play(),
             Some(EditorShortcut::TogglePlay) => {

@@ -10,6 +10,16 @@ use crate::{EditSession, PlaySession, PreviewFrame};
 use super::{EditorApp, EditorUiAction};
 
 impl EditorApp {
+    pub(super) fn build_running(&self) -> bool {
+        self.build
+            .as_ref()
+            .is_some_and(super::BuildProcess::is_running)
+    }
+
+    pub(super) fn authoring_enabled(&self) -> bool {
+        authoring_enabled(self.play.is_some(), self.build_running())
+    }
+
     fn build_request_state(&self) -> BuildRequestState {
         build_request_state(&self.session, self.play.is_some())
     }
@@ -93,11 +103,7 @@ impl EditorApp {
     }
 
     pub(super) fn start_play(&mut self) -> Result<(), String> {
-        if let Some(error) = play_request_error(
-            self.build
-                .as_ref()
-                .is_some_and(super::BuildProcess::is_running),
-        ) {
+        if let Some(error) = play_request_error(self.build_running()) {
             let error = error.to_owned();
             self.last_error = Some(error.clone());
             return Err(error);
@@ -149,18 +155,10 @@ impl EditorApp {
     }
 
     pub(super) fn apply_ui_action(&mut self, action: EditorUiAction) -> Result<(), String> {
-        if self.play.is_some()
-            && matches!(
-                action,
-                EditorUiAction::CreateEmptyActor
-                    | EditorUiAction::CreatePrimitive(_)
-                    | EditorUiAction::DuplicateSelection
-                    | EditorUiAction::Save
-                    | EditorUiAction::Undo
-                    | EditorUiAction::Redo
-            )
+        if let Some(error) =
+            authoring_action_error(self.play.is_some(), self.build_running(), action)
         {
-            return Err("authoring action is unavailable during Play".to_owned());
+            return Err(error.to_owned());
         }
         match action {
             EditorUiAction::CreateEmptyActor => {
@@ -325,6 +323,35 @@ fn play_request_error(build_running: bool) -> Option<&'static str> {
     build_running.then_some("Play is unavailable while Build is running")
 }
 
+fn authoring_enabled(play_running: bool, build_running: bool) -> bool {
+    !play_running && !build_running
+}
+
+fn authoring_action_error(
+    play_running: bool,
+    build_running: bool,
+    action: EditorUiAction,
+) -> Option<&'static str> {
+    let authoring = matches!(
+        action,
+        EditorUiAction::CreateEmptyActor
+            | EditorUiAction::CreatePrimitive(_)
+            | EditorUiAction::DuplicateSelection
+            | EditorUiAction::Save
+            | EditorUiAction::Undo
+            | EditorUiAction::Redo
+    );
+    if !authoring {
+        None
+    } else if play_running {
+        Some("authoring action is unavailable during Play")
+    } else if build_running {
+        Some("authoring action is unavailable while Build is running")
+    } else {
+        None
+    }
+}
+
 pub(super) fn current_frame(
     session: &EditSession,
     play: Option<&PlaySession>,
@@ -341,8 +368,11 @@ mod tests {
 
     use sge_project::ProjectPath;
 
-    use super::{BuildRequestState, build_request_state, play_request_error, save_for_build};
-    use crate::EditSession;
+    use super::{
+        BuildRequestState, authoring_action_error, authoring_enabled, build_request_state,
+        play_request_error, save_for_build,
+    };
+    use crate::{EditSession, EditorUiAction, PrimitiveKind};
 
     #[test]
     fn build_requires_the_saved_project_entry_scene() -> Result<(), Box<dyn std::error::Error>> {
@@ -400,6 +430,36 @@ mod tests {
             Some("Play is unavailable while Build is running")
         );
         assert_eq!(play_request_error(false), None);
+    }
+
+    #[test]
+    fn play_and_build_make_authoring_actions_read_only_but_keep_selection_available() {
+        assert!(authoring_enabled(false, false));
+        assert!(!authoring_enabled(true, false));
+        assert!(!authoring_enabled(false, true));
+        assert!(!authoring_enabled(true, true));
+        for action in [
+            EditorUiAction::CreateEmptyActor,
+            EditorUiAction::CreatePrimitive(PrimitiveKind::Cube),
+            EditorUiAction::DuplicateSelection,
+            EditorUiAction::Save,
+            EditorUiAction::Undo,
+            EditorUiAction::Redo,
+        ] {
+            assert_eq!(
+                authoring_action_error(true, false, action),
+                Some("authoring action is unavailable during Play")
+            );
+            assert_eq!(
+                authoring_action_error(false, true, action),
+                Some("authoring action is unavailable while Build is running")
+            );
+            assert_eq!(authoring_action_error(false, false, action), None);
+        }
+        assert_eq!(
+            authoring_action_error(false, true, EditorUiAction::SelectHierarchyIndex(0)),
+            None
+        );
     }
 
     struct TestProject {

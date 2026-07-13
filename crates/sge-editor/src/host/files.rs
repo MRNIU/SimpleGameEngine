@@ -103,7 +103,7 @@ impl EditorApp {
     }
 
     pub(super) fn file_controls(&mut self, ui: &mut egui::Ui) {
-        if self.play.is_some() {
+        if !self.authoring_enabled() {
             return;
         }
         let Some(dialogs) = self.file_dialogs else {
@@ -150,6 +150,10 @@ impl EditorApp {
     }
 
     pub(super) fn save_scene_as(&mut self, dialogs: EditorFileDialogs) {
+        if !self.authoring_enabled() {
+            self.last_error = Some("Save As is unavailable while Play or Build is running".into());
+            return;
+        }
         if let Some(path) = (dialogs.save_scene)(&self.project_root) {
             match project_path(&self.project_root, &path).and_then(|path| {
                 self.session
@@ -202,6 +206,13 @@ impl EditorApp {
         dialogs: EditorFileDialogs,
         replacement: ReplacementDialog,
     ) {
+        if !self.authoring_enabled() {
+            self.last_error = Some(
+                "project and scene replacement is unavailable while Play or Build is running"
+                    .into(),
+            );
+            return;
+        }
         match replacement {
             ReplacementDialog::NewProject => match (dialogs.new_project)().and_then(|path| {
                 path.map_or(Ok(None), |path| {

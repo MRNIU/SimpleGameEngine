@@ -102,7 +102,7 @@ flowchart TB
 - `PlaySession` 每次从同一 `GameDescriptor` 创建 fresh World；Stop 直接丢弃且不写回 `EditWorld`。
 - game-specific Editor 独占 native dialog 依赖；dirty scene replacement 必须经过 Save/Discard/Cancel。
 - Editor 只把 Play viewport 已聚焦且未被 egui 消费的输入发送给 gameplay。
-- authoring viewport 的 framing、tool hotkey 与飞行键盘输入同样要求 viewport focus 且无 text edit focus；Play 与 Build 互斥，不并发占用产品上下文。
+- authoring viewport 的 framing、tool hotkey 与飞行键盘输入同样要求 viewport focus 且无 text edit focus；Play 与 Build 互斥，Build child尚未回收时host禁止authoring mutation、文件写入和project/scene replacement。
 
 ## Render、Player 与 Stage
 

@@ -109,7 +109,7 @@ impl EditorApp {
             .max_size(sizes.maximum)
             .show(ui, |ui| {
                 ui.heading("Hierarchy");
-                ui.add_enabled_ui(self.play.is_none(), |ui| {
+                ui.add_enabled_ui(self.authoring_enabled(), |ui| {
                     ui.menu_button("Place Actors", |ui| {
                         if ui.button("Empty Actor").clicked() {
                             ui.close();
@@ -155,7 +155,7 @@ impl EditorApp {
                     }
                     Err(error) => self.last_error = Some(error.to_string()),
                 }
-                if self.play.is_none()
+                if self.authoring_enabled()
                     && let Some(selection) = self.session.selection()
                 {
                     ui.horizontal(|ui| {
@@ -231,10 +231,13 @@ impl EditorApp {
         {
             inspector::apply_transform_preview(&mut components, transform);
         }
-        self.component_picker(ui, &components);
-        self.component_draft(ui, entity);
+        let authoring_enabled = self.authoring_enabled();
+        ui.add_enabled_ui(authoring_enabled, |ui| {
+            self.component_picker(ui, &components);
+            self.component_draft(ui, entity);
+        });
         let action = ui
-            .add_enabled_ui(self.play.is_none(), |ui| {
+            .add_enabled_ui(authoring_enabled, |ui| {
                 inspector_ui::draw(ui, entity, &components, &mut self.inspector_drafts, true)
             })
             .inner;
@@ -298,7 +301,7 @@ impl EditorApp {
                         );
                     }
                 });
-            configure = self.play.is_none() && ui.button("Configure Component").clicked();
+            configure = self.authoring_enabled() && ui.button("Configure Component").clicked();
         });
         if self.component_to_add != before {
             self.component_draft = None;
@@ -351,7 +354,7 @@ impl EditorApp {
             }
         }
         ui.horizontal(|ui| {
-            if self.play.is_none() && ui.button("Commit Component").clicked() {
+            if self.authoring_enabled() && ui.button("Commit Component").clicked() {
                 let value = self.component_draft.clone().unwrap_or(draft.clone());
                 let result = self.session.add_component_value(entity, value);
                 self.apply_edit(result);
