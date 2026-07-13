@@ -255,6 +255,7 @@ fn parse_ui_action(value: &str) -> Result<sge_editor::EditorUiAction, String> {
         "create-sphere" => EditorUiAction::CreatePrimitive(PrimitiveKind::Sphere),
         "create-cone" => EditorUiAction::CreatePrimitive(PrimitiveKind::Cone),
         "create-cylinder" => EditorUiAction::CreatePrimitive(PrimitiveKind::Cylinder),
+        "duplicate" => EditorUiAction::DuplicateSelection,
         "save" => EditorUiAction::Save,
         "undo" => EditorUiAction::Undo,
         "redo" => EditorUiAction::Redo,

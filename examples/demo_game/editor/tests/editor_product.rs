@@ -207,6 +207,8 @@ fn internal_ui_tape_edits_saves_plays_stops_and_reads_back()
             "--ui-action",
             "create-cube",
             "--ui-action",
+            "duplicate",
+            "--ui-action",
             "undo",
             "--ui-action",
             "redo",
@@ -225,12 +227,13 @@ fn internal_ui_tape_edits_saves_plays_stops_and_reads_back()
         "editor stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(String::from_utf8(output.stdout)?.contains("ui_actions=7"));
+    assert!(String::from_utf8(output.stdout)?.contains("ui_actions=8"));
     let after = fs::read(&scene)?;
     assert_ne!(after, before);
     let after = String::from_utf8(after)?;
     assert!(after.contains("Empty Actor"));
     assert!(after.contains("Cube"));
+    assert!(after.contains("Cube Copy"));
     assert!(after.contains("sge.material"));
     assert_editor_screenshot_size(&image::open(screenshot)?.to_rgba8());
     Ok(())

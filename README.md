@@ -151,7 +151,7 @@ PLAYER_REL="$(sed -n 's/^[[:space:]]*executable_path: "\([^"]*\)",$/\1/p' "$STAG
 
 Editor打开project时会生成ignored import cache；Build输出位于ignored `build/`。Player从Stage同级runtime自定位，不需要source project或OBJ parser。
 
-Editor authoring viewport 采用 UE 默认操作：`LMB` 拖动前后移动并左右观察，`RMB` 拖动观察，`LMB+RMB` 升降；按住 `RMB` 使用 `W/A/S/D/Q/E` 飞行并用滚轮调整飞行速度。`Alt+LMB` 环绕、`Alt+MMB` 平移、`Alt+RMB` dolly，普通滚轮前后移动，`F` 聚焦选中实体。viewport 聚焦后用 `Q/W/E/R` 选择 Select/Move/Rotate/Scale，`Space` 循环 transform tool，`G` 切换 Game View，`F11` 切换沉浸 viewport。保存、撤销、重做采用平台 Command 键加 `S/Z/Shift+Z`，同时支持 `Ctrl+Y` 重做；`Delete` 删除选中 subtree。Hierarchy 的 Place Actors 可在世界原点创建并选中带 Name + Transform 的 Empty Actor，或创建带 Name + Transform + MeshRenderer + Material 的 Cube/Sphere/Cone/Cylinder；Basic Shapes 全部走正式 OBJ import 与 AssetId 路径。
+Editor authoring viewport 采用 UE 默认操作：`LMB` 拖动前后移动并左右观察，`RMB` 拖动观察，`LMB+RMB` 升降；按住 `RMB` 使用 `W/A/S/D/Q/E` 飞行并用滚轮调整飞行速度。`Alt+LMB` 环绕、`Alt+MMB` 平移、`Alt+RMB` dolly，普通滚轮前后移动，`F` 聚焦选中实体。viewport 聚焦后用 `Q/W/E/R` 选择 Select/Move/Rotate/Scale，`Space` 循环 transform tool，`G` 切换 Game View，`F11` 切换沉浸 viewport。保存、另存、撤销、重做、复制采用平台 Command 键加 `S/Alt+S/Z/Shift+Z/D`，同时支持 `Ctrl+Y` 重做；`Alt+P` 启动或停止 Play，`Delete` 删除选中 subtree。Hierarchy 的 Place Actors 可在世界原点创建并选中带 Name + Transform 的 Empty Actor，或创建带 Name + Transform + MeshRenderer + Material 的 Cube/Sphere/Cone/Cylinder；Basic Shapes 全部走正式 OBJ import 与 AssetId 路径。
 
 当前已验证Apple Silicon macOS 26.5.1上的原生workspace build、120帧Editor WGPU preview、dev Stage和120帧staged Player present；尚未验证Intel Mac、其他macOS版本/GPU或物理输入设备。
 

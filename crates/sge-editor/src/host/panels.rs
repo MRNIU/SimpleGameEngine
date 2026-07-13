@@ -160,13 +160,7 @@ impl EditorApp {
                 {
                     ui.horizontal(|ui| {
                         if ui.button("Duplicate").clicked() {
-                            match self.session.duplicate_entity(selection) {
-                                Ok(entity) => {
-                                    let result = self.session.select(Some(entity));
-                                    self.apply_edit(result);
-                                }
-                                Err(error) => self.last_error = Some(error.to_string()),
-                            }
+                            let _ = self.apply_ui_action(super::EditorUiAction::DuplicateSelection);
                         }
                         if ui.button("Delete Subtree").clicked() {
                             let result = self.session.remove_subtree(selection);

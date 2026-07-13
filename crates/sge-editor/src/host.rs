@@ -66,6 +66,7 @@ impl Default for EditorRunOptions {
 pub enum EditorUiAction {
     CreateEmptyActor,
     CreatePrimitive(crate::PrimitiveKind),
+    DuplicateSelection,
     SelectEntity(sge_scene::SceneEntityId),
     SelectHierarchyIndex(usize),
     Save,
@@ -248,6 +249,17 @@ enum ReplacementDialog {
     OpenScene,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EditorShortcut {
+    Save,
+    SaveAs,
+    Undo,
+    Redo,
+    Duplicate,
+    Delete,
+    TogglePlay,
+}
+
 impl EditorApp {
     fn refresh_frame(&mut self) {
         match current_frame(&self.session, self.play.as_ref()) {
@@ -318,6 +330,7 @@ impl EditorApp {
                 action,
                 EditorUiAction::CreateEmptyActor
                     | EditorUiAction::CreatePrimitive(_)
+                    | EditorUiAction::DuplicateSelection
                     | EditorUiAction::Save
                     | EditorUiAction::Undo
                     | EditorUiAction::Redo
@@ -338,6 +351,17 @@ impl EditorApp {
                     .session
                     .create_primitive(primitive)
                     .and_then(|created| self.session.select(Some(created.entity)));
+                self.finish_edit(result)
+            }
+            EditorUiAction::DuplicateSelection => {
+                let selection = self
+                    .session
+                    .selection()
+                    .ok_or_else(|| "no Actor is selected".to_owned())?;
+                let result = self
+                    .session
+                    .duplicate_entity(selection)
+                    .and_then(|entity| self.session.select(Some(entity)));
                 self.finish_edit(result)
             }
             EditorUiAction::SelectHierarchyIndex(index) => {
@@ -611,30 +635,68 @@ impl EditorApp {
         if ui.input(|input| input.key_pressed(egui::Key::F11)) {
             self.immersive_viewport = !self.immersive_viewport;
         }
-        if ui.ctx().text_edit_focused() || self.play.is_some() {
+        if ui.ctx().text_edit_focused() {
             return;
         }
-        let (command, shift, save, undo, redo, delete) = ui.input(|input| {
-            (
-                input.modifiers.command,
-                input.modifiers.shift,
-                input.key_pressed(egui::Key::S),
-                input.key_pressed(egui::Key::Z),
-                input.key_pressed(egui::Key::Y),
-                input.key_pressed(egui::Key::Delete),
-            )
-        });
-        if command && save {
-            let _ = self.apply_ui_action(EditorUiAction::Save);
-        } else if command && undo && !shift {
-            let _ = self.apply_ui_action(EditorUiAction::Undo);
-        } else if command && (redo || (shift && undo)) {
-            let _ = self.apply_ui_action(EditorUiAction::Redo);
-        } else if delete && let Some(selection) = self.session.selection() {
-            let result = self.session.remove_subtree(selection);
-            self.apply_edit(result);
+        match editor_shortcut(ui) {
+            Some(EditorShortcut::TogglePlay) if self.play.is_some() => self.stop_play(),
+            Some(EditorShortcut::TogglePlay) => {
+                let _ = self.apply_ui_action(EditorUiAction::StartPlay);
+            }
+            _ if self.play.is_some() => {}
+            Some(EditorShortcut::Save) => {
+                let _ = self.apply_ui_action(EditorUiAction::Save);
+            }
+            Some(EditorShortcut::SaveAs) => {
+                if let Some(dialogs) = self.file_dialogs {
+                    self.save_scene_as(dialogs);
+                }
+            }
+            Some(EditorShortcut::Undo) => {
+                let _ = self.apply_ui_action(EditorUiAction::Undo);
+            }
+            Some(EditorShortcut::Redo) => {
+                let _ = self.apply_ui_action(EditorUiAction::Redo);
+            }
+            Some(EditorShortcut::Duplicate) => {
+                let _ = self.apply_ui_action(EditorUiAction::DuplicateSelection);
+            }
+            Some(EditorShortcut::Delete) => {
+                if let Some(selection) = self.session.selection() {
+                    let result = self.session.remove_subtree(selection);
+                    self.apply_edit(result);
+                }
+            }
+            None => {}
         }
     }
+}
+
+fn editor_shortcut(ui: &egui::Ui) -> Option<EditorShortcut> {
+    ui.input(|input| {
+        let command = input.modifiers.command;
+        let alt = input.modifiers.alt;
+        let shift = input.modifiers.shift;
+        if alt && !command && input.key_pressed(egui::Key::P) {
+            Some(EditorShortcut::TogglePlay)
+        } else if command && alt && input.key_pressed(egui::Key::S) {
+            Some(EditorShortcut::SaveAs)
+        } else if command && input.key_pressed(egui::Key::S) {
+            Some(EditorShortcut::Save)
+        } else if command && input.key_pressed(egui::Key::D) {
+            Some(EditorShortcut::Duplicate)
+        } else if command && input.key_pressed(egui::Key::Z) && !shift {
+            Some(EditorShortcut::Undo)
+        } else if command
+            && (input.key_pressed(egui::Key::Y) || (shift && input.key_pressed(egui::Key::Z)))
+        {
+            Some(EditorShortcut::Redo)
+        } else if input.key_pressed(egui::Key::Delete) {
+            Some(EditorShortcut::Delete)
+        } else {
+            None
+        }
+    })
 }
 
 fn project_identity_labels(game_id: &str, project_root: &Path) -> [String; 2] {
@@ -690,14 +752,7 @@ impl EditorApp {
             }
             if ui.button("Save Scene As…").clicked() {
                 ui.close();
-                if let Some(path) = (dialogs.save_scene)(&self.project_root) {
-                    match project_path(&self.project_root, &path)
-                        .and_then(|path| self.session.save_as(path).map_err(|e| e.to_string()))
-                    {
-                        Ok(()) => self.apply_edit(Ok(())),
-                        Err(error) => self.last_error = Some(error),
-                    }
-                }
+                self.save_scene_as(dialogs);
             }
             if ui.button("Import OBJ…").clicked() {
                 ui.close();
@@ -717,6 +772,19 @@ impl EditorApp {
                 self.pending_replacement = Some(replacement);
             } else {
                 self.run_replacement_dialog(dialogs, replacement);
+            }
+        }
+    }
+
+    fn save_scene_as(&mut self, dialogs: EditorFileDialogs) {
+        if let Some(path) = (dialogs.save_scene)(&self.project_root) {
+            match project_path(&self.project_root, &path).and_then(|path| {
+                self.session
+                    .save_as(path)
+                    .map_err(|error| error.to_string())
+            }) {
+                Ok(()) => self.apply_edit(Ok(())),
+                Err(error) => self.last_error = Some(error),
             }
         }
     }
@@ -906,6 +974,56 @@ pub enum EditorRunError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn common_ue_shortcuts_are_recognized_from_software_key_events() {
+        assert_eq!(
+            shortcut_for(egui::Key::D, command_modifiers()),
+            Some(EditorShortcut::Duplicate)
+        );
+        assert_eq!(
+            shortcut_for(
+                egui::Key::S,
+                egui::Modifiers {
+                    alt: true,
+                    ..command_modifiers()
+                }
+            ),
+            Some(EditorShortcut::SaveAs)
+        );
+        assert_eq!(
+            shortcut_for(egui::Key::P, egui::Modifiers::ALT),
+            Some(EditorShortcut::TogglePlay)
+        );
+    }
+
+    fn shortcut_for(key: egui::Key, modifiers: egui::Modifiers) -> Option<EditorShortcut> {
+        let context = egui::Context::default();
+        let mut shortcut = None;
+        let _ = context.run_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key,
+                    physical_key: Some(key),
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                }],
+                modifiers,
+                ..Default::default()
+            },
+            |ui| shortcut = editor_shortcut(ui),
+        );
+        shortcut
+    }
+
+    fn command_modifiers() -> egui::Modifiers {
+        egui::Modifiers {
+            command: true,
+            mac_cmd: true,
+            ..egui::Modifiers::NONE
+        }
+    }
 
     #[test]
     fn pending_screenshot_is_requested_on_every_poll() {
