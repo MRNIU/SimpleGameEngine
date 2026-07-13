@@ -227,6 +227,30 @@ fn internal_ui_tape_rejects_authoring_mutation_during_play()
     Ok(())
 }
 
+#[test]
+#[ignore = "runs a real Build and requires a real WGPU window; run with xvfb-run"]
+fn internal_ui_tape_waits_for_build_before_readback() -> Result<(), Box<dyn std::error::Error>> {
+    let project = TestProject::new()?;
+    let screenshot = project.path().join("built.png");
+    let output = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
+        .current_dir(std::env::temp_dir())
+        .arg(project.path())
+        .args(["--ui-action", "build", "--screenshot"])
+        .arg(&screenshot)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "editor stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8(output.stdout)?.contains("ui_actions=1"));
+    assert_eq!(
+        image::open(screenshot)?.to_rgba8().dimensions(),
+        (1280, 720)
+    );
+    Ok(())
+}
+
 struct WindowManager(std::process::Child);
 
 impl WindowManager {

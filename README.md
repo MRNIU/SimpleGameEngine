@@ -84,6 +84,9 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-e
 # Editor内部完整编辑tape：Create/Undo/Redo/Save/Play/Stop后读回窗口buffer
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-editor --test editor_product internal_ui_tape_edits_saves_plays_stops_and_reads_back -- --ignored --exact'
 
+# Editor内部Build tape：等待真实Build/Stage成功后再读回窗口buffer
+docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-editor --test editor_product internal_ui_tape_waits_for_build_before_readback -- --ignored --exact'
+
 # 查看 game-specific host 参数
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p demo-game-player -- --help'
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p demo-game-editor -- --help'

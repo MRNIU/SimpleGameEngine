@@ -6,6 +6,7 @@ use std::{ffi::OsString, path::Path, process::Child, process::Command};
 pub struct EditorBuildLauncher {
     program: OsString,
     prefix_args: Vec<OsString>,
+    build_args: Vec<OsString>,
 }
 
 impl EditorBuildLauncher {
@@ -17,7 +18,17 @@ impl EditorBuildLauncher {
         Self {
             program: program.into(),
             prefix_args: prefix_args.into_iter().map(Into::into).collect(),
+            build_args: Vec::new(),
         }
+    }
+
+    pub fn with_build_args<I, S>(mut self, args: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<OsString>,
+    {
+        self.build_args = args.into_iter().map(Into::into).collect();
+        self
     }
 }
 
@@ -52,6 +63,7 @@ impl BuildProcess {
             .args(&self.config.prefix_args)
             .arg("build")
             .arg(project_root)
+            .args(&self.config.build_args)
             .spawn();
         match child {
             Ok(child) => {
@@ -130,7 +142,8 @@ mod tests {
         let config = EditorBuildLauncher::new(
             "sh",
             ["-c".into(), script.into(), output.as_os_str().to_owned()],
-        );
+        )
+        .with_build_args(["--workspace", "workspace root"]);
         let project = PathBuf::from("project root");
         let mut process = BuildProcess::new(config);
 
@@ -140,7 +153,10 @@ mod tests {
         wait_until_complete(&mut process)?;
 
         assert!(matches!(process.status(), BuildStatus::Succeeded));
-        assert_eq!(fs::read_to_string(&output)?, "build\nproject root\n");
+        assert_eq!(
+            fs::read_to_string(&output)?,
+            "build\nproject root\n--workspace\nworkspace root\n"
+        );
         fs::remove_file(output)?;
         Ok(())
     }

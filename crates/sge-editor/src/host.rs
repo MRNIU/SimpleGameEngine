@@ -159,6 +159,7 @@ pub fn run(
                 screenshot_result,
                 ui_actions: options.ui_actions.into(),
                 ui_action_count,
+                pending_ui_build: false,
                 play_frames,
                 gameplay_input_frames,
                 gameplay_key_w_frames,
@@ -220,6 +221,7 @@ struct EditorApp {
     screenshot_result: Option<Sender<Result<(), String>>>,
     ui_actions: VecDeque<EditorUiAction>,
     ui_action_count: Arc<AtomicU64>,
+    pending_ui_build: bool,
     play_frames: Arc<AtomicU64>,
     gameplay_input_frames: Arc<AtomicU64>,
     gameplay_key_w_frames: Arc<AtomicU64>,
@@ -385,7 +387,7 @@ impl EditorApp {
                 if build.start(&self.project_root) {
                     Ok(())
                 } else {
-                    Err("Build is already running".to_owned())
+                    Err(build.status_text().to_owned())
                 }
             }
         }
@@ -426,12 +428,39 @@ impl eframe::App for EditorApp {
             return;
         }
         self.frames = self.frames.saturating_add(1);
+        if self.pending_ui_build {
+            let Some(build) = self.build.as_ref() else {
+                self.pending_ui_build = false;
+                self.last_error = Some("Build launcher disappeared while running".to_owned());
+                self.ui_actions.clear();
+                context.request_repaint();
+                return;
+            };
+            if build.is_running() {
+                context.request_repaint();
+                return;
+            }
+            self.pending_ui_build = false;
+            if build.failed() {
+                self.last_error = Some(build.status_text().to_owned());
+                self.ui_actions.clear();
+            } else {
+                self.ui_action_count.fetch_add(1, Ordering::Relaxed);
+            }
+            context.request_repaint();
+            return;
+        }
         if self.frames >= 3
             && let Some(action) = self.ui_actions.pop_front()
         {
+            let build = action == EditorUiAction::Build;
             match self.apply_ui_action(action) {
                 Ok(()) => {
-                    self.ui_action_count.fetch_add(1, Ordering::Relaxed);
+                    if build {
+                        self.pending_ui_build = true;
+                    } else {
+                        self.ui_action_count.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
                 Err(error) => {
                     self.last_error = Some(error);

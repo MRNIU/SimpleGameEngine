@@ -2,6 +2,7 @@
 
 use std::{
     error::Error,
+    ffi::OsString,
     fs,
     path::{Path, PathBuf},
 };
@@ -20,10 +21,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             start_in_play: arguments.start_in_play,
             screenshot: arguments.screenshot,
             ui_actions: arguments.ui_actions,
-            build_launcher: Some(EditorBuildLauncher::new(
-                "cargo",
-                ["run", "--package", "sge-build", "--bin", "sge", "--"],
-            )),
+            build_launcher: Some(build_launcher()),
             file_dialogs: Some(EditorFileDialogs {
                 new_project: new_project_dialog,
                 open_project: open_project_dialog,
@@ -44,6 +42,28 @@ fn main() -> Result<(), Box<dyn Error>> {
         report.ui_actions
     );
     Ok(())
+}
+
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
+}
+
+fn build_launcher() -> EditorBuildLauncher {
+    let workspace = workspace_root();
+    EditorBuildLauncher::new(
+        "cargo",
+        [
+            OsString::from("run"),
+            OsString::from("--manifest-path"),
+            workspace.join("Cargo.toml").into_os_string(),
+            OsString::from("--package"),
+            OsString::from("sge-build"),
+            OsString::from("--bin"),
+            OsString::from("sge"),
+            OsString::from("--"),
+        ],
+    )
+    .with_build_args([OsString::from("--workspace"), workspace.into_os_string()])
 }
 
 fn new_project_dialog() -> Result<Option<PathBuf>, String> {
