@@ -24,7 +24,7 @@
 - 静态检查使用 `cargo clippy --workspace --all-targets -- -D warnings`。
 - 新增 crate 必须有真实 public API 和测试；不为未来可能需要的能力创建空壳 crate。
 - 不把 editor-only 状态、测试 helper、演示窗口逻辑或资源路径耦合进核心 ECS 和 scene crate。
-- Editor backend、Lit/Unlit/Wireframe/Lit+Wireframe与线宽只属于host session；不得进入project、scene、Cook或Stage。Player不暴露render mode产品选项并保持Lit。
+- Editor backend、Lit/Unlit/Lit Wireframe/Wireframe与线宽只属于host session；不得进入project、scene、Cook或Stage。Player不暴露render mode产品选项并保持Lit。
 
 ## 旧 C++ 处理
 

@@ -18,7 +18,7 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前实现
 > 当前状态摘要：M1–M7 架构和 integration demo 链路已经闭合，Apple Silicon Mac alpha baseline 已于 2026-07-14 验收闭合；后续发现的缺陷增量处理。该结论不代表发布质量、跨平台支持或 API/格式冻结；完整状态、证据、限制与下一阶段以 [`docs/architecture/status.md`](docs/architecture/status.md) 为唯一真值。
 
 - M1–M7 已完成：typed ECS / Reflect / EngineApp、strict project/authoring data、canonical OBJ import/full Cook/runtime products、owned `RenderSnapshot`、WGPU/CPU 双渲染后端、Edit/Play target Editor 架构路径、game-specific Build/self-contained Stage 和最终 integration demo 已形成一条产品路径。
-- `sge-render` 的窄 backend facade 让 WGPU 与 CPU 光栅器共用 `RenderSnapshot`、`RenderView`、`RuntimeAssetStore`、投影和Lit/Unlit/Wireframe/Lit+Wireframe合同；Wireframe先写同几何depth再只画可见三角边，Lit+Wireframe复用Lit depth，因此隐藏边不透出。GPU retained cache 以 `AssetId` 为 key，CPU实现六平面裁剪、背面剔除、深度测试、Lambert与无锁水平tile光栅化。Editor模式是会话级调试状态，不写project/scene/Cook/Stage；线宽固定1 logical point，CPU按1个逻辑pixel光栅化后缩放，WGPU按Retina scale使用物理pixel。Player不暴露模式并固定Lit。共享性能监控统计最近240个已完成帧间隔的FPS、p50/p95/max、advance/extract/render CPU wall time和Player surface跳帧；Editor的Play与Preview保持独立统计流。
+- `sge-render` 的窄 backend facade 让 WGPU 与 CPU 光栅器共用 `RenderSnapshot`、`RenderView`、`RuntimeAssetStore`、投影和Lit/Unlit/Lit Wireframe/Wireframe合同。行为与UE View Mode对齐：Wireframe是无fill、无depth test、无背面剔除的X-Ray原始三角边；Lit Wireframe复用Lit fill/depth并只叠加可见表面边。GPU retained cache 以 `AssetId` 为 key，CPU实现六平面裁剪、背面剔除、深度测试、Lambert与无锁水平tile光栅化。Editor模式是会话级调试状态，不写project/scene/Cook/Stage；线宽固定1 logical point，CPU按1个逻辑pixel光栅化后缩放，WGPU按Retina scale使用物理pixel。Player不暴露模式并固定Lit。共享性能监控统计最近240个已完成帧间隔的FPS、p50/p95/max、advance/extract/render CPU wall time和Player surface跳帧；Editor的Play与Preview保持独立统计流。
 - `sge-player` 只读取 cooked root并把 winit event映射为逐帧 `InputFrame`；production dependency 不包含 project、source pipeline、OBJ parser、Editor 或 native dialog。
 - `sge-editor` identity-first 打开 target project；EditWorld 是唯一 live authoring truth，Reflect Inspector、entity/component mutation、Undo/Redo、atomic save与独立 PlaySession共用 scene validation/factory。
 - authoring viewport提供独立camera、world grid/axis、六向ViewCube、mesh geometry click selection与三轴Move/Rotate/Scale gizmo；scene Camera和Directional Light具有editor-only三维线框表示，可在viewport直接选择和变换且不进入Game View/Player渲染；P1文件工作流由game-specific Editor提供native dialogs，替换dirty scene前要求Save/Discard/Cancel。
@@ -100,7 +100,7 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-p
 # Editor实时从WGPU切到CPU，读回窗口并确认scene字节未变化
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-editor --test editor_product editor_switches_from_wgpu_to_cpu_without_changing_scene_data -- --ignored --exact'
 
-# Editor切换全部render mode，读回Lit+Wireframe并确认project/manifest/scene不变且不产生Cook/Stage
+# Editor切换全部render mode，读回Lit Wireframe并确认project/manifest/scene不变且不产生Cook/Stage
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-editor --test editor_product editor_switches_all_render_modes_without_changing_scene_data -- --ignored --exact'
 
 # 查看 game-specific host 参数
@@ -147,7 +147,7 @@ cargo build --workspace
 # 打开 game-specific Editor
 cargo run -p demo-game-editor -- examples/demo_game
 
-# Editor 顶栏可在 WGPU/CPU 和 Lit/Unlit/Wireframe/Lit+Wireframe 间实时切换；线框保持1 logical point，CPU预览采用逻辑像素保证Retina开发构建的交互性；这些选择与Perf都不修改project/scene/Cook/Stage
+# Editor 顶栏按 Lit/Unlit/Lit Wireframe/Wireframe 顺序提供View Mode；Alt+2/3/4分别切换Wireframe/Unlit/Lit。线框保持1 logical point，CPU预览采用逻辑像素保证Retina开发构建的交互性；backend、View Mode与Perf都不修改project/scene/Cook/Stage
 
 # 打开 Editor 并直接进入独立 PlaySession
 cargo run -p demo-game-editor -- examples/demo_game --play

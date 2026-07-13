@@ -34,7 +34,7 @@
 | `crates/sge-project/` | project identity、portable path/root、manifest v2、atomic single-file writes | importer、Editor session、multi-file transaction |
 | `crates/sge-scene/` | authoring/runtime scene、SceneEntityId/Parent、prepare/instantiate/snapshot | project/Cook I/O、GPU |
 | `crates/sge-asset-pipeline/` | canonical OBJ importer、cache、dependency closure、deterministic full Cook/publication | Editor/Player host、GPU、Cargo build |
-| `crates/sge-render/` | reflected render components、owned RenderSnapshot、共享投影与Lit/Unlit/Wireframe/Lit+Wireframe合同、WGPU/并行CPU backend facade、会话级帧性能采样、safe surface | source/project ownership、egui ownership、第二套 snapshot/store/host |
+| `crates/sge-render/` | reflected render components、owned RenderSnapshot、共享投影与Lit/Unlit/Lit Wireframe/Wireframe合同、WGPU/并行CPU backend facade、会话级帧性能采样、safe surface | source/project ownership、egui ownership、第二套 snapshot/store/host |
 | `crates/sge-player/` | source-free PlayerSession、winit loop、input mapping、resize/occlusion/surface policy | project、OBJ parser、Editor、native dialog |
 | `crates/sge-editor/` | candidate open、EditSession、Reflect Inspector/history/save、English/简体中文host localization、会话级backend/render mode、独立 PlaySession、egui input routing与 eframe/WGPU host | arbitrary World mutation、第二 registry/backend/event loop、Play writeback、game content localization |
 | `crates/sge-build/` | bootstrap launcher、game-specific Cook/Cargo编排、immutable Stage generation与atomic current manifest | game logic、Editor UI ownership、Player runtime |
