@@ -43,7 +43,7 @@
                     type_key: "sge.name",
                     schema_version: 1,
                     fields: ({
-                        "value": String("Demo Prism"),
+                        "value": String("Demo Cube"),
                     }),
                 ),
                 (

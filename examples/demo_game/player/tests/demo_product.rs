@@ -28,19 +28,19 @@ fn demo_project_import_cook_and_player_use_the_same_game_and_mesh()
     let imported = import_project_assets(&project, &manifest)?;
     let asset = AssetId::from_str(DEMO_ASSET)?;
     let imported_mesh = imported.store().mesh(AssetRef::new(asset))?.clone();
-    assert!(imported_mesh.vertices().len() >= 6);
-    assert!(
-        imported_mesh
-            .vertices()
-            .iter()
-            .any(|vertex| vertex.position()[2] < 0.0)
-    );
-    assert!(
-        imported_mesh
-            .vertices()
-            .iter()
-            .any(|vertex| vertex.position()[2] > 0.0)
-    );
+    assert_eq!(imported_mesh.indices().len(), 36);
+    for axis in 0..3 {
+        let bounds = imported_mesh.vertices().iter().fold(
+            [f32::INFINITY, f32::NEG_INFINITY],
+            |[minimum, maximum], vertex| {
+                [
+                    minimum.min(vertex.position()[axis]),
+                    maximum.max(vertex.position()[axis]),
+                ]
+            },
+        );
+        assert_eq!(bounds, [-0.5, 0.5]);
+    }
 
     fixture.cook(&project)?;
     fixture.delete_source()?;
