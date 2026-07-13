@@ -73,7 +73,7 @@ flowchart TB
 | `crates/sge-project/` / `sge-project` | project identity、portable path/root、authoring manifest、atomic single-file I/O | importer、Editor session、multi-file transaction |
 | `crates/sge-scene/` / `sge-scene` | authoring/runtime scene、`SceneName`、prepare/instantiate/snapshot | project/Cook I/O、GPU、Editor history |
 | `crates/sge-asset-pipeline/` / `sge-asset-pipeline` | canonical OBJ import、rebuildable cache、dependency closure、full Cook、immutable generation publication | Editor/Player host、GPU、第二 importer facade |
-| `crates/sge-render/` / `sge-render` | reflected render components、owned `RenderSnapshot`、共享投影、窄 backend facade、retained WGPU 与 CPU 光栅器、safe surface | project/source ownership、egui ownership、第二套 snapshot/store/host |
+| `crates/sge-render/` / `sge-render` | reflected render components、owned `RenderSnapshot`、共享投影与render mode合同、窄 backend facade、retained WGPU 与 CPU 光栅器、safe surface | project/source ownership、egui ownership、第二套 snapshot/store/host |
 | `crates/sge-player/` / `sge-player` | identity-first source-free `PlayerSession`、winit presentation/input loop、resize/occlusion/surface policy | project、OBJ parser、Editor、native dialog |
 | `crates/sge-editor/` / `sge-editor` | candidate open、`EditSession`、Inspector/history/save、authoring viewport/gizmo、English/简体中文host localization、isolated `PlaySession`、egui input routing、eframe host | arbitrary World mutation、第二 registry/backend/event loop、Play writeback、game content localization |
 | `crates/sge-build/` / `sge-build` | bootstrap launcher、full Cook/Cargo 编排、immutable Stage generation、atomic current manifest | game logic、Editor UI、Player runtime |
@@ -109,10 +109,12 @@ flowchart TB
 
 - extractor 从 typed World 复制出 owned、确定排序的 `RenderSnapshot`。
 - active camera、projection、mesh asset 和 GPU target 错误均 typed fail，不静默恢复。
-- `BackendRenderer` 只选择执行路径，不拥有 scene 或 asset truth；切换后端不会重建、写回或修改场景数据。
+- `BackendRenderer` 只选择执行路径，不拥有 scene 或 asset truth；`RenderSettings`与`RenderMode::{Lit, Unlit, Wireframe, LitWireframe}`属于单帧host输入，切换后端或模式不会重建、写回或修改场景数据。
 - WGPU mesh cache 以 `AssetId` retained；direct surface 与 offscreen/composite 共享 mesh draw path 和 depth policy。
-- CPU 后端直接读取同一个 `RuntimeAssetStore`，先顺序生成屏幕空间三角形，再由 Rayon worker 对互不重叠的水平 tile 并行执行光栅化、透视校正法线插值、深度测试、alpha blend 与首个方向光 Lambert 光照。每个 tile 仍按 snapshot 三角形顺序处理，因此无需 framebuffer 锁或跨线程合并，并保持单线程/多线程输出一致；完成后的 RGBA 帧交给既有 presentation 层。Editor CPU 预览以 viewport 逻辑像素为光栅目标并由合成层缩放，避免 Retina 的平方级像素放大阻塞输入；WGPU 预览与 Player surface 仍按物理像素工作。
-- Editor 顶栏实时选择 WGPU/CPU；Player 使用 `--backend wgpu|cpu`，默认 WGPU。该选择是 host session 状态，不进入 project、authoring/runtime scene 或 Cook/Stage 数据。
+- Lit执行base color与首个方向光Lambert；Unlit保留相同裁剪、背面剔除和深度写入，只跳过光照。Wireframe显示原始三角拓扑边，不把裁剪生成的内部对角线当作mesh edge；它先以相同投影、裁剪和背面剔除执行只写depth的隐藏线预通过，再以`LessEqual`且不写depth的线框通过只显示可见边。Lit+Wireframe复用Lit fill产生的depth并叠加同一线框通过；两个backend不显示被更近表面遮挡的边。
+- CPU 后端直接读取同一个 `RuntimeAssetStore`，先顺序生成屏幕空间三角形，再由 Rayon worker 对互不重叠的水平 tile 并行执行光栅化、透视校正法线插值、深度测试、alpha blend、光照和线框通过。每个 tile 仍按 snapshot 三角形顺序处理，因此无需 framebuffer 锁或跨线程合并，并保持单线程/多线程输出一致；完成后的 RGBA 帧交给既有 presentation 层。
+- 线宽以render target pixel计。Editor合同固定为1 logical point：WGPU预览按Retina `pixels_per_point`向上取整为物理pixel，CPU预览以1个逻辑pixel光栅化后由合成层缩放；这同时避免CPU在Retina下承担平方级像素放大。Player surface仍按物理pixel工作，但产品入口不暴露render mode且始终使用默认Lit。
+- Editor 顶栏实时选择 WGPU/CPU与四种render mode；两者都是host session状态，不进入 project、authoring/runtime scene、Cook或Stage。Player仍只使用`--backend wgpu|cpu`选择执行后端，默认WGPU，render mode固定Lit。
 - `sge-render::FramePerformanceMonitor` 是唯一会话级性能采样 owner：固定保留最近240个已完成帧间隔，汇总FPS、p50/p95/max、60/30 FPS预算超限、advance/extract/render CPU wall time和surface跳帧。Player在同一redraw链路聚合完整帧；Editor分别显示UI thread的Play advance/extract与eframe callback的Preview prepare/paint，不伪造跨线程帧关联。
 - 性能数据只描述host侧CPU wall time和已完成/跳过的surface事实；WGPU command encoding、`present()`返回不代表GPU执行完成。本地监控状态不进入project、scene、Cook或Stage，也不通过GPU readback、timestamp query或遥测扩张边界。
 - Player redraw 固定为 advance → extract/view → acquire → render → submit → present；只有 present 成功才累计 frame。
@@ -130,7 +132,7 @@ flowchart TB
 - `cargo build --workspace`
 - `scripts/audit-boundaries.sh`
 
-完整产品 gate 是 `scripts/test-integration-demo.sh`，覆盖 Editor authoring/Play、WGPU/CPU 切换、两种后端 surface readback、full Cook、Cargo Build、copied Stage 和 source-free staged Player。自动 smoke 只证明所覆盖路径能够运行，不替代 Mac 物理输入、视觉布局和长路径人工验收。
+完整产品 gate 是 `scripts/test-integration-demo.sh`，覆盖 Editor authoring/Play、WGPU/CPU与四种render mode切换、scene/product data不变断言、双后端readback、full Cook、Cargo Build、copied Stage 和 source-free staged Player。自动 smoke 只证明所覆盖路径能够运行，不替代 Mac 物理输入、视觉布局和长路径人工验收。
 
 ## 延期边界
 
