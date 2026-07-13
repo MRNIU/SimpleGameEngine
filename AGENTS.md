@@ -24,6 +24,7 @@
 | `docs/superpowers/specs/2026-07-13-editor-play-m5-design.md` | M5 EditSession、Inspector/history、Play/input canonical 合同 |
 | `docs/superpowers/specs/2026-07-13-build-and-stage-m6-design.md` | M6 Cargo Build、immutable Stage、atomic current canonical 合同 |
 | `docs/superpowers/specs/2026-07-13-integration-demo-m7-design.md` | M7 独立 demo 单链与最终产品 gate canonical 合同 |
+| `docs/architecture/rewrite-status-and-legacy-features.md` | C++ / Rust prototype / 当前版本特性迁移与剩余工作 |
 | `.gitmessage` | commit message 模板 |
 
 ## 当前实现边界
@@ -88,4 +89,5 @@ bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `e
 - `demo-game-player` 从 source-free cooked root加载，使用 winit input adapter、advance/extract并真实 present。
 - `sge build` 启动 game-specific Build，full Cook后只接受本次Cargo Player artifact，并以immutable generation + atomic manifest发布可复制Stage。
 - `scripts/test-integration-demo.sh` 从 workspace gate/audit、game-specific Editor 窗口 smoke 到 authoring/Play/真实 Build/Cook/copied Stage/staged Player 单链闭合最终目标。
+- Apple Silicon macOS 26.5.1 已有原生 workspace build、Editor WGPU preview、Build/Stage与staged Player present证据；不外推到Intel Mac、其他GPU或物理输入。
 - 当前目标架构不再有后续里程碑；延期项包括但不限于音频、物理、网络、archive/Pak/signing/installer、Play writeback、action remapping、gizmo/prefab、parallel ECS/RenderWorld/incremental Cook，完整清单与触发条件见目标架构规格，出现真实产品需求后另立目标。

@@ -32,6 +32,7 @@ Canonical contracts：
 - `docs/superpowers/specs/2026-07-13-editor-play-m5-design.md`
 - `docs/superpowers/specs/2026-07-13-build-and-stage-m6-design.md`
 - `docs/superpowers/specs/2026-07-13-integration-demo-m7-design.md`
+- `docs/architecture/rewrite-status-and-legacy-features.md`：C++ / Rust prototype / 当前版本特性迁移与剩余工作
 
 ## 快速开始
 
@@ -88,7 +89,42 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-b
 docker exec "$DEVCONTAINER_NAME" bash -lc 'scripts/test-integration-demo.sh'
 ```
 
-真实窗口 smoke 证明 Linux/Xvfb 下的实际 WGPU callback/surface 路径、经 X11 注入的 host input 路径和确定性退出；它不等于 Windows、macOS、其他 GPU 或物理输入设备兼容性证明。
+真实窗口 smoke 证明 Linux/Xvfb 下的实际 WGPU callback/surface 路径、经 X11 注入的 host input 路径和确定性退出。另有 Apple Silicon macOS 26.5.1 上的 workspace build、Editor WGPU prepare/paint、Build/Stage和staged Player present证据；这些结果不等于Windows、Intel Mac、其他GPU或物理输入设备兼容性证明。
+
+## macOS 原生编译与使用
+
+容器仍是可重复的默认构建/测试入口；macOS 原生运行用于打开真实 Editor/Player 窗口。仓库不会自动安装宿主工具链，先确认机器已有 Apple Command Line Tools 和 Rust stable：
+
+```bash
+xcode-select -p
+rustc --version
+cargo --version
+```
+
+在仓库根目录执行：
+
+```bash
+# 编译全部 engine 与 demo targets
+cargo build --workspace
+
+# 打开 game-specific Editor
+cargo run -p demo-game-editor -- examples/demo_game
+
+# 打开 Editor 并直接进入独立 PlaySession
+cargo run -p demo-game-editor -- examples/demo_game --play
+
+# 完整 Cook、dev Player build 与 self-contained Stage；发布构建追加 --release
+cargo run -p sge-build --bin sge -- build examples/demo_game
+
+# 从 Stage manifest 解析并运行当前 Player
+STAGE=build/demo-game-build/dev/Stage
+PLAYER_REL="$(sed -n 's/^[[:space:]]*executable_path: "\([^"]*\)",$/\1/p' "$STAGE/stage_manifest.ron")"
+"$STAGE/$PLAYER_REL"
+```
+
+Editor打开project时会生成ignored import cache；Build输出位于ignored `build/`。Player从Stage同级runtime自定位，不需要source project或OBJ parser。
+
+当前已验证Apple Silicon macOS 26.5.1上的原生workspace build、120帧Editor WGPU preview、dev Stage和120帧staged Player present；尚未验证Intel Mac、其他macOS版本/GPU或物理输入设备。
 
 ## 代码结构
 
@@ -114,4 +150,5 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'scripts/test-integration-demo.sh'
 - `AGENTS.md`：项目级规则和 AI agent 工作流
 - `docs/conventions.md`：代码、文档、测试和环境约定
 - `docs/architecture/overview.md`：当前 Rust workspace 架构边界
+- `docs/architecture/rewrite-status-and-legacy-features.md`：新旧需求、可吸纳能力与重写完成度
 - `.gitmessage`：commit message 模板

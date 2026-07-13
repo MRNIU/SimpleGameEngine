@@ -4,7 +4,7 @@
 
 状态：已批准，作为 SimpleGameEngine 的目标架构真源。
 
-本文件取代 `2026-07-06-rust-engine-architecture-design.md` 作为 SimpleGameEngine 的目标架构真源。旧文档只保留 Rust reset 与 editor-first 历史背景。
+本文件取代已删除的 `2026-07-06-rust-engine-architecture-design.md`，作为 SimpleGameEngine 的目标架构真源。旧文档只通过 Git 历史提供 Rust reset 与 editor-first 背景。
 
 本文件描述目标状态，不代表当前代码已经实现。当前 workspace、命令和验证证据仍以 `README.md`、`docs/architecture/overview.md`、Cargo manifests 和源码为准。
 

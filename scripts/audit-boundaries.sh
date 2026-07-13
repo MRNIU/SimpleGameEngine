@@ -149,5 +149,7 @@ audit_exact_files 'canonical full Cook owner' 'pub fn full_cook' \
   'crates/sge-asset-pipeline/src/cook.rs' crates
 
 audit_absent \
-  crates/asset crates/ecs crates/editor crates/render crates/runtime crates/scene \
+  .clang-format .clang-tidy CMakeLists.txt CMakePresets.json README-cn.md \
+  cmake doc obj src test tools \
+  crates/asset crates/ecs crates/editor crates/render crates/runtime crates/scene crates/window \
   examples/editor_smoke assets

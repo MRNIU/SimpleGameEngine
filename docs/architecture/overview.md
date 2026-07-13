@@ -81,10 +81,10 @@ M4–M7 额外证据：
 - game-specific Build产品测试从clean Stage重复full Cook/Cargo build，复制Stage后不传source路径，向staged Player注入X11 key event并真实present。
 - 最终integration test在临时project中通过Inspector修改自定义component并创建hierarchy，save/reopen与isolated Play后执行真实`sge build`；删除source后从copied Stage验证cooked scene语义、加载Player并启动staged binary完成input/present。
 
-这些 Linux/Xvfb 证据不等于 Windows、macOS、其他 GPU、物理输入设备或人工视觉兼容性证明。
+另有Apple Silicon macOS 26.5.1上的原生workspace build、Editor WGPU prepare/paint、Build/Stage与staged Player present证据。Linux/Xvfb与该macOS smoke都不等于Windows、Intel Mac、其他GPU、物理输入设备或人工视觉兼容性证明。
 
 ## 完成边界与延期项
 
 M1–M7 目标架构与独立 integration demo 已完成，没有新增 demo-only engine shortcut、第二 registry、第二 importer 或第二 WGPU backend。
 
-延期项包括但不限于：音频、物理、动画、Gameplay UI、脚本、网络、Prefab、Advanced Render/VFX、AI/Navigation、Asset Streaming/Hot Reload、Localization/Telemetry等待对应产品纵切；archive/Pak/compression/encryption/signing/installer/patch/DLC/chunk与远程/交叉编译矩阵等待发行需求；Play writeback、多实例/网络PIE、action remapping、gizmo等待编辑工作流需求；dynamic ABI、parallel ECS、RenderWorld、incremental Cook等待真实调用方或可测量的复杂度/性能触发。完整owner、触发条件与禁止占位边界见目标架构规格。当前仅有 Linux/Xvfb WGPU证据，不声明Windows、macOS、其他GPU或物理输入设备已验证。
+延期项包括但不限于：音频、物理、动画、Gameplay UI、脚本、网络、Prefab、Advanced Render/VFX、AI/Navigation、Asset Streaming/Hot Reload、Localization/Telemetry等待对应产品纵切；archive/Pak/compression/encryption/signing/installer/patch/DLC/chunk与远程/交叉编译矩阵等待发行需求；Play writeback、多实例/网络PIE、action remapping、gizmo等待编辑工作流需求；dynamic ABI、parallel ECS、RenderWorld、incremental Cook等待真实调用方或可测量的复杂度/性能触发。完整owner、触发条件与禁止占位边界见目标架构规格。当前只声明Linux/Xvfb与上述Apple Silicon macOS smoke覆盖的路径，不声明Windows、Intel Mac、其他GPU或物理输入设备已验证。
