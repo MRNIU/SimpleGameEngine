@@ -100,6 +100,7 @@ impl EditorApp {
                         }
                     });
                 }
+                fill_resizable_panel(ui);
             });
     }
 
@@ -107,7 +108,10 @@ impl EditorApp {
         egui::Panel::right("inspector")
             .resizable(true)
             .default_size(300.0)
-            .show(ui, |ui| self.inspector_contents(ui));
+            .show(ui, |ui| {
+                self.inspector_contents(ui);
+                fill_resizable_panel(ui);
+            });
     }
 
     fn inspector_contents(&mut self, ui: &mut egui::Ui) {
@@ -258,5 +262,42 @@ impl EditorApp {
             }
         });
         ui.separator();
+    }
+}
+
+fn fill_resizable_panel(ui: &mut egui::Ui) {
+    ui.take_available_space();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fill_resizable_panel;
+    use eframe::egui;
+
+    #[test]
+    fn resizable_panel_keeps_its_configured_width_with_short_content() {
+        let context = egui::Context::default();
+        let mut width = 0.0;
+        let _ = context.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 600.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                let response = egui::Panel::left("resizable_panel_test")
+                    .resizable(true)
+                    .default_size(230.0)
+                    .show(ui, |ui| {
+                        ui.label("Short");
+                        fill_resizable_panel(ui);
+                    });
+                width = response.response.rect.width();
+            },
+        );
+
+        assert!((width - 230.0).abs() <= 1.0, "panel width was {width}");
     }
 }
