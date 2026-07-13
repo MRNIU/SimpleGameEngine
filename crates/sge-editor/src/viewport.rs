@@ -156,7 +156,7 @@ impl EditorViewport {
         frame: &PreviewFrame,
         session: &mut EditSession,
     ) -> Result<(), crate::EditError> {
-        draw_grid_and_axes(ui, response.rect, frame);
+        draw_world_axes(ui, response.rect, frame);
         let overlay_consumed = self.draw_view_cube(ui, response.rect);
         self.update_mode(ui, response);
         let camera_consumed = self.navigate(ui, response, session);
@@ -169,6 +169,10 @@ impl EditorViewport {
             self.select(response, frame, session)?;
         }
         Ok(())
+    }
+
+    pub(crate) fn paint_background(&self, ui: &egui::Ui, rect: egui::Rect, frame: &PreviewFrame) {
+        draw_grid(ui, rect, frame);
     }
 
     fn navigate(
@@ -592,7 +596,7 @@ fn project(matrix: Mat4, point: Vec3, rect: egui::Rect) -> Option<ScreenPoint> {
     })
 }
 
-fn draw_grid_and_axes(ui: &egui::Ui, rect: egui::Rect, frame: &PreviewFrame) {
+fn draw_grid(ui: &egui::Ui, rect: egui::Rect, frame: &PreviewFrame) {
     let Some(matrix) = projection(frame, rect) else {
         return;
     };
@@ -618,6 +622,13 @@ fn draw_grid_and_axes(ui: &egui::Ui, rect: egui::Rect, frame: &PreviewFrame) {
             1.0,
         );
     }
+}
+
+fn draw_world_axes(ui: &egui::Ui, rect: egui::Rect, frame: &PreviewFrame) {
+    let Some(matrix) = projection(frame, rect) else {
+        return;
+    };
+    let painter = ui.painter_at(rect);
     for (axis, end) in [(Axis::X, Vec3::X), (Axis::Y, Vec3::Y), (Axis::Z, Vec3::Z)] {
         draw_world_line(
             &painter,

@@ -17,12 +17,13 @@ use super::{
 };
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-const CLEAR_COLOR: wgpu::Color = wgpu::Color {
+const SURFACE_CLEAR_COLOR: wgpu::Color = wgpu::Color {
     r: 13.0 / 255.0,
     g: 15.0 / 255.0,
     b: 18.0 / 255.0,
     a: 1.0,
 };
+const OFFSCREEN_CLEAR_COLOR: wgpu::Color = wgpu::Color::TRANSPARENT;
 
 pub struct WgpuRenderer {
     target_format: wgpu::TextureFormat,
@@ -51,6 +52,12 @@ struct OffscreenTarget {
 struct DrawBatch {
     asset: AssetId,
     instances: std::ops::Range<u32>,
+}
+
+struct FrameTarget<'a> {
+    view: &'a wgpu::TextureView,
+    size: [u32; 2],
+    clear_color: wgpu::Color,
 }
 
 impl WgpuRenderer {
@@ -191,7 +198,28 @@ impl WgpuRenderer {
         snapshot: &RenderSnapshot,
         view: RenderView,
     ) -> Result<(), RenderFrameError> {
-        validate_target_size(device, target_size)?;
+        self.render_to_target_with_clear(
+            device,
+            encoder,
+            FrameTarget {
+                view: target_view,
+                size: target_size,
+                clear_color: SURFACE_CLEAR_COLOR,
+            },
+            snapshot,
+            view,
+        )
+    }
+
+    fn render_to_target_with_clear(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        target: FrameTarget<'_>,
+        snapshot: &RenderSnapshot,
+        view: RenderView,
+    ) -> Result<(), RenderFrameError> {
+        validate_target_size(device, target.size)?;
         let (mut instance_bytes, batches) = self.prepare_instances(snapshot)?;
         if instance_bytes.is_empty() {
             instance_bytes.resize(128, 0);
@@ -205,7 +233,7 @@ impl WgpuRenderer {
             }
             .into());
         }
-        let uniform_bytes = frame_uniform_bytes(snapshot, view, target_size)?;
+        let uniform_bytes = frame_uniform_bytes(snapshot, view, target.size)?;
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("sge_render_frame_uniform"),
             contents: &uniform_bytes,
@@ -224,15 +252,15 @@ impl WgpuRenderer {
             contents: &instance_bytes,
             usage: wgpu::BufferUsages::VERTEX,
         });
-        let depth = create_depth_target(device, target_size);
+        let depth = create_depth_target(device, target.size);
         let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("sge_render_mesh_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: target_view,
+                view: target.view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+                    load: wgpu::LoadOp::Clear(target.clear_color),
                     store: wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
@@ -280,11 +308,14 @@ impl WgpuRenderer {
             .offscreen
             .take()
             .ok_or(RenderTargetError::OffscreenUnavailable)?;
-        let result = self.render_to_target(
+        let result = self.render_to_target_with_clear(
             device,
             encoder,
-            &target.color_view,
-            target_size,
+            FrameTarget {
+                view: &target.color_view,
+                size: target_size,
+                clear_color: OFFSCREEN_CLEAR_COLOR,
+            },
             snapshot,
             view,
         );

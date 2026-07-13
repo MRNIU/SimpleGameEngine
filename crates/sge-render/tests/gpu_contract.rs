@@ -125,7 +125,7 @@ fn offscreen_composite_uses_the_same_rendered_frame() -> Result<(), Box<dyn std:
                 view: &target_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
                     store: wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
@@ -140,6 +140,7 @@ fn offscreen_composite_uses_the_same_rendered_frame() -> Result<(), Box<dyn std:
     copy_to_readback(&mut encoder, &target, &readback);
     queue.submit([encoder.finish()]);
     let bytes = mapped_bytes(&device, &readback)?;
+    assert_eq!(&bytes[..4], &[0, 255, 0, 255]);
     assert_red_pixel(&bytes);
     Ok(())
 }

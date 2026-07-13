@@ -117,11 +117,14 @@ pub(crate) fn paint(
     ui: &mut egui::Ui,
     frame: &PreviewFrame,
     probe: &PreviewProbe,
+    paint_background: impl FnOnce(&egui::Ui, egui::Rect),
 ) -> egui::Response {
     let available = ui.available_size_before_wrap();
     let size = egui::vec2(available.x.max(240.0), available.y.max(180.0));
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::focusable_noninteractive());
-    ui.painter().rect_filled(rect, 0.0, egui::Color32::BLACK);
+    let (rect, response) = ui.allocate_exact_size(size, viewport_sense());
+    ui.painter()
+        .rect_filled(rect, 0.0, egui::Color32::from_rgb(13, 15, 18));
+    paint_background(ui, rect);
     ui.painter().add(egui_wgpu::Callback::new_paint_callback(
         rect,
         PreviewCallback {
@@ -131,6 +134,10 @@ pub(crate) fn paint(
         },
     ));
     response
+}
+
+fn viewport_sense() -> egui::Sense {
+    egui::Sense::click_and_drag()
 }
 
 fn logical_dimension(points: f32, pixels_per_point: f32) -> u32 {
@@ -187,9 +194,67 @@ impl PreviewProbe {
 mod tests {
     use std::sync::Arc;
 
+    use eframe::egui;
     use sge_asset::RuntimeAssetStore;
 
-    use super::store_replaced;
+    use super::{store_replaced, viewport_sense};
+
+    #[test]
+    fn viewport_accepts_clicks_drags_and_keyboard_focus() {
+        let sense = viewport_sense();
+        assert!(sense.senses_click());
+        assert!(sense.senses_drag());
+        assert!(sense.is_focusable());
+    }
+
+    #[test]
+    fn software_events_reach_the_viewport_response() {
+        let context = egui::Context::default();
+        let position = egui::pos2(40.0, 40.0);
+        let _ = viewport_response(&context, Vec::new());
+        let pressed = viewport_response(
+            &context,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Secondary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+        assert!(pressed.hovered());
+        pressed.request_focus();
+
+        let dragged = viewport_response(
+            &context,
+            vec![egui::Event::PointerMoved(egui::pos2(70.0, 40.0))],
+        );
+        assert!(dragged.has_focus());
+        assert!(dragged.dragged_by(egui::PointerButton::Secondary));
+    }
+
+    fn viewport_response(context: &egui::Context, events: Vec<egui::Event>) -> egui::Response {
+        let mut response = None;
+        let _ = context.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(160.0, 120.0),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                response = Some(
+                    ui.allocate_exact_size(egui::vec2(160.0, 120.0), viewport_sense())
+                        .1,
+                );
+            },
+        );
+        response.expect("viewport response")
+    }
 
     #[test]
     fn arc_identity_distinguishes_store_replacement_from_frame_reuse() {

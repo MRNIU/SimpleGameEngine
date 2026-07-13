@@ -126,7 +126,32 @@ fn game_specific_editor_paints_the_authoring_viewport() -> Result<(), Box<dyn st
     assert_eq!(screenshot.dimensions(), (1280, 720));
     let first = *screenshot.get_pixel(0, 0);
     assert!(screenshot.pixels().any(|pixel| *pixel != first));
+    assert_eq!(grid_holes_inside_material(&screenshot), 0);
     Ok(())
+}
+
+fn grid_holes_inside_material(image: &image::RgbaImage) -> usize {
+    let material = |pixel: &image::Rgba<u8>| {
+        pixel[0] > 200
+            && pixel[0] > pixel[1].saturating_add(100)
+            && pixel[0] > pixel[2].saturating_add(100)
+    };
+    (0..image.height())
+        .map(|y| {
+            let material_x = (0..image.width())
+                .filter(|x| material(image.get_pixel(*x, y)))
+                .collect::<Vec<_>>();
+            let (Some(first), Some(last)) = (material_x.first(), material_x.last()) else {
+                return 0;
+            };
+            ((*first + 1)..*last)
+                .filter(|x| {
+                    let pixel = image.get_pixel(*x, y);
+                    pixel[0] < 100 && pixel[1] < 100 && pixel[2] < 100
+                })
+                .count()
+        })
+        .sum()
 }
 
 #[test]

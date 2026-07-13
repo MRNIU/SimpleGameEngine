@@ -548,7 +548,9 @@ impl eframe::App for EditorApp {
         self.inspector(ui);
 
         let response = if let Some(frame) = &self.frame {
-            preview::paint(ui, frame, &self.probe)
+            preview::paint(ui, frame, &self.probe, |ui, rect| {
+                self.viewport.paint_background(ui, rect, frame);
+            })
         } else {
             let available = ui.available_size_before_wrap();
             let (rect, response) =
