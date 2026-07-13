@@ -15,7 +15,6 @@ use crate::{EditSession, PreviewFrame};
 const HANDLE_LENGTH: f32 = 46.0;
 const HANDLE_SIZE: f32 = 14.0;
 const UNITS_PER_PIXEL: f32 = 0.01;
-const GRID_HALF_EXTENT: i32 = 10;
 const WORLD_AXIS_LENGTH: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -607,28 +606,152 @@ fn draw_grid(ui: &egui::Ui, rect: egui::Rect, frame: &PreviewFrame) {
     let Some(matrix) = projection(frame, rect) else {
         return;
     };
+    let Some((minimum, maximum, step)) = visible_grid_layout(matrix, rect) else {
+        return;
+    };
     let painter = ui.painter_at(rect);
-    for index in -GRID_HALF_EXTENT..=GRID_HALF_EXTENT {
-        let value = index as f32;
+    for index in 0..=line_count(minimum.x, maximum.x, step) {
+        let value = minimum.x + index as f32 * step;
         draw_world_line(
             &painter,
             rect,
             matrix,
-            Vec3::new(-GRID_HALF_EXTENT as f32, value, 0.0),
-            Vec3::new(GRID_HALF_EXTENT as f32, value, 0.0),
-            egui::Color32::from_gray(52),
-            1.0,
-        );
-        draw_world_line(
-            &painter,
-            rect,
-            matrix,
-            Vec3::new(value, -GRID_HALF_EXTENT as f32, 0.0),
-            Vec3::new(value, GRID_HALF_EXTENT as f32, 0.0),
+            Vec3::new(value, minimum.y, 0.0),
+            Vec3::new(value, maximum.y, 0.0),
             egui::Color32::from_gray(52),
             1.0,
         );
     }
+    for index in 0..=line_count(minimum.y, maximum.y, step) {
+        let value = minimum.y + index as f32 * step;
+        draw_world_line(
+            &painter,
+            rect,
+            matrix,
+            Vec3::new(minimum.x, value, 0.0),
+            Vec3::new(maximum.x, value, 0.0),
+            egui::Color32::from_gray(52),
+            1.0,
+        );
+    }
+}
+
+fn visible_grid_layout(matrix: Mat4, rect: egui::Rect) -> Option<(Vec3, Vec3, f32)> {
+    let inverse = matrix.inverse();
+    if !inverse.is_finite() {
+        return None;
+    }
+    let corners = [
+        Vec3::new(-1.0, -1.0, 0.0),
+        Vec3::new(1.0, -1.0, 0.0),
+        Vec3::new(-1.0, 1.0, 0.0),
+        Vec3::new(1.0, 1.0, 0.0),
+        Vec3::new(-1.0, -1.0, 1.0),
+        Vec3::new(1.0, -1.0, 1.0),
+        Vec3::new(-1.0, 1.0, 1.0),
+        Vec3::new(1.0, 1.0, 1.0),
+    ]
+    .map(|point| unproject(inverse, point))
+    .into_iter()
+    .collect::<Option<Vec<_>>>()?;
+    let edges = [
+        (0, 1),
+        (1, 3),
+        (3, 2),
+        (2, 0),
+        (4, 5),
+        (5, 7),
+        (7, 6),
+        (6, 4),
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7),
+    ];
+    let mut intersections = Vec::new();
+    for (start, end) in edges {
+        let start = corners[start];
+        let end = corners[end];
+        if start.z.abs() <= 0.0001 {
+            intersections.push(start);
+        }
+        if end.z.abs() <= 0.0001 {
+            intersections.push(end);
+        }
+        if (start.z < 0.0) != (end.z < 0.0) {
+            let fraction = start.z / (start.z - end.z);
+            intersections.push(start.lerp(end, fraction));
+        }
+    }
+    let mut minimum = Vec3::splat(f32::INFINITY);
+    let mut maximum = Vec3::splat(f32::NEG_INFINITY);
+    for point in intersections {
+        minimum = minimum.min(point);
+        maximum = maximum.max(point);
+    }
+    if !minimum.is_finite() || !maximum.is_finite() {
+        return None;
+    }
+    let anchor = ground_intersection(inverse, [0.0, 0.0]).unwrap_or((minimum + maximum) * 0.5);
+    let mut step = projected_grid_step(matrix, rect, anchor).unwrap_or(1.0);
+    while line_count(minimum.x, maximum.x, step) > 256
+        || line_count(minimum.y, maximum.y, step) > 256
+    {
+        step *= 2.0;
+    }
+    minimum.x = (minimum.x / step).floor() * step;
+    minimum.y = (minimum.y / step).floor() * step;
+    maximum.x = (maximum.x / step).ceil() * step;
+    maximum.y = (maximum.y / step).ceil() * step;
+    Some((minimum, maximum, step))
+}
+
+fn unproject(inverse: Mat4, point: Vec3) -> Option<Vec3> {
+    let world = inverse * point.extend(1.0);
+    (world.is_finite() && world.w.abs() > f32::EPSILON).then(|| world.truncate() / world.w)
+}
+
+fn ground_intersection(inverse: Mat4, ndc: [f32; 2]) -> Option<Vec3> {
+    let near = unproject(inverse, Vec3::new(ndc[0], ndc[1], 0.0))?;
+    let far = unproject(inverse, Vec3::new(ndc[0], ndc[1], 1.0))?;
+    if near.z.abs() <= 0.0001 {
+        return Some(near);
+    }
+    if (near.z < 0.0) == (far.z < 0.0) {
+        return None;
+    }
+    let fraction = near.z / (near.z - far.z);
+    Some(near.lerp(far, fraction))
+}
+
+fn projected_grid_step(matrix: Mat4, rect: egui::Rect, anchor: Vec3) -> Option<f32> {
+    let center = project(matrix, anchor, rect)?.position;
+    let x = project(matrix, anchor + Vec3::X, rect)?.position;
+    let y = project(matrix, anchor + Vec3::Y, rect)?.position;
+    let spacing = center.distance(x).max(center.distance(y));
+    (spacing.is_finite() && spacing > f32::EPSILON).then(|| nice_grid_step(32.0 / spacing))
+}
+
+fn nice_grid_step(target: f32) -> f32 {
+    if !target.is_finite() || target <= 0.0 {
+        return 1.0;
+    }
+    let magnitude = 10.0_f32.powf(target.log10().floor());
+    let fraction = target / magnitude;
+    let factor = if fraction <= 1.0 {
+        1.0
+    } else if fraction <= 2.0 {
+        2.0
+    } else if fraction <= 5.0 {
+        5.0
+    } else {
+        10.0
+    };
+    factor * magnitude
+}
+
+fn line_count(minimum: f32, maximum: f32, step: f32) -> usize {
+    ((maximum - minimum) / step).round().max(0.0) as usize
 }
 
 fn draw_world_axes(ui: &egui::Ui, rect: egui::Rect, frame: &PreviewFrame) {
@@ -1007,5 +1130,19 @@ mod tests {
         .expect("crossing segment must remain visible");
         assert_eq!(start.position, egui::pos2(0.0, 50.0));
         assert_eq!(end.position, egui::pos2(50.0, 50.0));
+    }
+
+    #[test]
+    fn grid_layout_covers_the_visible_ground_plane() {
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 500.0));
+        let matrix = Mat4::from_scale(Vec3::new(0.01, 0.02, 1.0));
+
+        let (minimum, maximum, step) = visible_grid_layout(matrix, rect).unwrap();
+
+        assert!(minimum.x <= -100.0 && maximum.x >= 100.0);
+        assert!(minimum.y <= -50.0 && maximum.y >= 50.0);
+        assert!(step > 0.0);
+        assert!(line_count(minimum.x, maximum.x, step) <= 256);
+        assert!(line_count(minimum.y, maximum.y, step) <= 256);
     }
 }
