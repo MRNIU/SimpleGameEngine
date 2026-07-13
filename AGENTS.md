@@ -6,7 +6,7 @@
 
 - 项目名称：SimpleGameEngine
 - 当前定位：Rust 跨平台游戏引擎与 editor-first 产品实验仓库
-- 当前阶段：M1–M7 目标架构已完成
+- 当前阶段：M1–M7 架构 spine 已完成；Mac 产品可用性 hardening 尚未完成
 - 技术栈：Rust stable、Cargo workspace、egui/eframe、winit、wgpu
 - 默认开发环境：Dev Container / Docker
 - 迁移策略：不维护旧内部 API/格式兼容层；已替代的 prototype 通过 Git 历史参考
@@ -85,10 +85,12 @@ bare `asset`、`ecs`、`scene`、`render`、`runtime`、`editor` packages 与 `e
 最后审阅日期：2026-07-13
 
 - M1 Core Kernel、M2 Project And Data、M3 Asset Pipeline And Runtime Products、M4 Render And Hosts、M5 Editor Play、M6 Build And Stage、M7 Integration Demo 已完成。
-- 旧版P1 Editor能力已按当前边界吸纳：SceneName与entity workflow、game-specific native file dialogs、world-space authoring viewport、geometry selection、六向ViewCube和三轴transform gizmo。
+- M1–M7 完成只证明架构、数据和产品链路闭合，不代表 Editor/Player 已达到日常可用或发布质量。
+- 旧版P1 Editor能力已按当前边界初步吸纳：SceneName与entity workflow、game-specific native file dialogs、world-space authoring viewport、geometry selection、六向ViewCube和三轴transform gizmo；Mac实机仍存在未系统清零的交互、视觉、状态和文件工作流缺陷。
 - `demo-game-editor --play` 打开 target project、运行独立 PlayWorld/game systems并真实执行 WGPU prepare/paint；Stop isolation有 headless roundtrip证据。
 - `demo-game-player` 从 source-free cooked root加载，使用 winit input adapter、advance/extract并真实 present。
 - `sge build` 启动 game-specific Build，full Cook后只接受本次Cargo Player artifact，并以immutable generation + atomic manifest发布可复制Stage。
 - `scripts/test-integration-demo.sh` 从 workspace gate/audit、game-specific Editor 窗口 smoke 到 authoring/Play/真实 Build/Cook/copied Stage/staged Player 单链闭合最终目标。
 - Apple Silicon macOS 26.5.1 已有原生 workspace build、Editor WGPU preview、Build/Stage与staged Player present证据；不外推到Intel Mac、其他GPU或物理输入。
-- 当前目标架构不再有后续里程碑；延期项包括但不限于音频、物理、网络、archive/Pak/signing/installer、Play writeback、action remapping、gizmo/prefab、parallel ECS/RenderWorld/incremental Cook，完整清单与触发条件见目标架构规格，出现真实产品需求后另立目标。
+- 下一阶段是 Mac Product Hardening：以真实鼠标键盘操作、截图/图像识别和可复现用户旅程清零现有功能缺陷，在通过完整可用性验收前不得声明“可真正使用”或“产品完成”。
+- 新功能延期项包括但不限于音频、物理、网络、archive/Pak/signing/installer、Play writeback、action remapping、prefab、parallel ECS/RenderWorld/incremental Cook；它们不应混入缺陷清零阶段。

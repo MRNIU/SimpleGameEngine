@@ -15,7 +15,9 @@ SimpleGameEngine 是一个 Rust 跨平台游戏引擎实验仓库。当前实现
 
 ## 当前实现
 
-- M1–M7 已完成：typed ECS / Reflect / EngineApp、strict project/authoring data、canonical OBJ import/full Cook/runtime products、owned `RenderSnapshot`、唯一 WGPU backend、完整 Edit/Play target Editor、game-specific Build/self-contained Stage 和最终 integration demo 已形成一条产品路径。
+> 当前状态：M1–M7 架构和 integration demo 链路已经闭合，但产品可用性 hardening 尚未完成。自动 smoke 证明路径能够运行，不证明 Editor/Player 的全部交互、视觉结果、文件工作流和异常恢复已经可用于日常生产。
+
+- M1–M7 已完成：typed ECS / Reflect / EngineApp、strict project/authoring data、canonical OBJ import/full Cook/runtime products、owned `RenderSnapshot`、唯一 WGPU backend、Edit/Play target Editor 架构路径、game-specific Build/self-contained Stage 和最终 integration demo 已形成一条产品路径。
 - `sge-render` 同时服务 eframe offscreen callback 与 winit surface；retained GPU cache 以 `AssetId` 为 key，store replacement 会清 cache，Player surface 只通过安全 `Arc<Window>` 创建。
 - `sge-player` 只读取 cooked root并把 winit event映射为逐帧 `InputFrame`；production dependency 不包含 project、source pipeline、OBJ parser、Editor 或 native dialog。
 - `sge-editor` identity-first 打开 target project；EditWorld 是唯一 live authoring truth，Reflect Inspector、entity/component mutation、Undo/Redo、atomic save与独立 PlaySession共用 scene validation/factory。
@@ -93,7 +95,7 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-b
 docker exec "$DEVCONTAINER_NAME" bash -lc 'scripts/test-integration-demo.sh'
 ```
 
-真实窗口 smoke 证明 Linux/Xvfb 下的实际 WGPU callback/surface 路径、经 X11 注入的 host input 路径和确定性退出。另有 Apple Silicon macOS 26.5.1 上的 workspace build、Editor WGPU prepare/paint、Build/Stage和staged Player present证据；这些结果不等于Windows、Intel Mac、其他GPU或物理输入设备兼容性证明。
+真实窗口 smoke 只证明 Linux/Xvfb 下的实际 WGPU callback/surface 路径、经 X11 注入的 host input 路径和确定性退出，不是 UI/UX 或功能正确性验收。另有 Apple Silicon macOS 26.5.1 上的 workspace build、Editor WGPU prepare/paint、Build/Stage和staged Player present证据；这些结果不等于产品可用性，也不等于Windows、Intel Mac、其他GPU或物理输入设备兼容性证明。
 
 ## macOS 原生编译与使用
 
