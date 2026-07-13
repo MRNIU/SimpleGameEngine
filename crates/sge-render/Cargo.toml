@@ -13,6 +13,7 @@ sge-math = { path = "../sge-math" }
 sge-reflect = { path = "../sge-reflect" }
 pollster.workspace = true
 raw-window-handle.workspace = true
+rayon.workspace = true
 thiserror.workspace = true
 wgpu.workspace = true
 

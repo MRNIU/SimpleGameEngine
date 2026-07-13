@@ -8,7 +8,8 @@ use std::{
 
 use sge_app::{AdvanceError, GameDescriptor};
 use sge_render::{
-    RenderBackend, SkippedSurfaceFrame, SurfaceRenderError, SurfaceRenderOutcome, SurfaceRenderer,
+    FrameRateCounter, RenderBackend, SkippedSurfaceFrame, SurfaceRenderError, SurfaceRenderOutcome,
+    SurfaceRenderer,
 };
 use winit::{
     application::ApplicationHandler,
@@ -106,6 +107,7 @@ struct PlayerHost {
     last_redraw: Instant,
     presented_frames: u64,
     input_frames: u64,
+    frame_rate: FrameRateCounter,
     occluded: bool,
     error: Option<PlayerRunError>,
     input: InputAccumulator,
@@ -121,6 +123,7 @@ impl PlayerHost {
             last_redraw: Instant::now(),
             presented_frames: 0,
             input_frames: 0,
+            frame_rate: FrameRateCounter::new(),
             occluded: false,
             error: None,
             input: InputAccumulator::default(),
@@ -167,6 +170,15 @@ impl PlayerHost {
         match render {
             Ok((SurfaceRenderOutcome::Presented, readback)) => {
                 self.presented_frames = self.presented_frames.saturating_add(1);
+                if self.frame_rate.record_frame()
+                    && let Some(window) = &self.window
+                {
+                    window.set_title(&player_window_title(
+                        self.session.game_id(),
+                        self.options.backend,
+                        self.frame_rate.rounded_frames_per_second(),
+                    ));
+                }
                 if let Some(path) = self.options.screenshot.take() {
                     let Some(readback) = readback else {
                         self.fail(event_loop, PlayerRunError::ScreenshotIncomplete);
@@ -225,7 +237,11 @@ impl ApplicationHandler for PlayerHost {
         }
         if self.window.is_none() {
             let attributes = Window::default_attributes()
-                .with_title(self.session.game_id())
+                .with_title(player_window_title(
+                    self.session.game_id(),
+                    self.options.backend,
+                    None,
+                ))
                 .with_inner_size(LogicalSize::new(
                     f64::from(self.options.initial_size[0]),
                     f64::from(self.options.initial_size[1]),
@@ -257,7 +273,10 @@ impl ApplicationHandler for PlayerHost {
                 )
             };
             match surface {
-                Ok(surface) => self.surface = Some(surface),
+                Ok(surface) => {
+                    self.surface = Some(surface);
+                    self.frame_rate = FrameRateCounter::new();
+                }
                 Err(error) => {
                     self.fail(event_loop, error);
                     return;
@@ -318,6 +337,32 @@ impl ApplicationHandler for PlayerHost {
             WindowEvent::RedrawRequested => self.redraw(event_loop),
             _ => {}
         }
+    }
+}
+
+fn player_window_title(
+    game_id: &str,
+    backend: RenderBackend,
+    frames_per_second: Option<u32>,
+) -> String {
+    let fps = frames_per_second.map_or_else(|| "--".to_owned(), |value| value.to_string());
+    format!("{game_id} | {} | FPS: {fps}", backend.label())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn player_title_exposes_backend_and_live_frame_rate() {
+        assert_eq!(
+            player_window_title("demo", RenderBackend::Cpu, Some(58)),
+            "demo | CPU | FPS: 58"
+        );
+        assert_eq!(
+            player_window_title("demo", RenderBackend::Wgpu, None),
+            "demo | WGPU | FPS: --"
+        );
     }
 }
 

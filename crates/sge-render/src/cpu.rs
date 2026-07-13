@@ -1,5 +1,6 @@
 // Copyright The SimpleGameEngine Contributors
 
+use rayon::prelude::*;
 use sge_asset::{AssetId, RuntimeAssetStore};
 use sge_math::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4};
 
@@ -10,6 +11,7 @@ use crate::{
 const SURFACE_CLEAR: [f32; 4] = [13.0 / 255.0, 15.0 / 255.0, 18.0 / 255.0, 1.0];
 const OFFSCREEN_CLEAR: [f32; 4] = [0.0; 4];
 const EDGE_EPSILON: f32 = 1.0e-6;
+const RASTER_TILE_ROWS: usize = 32;
 
 #[derive(Debug, Default)]
 pub struct CpuRenderer;
@@ -69,8 +71,7 @@ impl CpuRenderer {
         let pixel_count = pixel_count(target_size)?;
         let view_projection = Mat4::from_cols_array(&view_projection_matrix(view, target_size)?);
         let light = FrameLight::from_snapshot(snapshot);
-        let mut colors = vec![clear; pixel_count];
-        let mut depths = vec![1.0_f32; pixel_count];
+        let mut triangles = Vec::new();
         for instance in snapshot.meshes() {
             let asset = *instance.mesh().id();
             let mesh = assets
@@ -102,18 +103,41 @@ impl CpuRenderer {
                     vertices[indices[2] as usize],
                 ];
                 for clipped in clip_triangle(triangle) {
-                    rasterize_triangle(
-                        clipped,
-                        target_size,
-                        instance.material().base_color(),
-                        light,
-                        &mut colors,
-                        &mut depths,
-                    );
+                    if let Some(triangle) =
+                        prepare_triangle(clipped, target_size, instance.material().base_color())
+                    {
+                        triangles.push(triangle);
+                    }
                 }
             }
         }
-        let rgba = colors.into_iter().flat_map(linear_rgba_to_srgb8).collect();
+        let mut colors = vec![clear; pixel_count];
+        let mut depths = vec![1.0_f32; pixel_count];
+        let width = target_size[0] as usize;
+        let tile_pixels = width * RASTER_TILE_ROWS;
+        colors
+            .par_chunks_mut(tile_pixels)
+            .zip(depths.par_chunks_mut(tile_pixels))
+            .enumerate()
+            .for_each(|(tile_index, (tile_colors, tile_depths))| {
+                let first_row = (tile_index * RASTER_TILE_ROWS) as u32;
+                let last_row = (first_row + RASTER_TILE_ROWS as u32).min(target_size[1]);
+                for triangle in &triangles {
+                    rasterize_triangle_tile(
+                        *triangle,
+                        target_size[0],
+                        first_row,
+                        last_row,
+                        light,
+                        tile_colors,
+                        tile_depths,
+                    );
+                }
+            });
+        let mut rgba = vec![0_u8; pixel_count * 4];
+        rgba.par_chunks_exact_mut(4)
+            .zip(colors.par_iter())
+            .for_each(|(target, color)| target.copy_from_slice(&linear_rgba_to_srgb8(*color)));
         Ok(CpuFrame {
             size: target_size,
             rgba,
@@ -247,14 +271,19 @@ struct ScreenVertex {
     normal_over_w: Vec3,
 }
 
-fn rasterize_triangle(
+#[derive(Debug, Clone, Copy)]
+struct RasterTriangle {
+    screen: [ScreenVertex; 3],
+    area: f32,
+    bounds: [u32; 4],
+    material: [f32; 4],
+}
+
+fn prepare_triangle(
     triangle: [ClipVertex; 3],
     size: [u32; 2],
     material: [f32; 4],
-    light: FrameLight,
-    colors: &mut [[f32; 4]],
-    depths: &mut [f32],
-) {
+) -> Option<RasterTriangle> {
     let screen = triangle.map(|vertex| {
         let inverse_w = vertex.position.w.recip();
         let ndc = vertex.position.truncate() * inverse_w;
@@ -270,7 +299,7 @@ fn rasterize_triangle(
     });
     let area = edge(screen[0].position, screen[1].position, screen[2].position);
     if area >= -EDGE_EPSILON {
-        return;
+        return None;
     }
     let minimum = screen
         .iter()
@@ -286,36 +315,71 @@ fn rasterize_triangle(
     let min_y = minimum.y.floor().max(0.0) as u32;
     let max_x = maximum.x.ceil().min(size[0] as f32) as u32;
     let max_y = maximum.y.ceil().min(size[1] as f32) as u32;
+    (min_x < max_x && min_y < max_y).then_some(RasterTriangle {
+        screen,
+        area,
+        bounds: [min_x, min_y, max_x, max_y],
+        material,
+    })
+}
+
+fn rasterize_triangle_tile(
+    triangle: RasterTriangle,
+    width: u32,
+    first_row: u32,
+    last_row: u32,
+    light: FrameLight,
+    colors: &mut [[f32; 4]],
+    depths: &mut [f32],
+) {
+    let [min_x, min_y, max_x, max_y] = triangle.bounds;
+    let min_y = min_y.max(first_row);
+    let max_y = max_y.min(last_row);
+    if min_y >= max_y {
+        return;
+    }
     for y in min_y..max_y {
         for x in min_x..max_x {
             let point = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
             let weights = [
-                edge(screen[1].position, screen[2].position, point) / area,
-                edge(screen[2].position, screen[0].position, point) / area,
-                edge(screen[0].position, screen[1].position, point) / area,
+                edge(
+                    triangle.screen[1].position,
+                    triangle.screen[2].position,
+                    point,
+                ) / triangle.area,
+                edge(
+                    triangle.screen[2].position,
+                    triangle.screen[0].position,
+                    point,
+                ) / triangle.area,
+                edge(
+                    triangle.screen[0].position,
+                    triangle.screen[1].position,
+                    point,
+                ) / triangle.area,
             ];
             if weights.iter().any(|weight| *weight < -EDGE_EPSILON) {
                 continue;
             }
-            let depth = weights[0] * screen[0].depth
-                + weights[1] * screen[1].depth
-                + weights[2] * screen[2].depth;
-            let index = y as usize * size[0] as usize + x as usize;
+            let depth = weights[0] * triangle.screen[0].depth
+                + weights[1] * triangle.screen[1].depth
+                + weights[2] * triangle.screen[2].depth;
+            let index = (y - first_row) as usize * width as usize + x as usize;
             if !(0.0..=1.0).contains(&depth) || depth > depths[index] {
                 continue;
             }
-            let inverse_w = weights[0] * screen[0].inverse_w
-                + weights[1] * screen[1].inverse_w
-                + weights[2] * screen[2].inverse_w;
+            let inverse_w = weights[0] * triangle.screen[0].inverse_w
+                + weights[1] * triangle.screen[1].inverse_w
+                + weights[2] * triangle.screen[2].inverse_w;
             if inverse_w.abs() <= f32::EPSILON {
                 continue;
             }
-            let normal = ((weights[0] * screen[0].normal_over_w
-                + weights[1] * screen[1].normal_over_w
-                + weights[2] * screen[2].normal_over_w)
+            let normal = ((weights[0] * triangle.screen[0].normal_over_w
+                + weights[1] * triangle.screen[1].normal_over_w
+                + weights[2] * triangle.screen[2].normal_over_w)
                 / inverse_w)
                 .normalize_or_zero();
-            colors[index] = alpha_blend(light.shade(normal, material), colors[index]);
+            colors[index] = alpha_blend(light.shade(normal, triangle.material), colors[index]);
             depths[index] = depth;
         }
     }
@@ -404,21 +468,6 @@ mod tests {
             vertex([0.0, 0.5, 0.5, 1.0]),
             vertex([0.5, -0.5, 0.5, 1.0]),
         ];
-        let mut colors = vec![OFFSCREEN_CLEAR; 16];
-        let mut depths = vec![1.0; 16];
-        rasterize_triangle(
-            triangle,
-            [4, 4],
-            [1.0; 4],
-            FrameLight {
-                direction: Vec3::ZERO,
-                color: [1.0; 4],
-                intensity: None,
-            },
-            &mut colors,
-            &mut depths,
-        );
-        assert!(colors.iter().all(|color| *color == OFFSCREEN_CLEAR));
-        assert!(depths.iter().all(|depth| *depth == 1.0));
+        assert!(prepare_triangle(triangle, [4, 4], [1.0; 4]).is_none());
     }
 }

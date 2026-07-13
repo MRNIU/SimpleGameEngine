@@ -147,6 +147,8 @@ audit_exact_files 'canonical render backend facade owner' 'pub struct BackendRen
   'crates/sge-render/src/backend.rs' crates examples
 audit_exact_files 'canonical CPU renderer owner' 'pub struct CpuRenderer' \
   'crates/sge-render/src/cpu.rs' crates examples
+audit_exact_files 'canonical frame rate owner' 'pub struct FrameRateCounter' \
+  'crates/sge-render/src/frame_rate.rs' crates examples
 audit_exact_files 'retained bare OBJ callers' 'asset::load_obj_mesh' \
   '' crates examples
 audit_exact_files 'canonical full Cook owner' 'pub fn full_cook' \

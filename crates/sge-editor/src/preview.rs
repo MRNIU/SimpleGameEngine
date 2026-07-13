@@ -7,7 +7,9 @@ use std::sync::{
 
 use eframe::{egui, egui_wgpu, wgpu};
 use sge_asset::RuntimeAssetStore;
-use sge_render::{BackendFrame, BackendRenderContext, BackendRenderer, RenderBackend};
+use sge_render::{
+    BackendFrame, BackendRenderContext, BackendRenderer, FrameRateCounter, RenderBackend,
+};
 
 use crate::PreviewFrame;
 
@@ -165,6 +167,7 @@ struct PreviewProbeInner {
     painted: AtomicUsize,
     wgpu_prepared: AtomicUsize,
     cpu_prepared: AtomicUsize,
+    frame_rate: Mutex<FrameRateCounter>,
     error: Mutex<Option<String>>,
 }
 
@@ -180,6 +183,9 @@ impl PreviewProbe {
 
     fn mark_painted(&self, _backend: RenderBackend) {
         self.inner.painted.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut frame_rate) = self.inner.frame_rate.lock() {
+            frame_rate.record_frame();
+        }
     }
 
     fn fail(&self, error: impl Into<String>) {
@@ -197,6 +203,12 @@ impl PreviewProbe {
             paint_count: self.inner.painted.load(Ordering::Relaxed),
             wgpu_prepare_count: self.inner.wgpu_prepared.load(Ordering::Relaxed),
             cpu_prepare_count: self.inner.cpu_prepared.load(Ordering::Relaxed),
+            frames_per_second: self
+                .inner
+                .frame_rate
+                .lock()
+                .ok()
+                .and_then(|frame_rate| frame_rate.rounded_frames_per_second()),
             error: self.inner.error.lock().map_or_else(
                 |_| Some("preview probe lock poisoned".to_owned()),
                 |slot| slot.clone(),
@@ -290,5 +302,6 @@ pub struct PreviewProbeReport {
     pub paint_count: usize,
     pub wgpu_prepare_count: usize,
     pub cpu_prepare_count: usize,
+    pub frames_per_second: Option<u32>,
     pub error: Option<String>,
 }

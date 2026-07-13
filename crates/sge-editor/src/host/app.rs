@@ -154,6 +154,7 @@ impl eframe::App for EditorApp {
                                 }
                             }
                         });
+                    ui.monospace(frame_rate_label(self.probe.report().frames_per_second));
                     if self.play.is_some() {
                         ui.colored_label(egui::Color32::LIGHT_GREEN, "PLAY");
                         if ui.button("Stop").clicked() {
@@ -270,5 +271,20 @@ impl eframe::App for EditorApp {
         if ui.ctx().current_pass_index() == 0 {
             self.advance_play(ui.ctx(), response.hovered());
         }
+    }
+}
+
+fn frame_rate_label(frames_per_second: Option<u32>) -> String {
+    frames_per_second.map_or_else(|| "FPS: --".to_owned(), |fps| format!("FPS: {fps}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::frame_rate_label;
+
+    #[test]
+    fn frame_rate_label_has_pending_and_live_states() {
+        assert_eq!(frame_rate_label(None), "FPS: --");
+        assert_eq!(frame_rate_label(Some(60)), "FPS: 60");
     }
 }

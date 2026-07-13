@@ -45,6 +45,30 @@ fn cpu_renderer_is_send_and_renders_current_lambert_light() -> Result<(), Box<dy
 }
 
 #[test]
+fn cpu_parallel_tiles_match_single_worker_output() -> Result<(), Box<dyn std::error::Error>> {
+    let asset = AssetId::new_v4();
+    let store = RuntimeAssetStore::from_meshes([(asset, triangle(false)?)])?;
+    let mut app = render_app()?;
+    {
+        let mut world = app.world_initializer()?;
+        spawn_camera(&mut world)?;
+        spawn_mesh(&mut world, asset, [0.0, 0.0, 2.0], [0.9, 0.2, 0.1, 1.0])?;
+        spawn_mesh(&mut world, asset, [0.2, 0.1, 3.0], [0.1, 0.3, 0.9, 0.8])?;
+    }
+    let snapshot = extract(app.world(), &store)?;
+    let view = RenderView::from_active_camera(&snapshot)?;
+    let single_worker = rayon::ThreadPoolBuilder::new().num_threads(1).build()?;
+    let parallel = rayon::ThreadPoolBuilder::new().num_threads(4).build()?;
+    let single =
+        single_worker.install(|| CpuRenderer::new().render([97, 79], &snapshot, view, &store))?;
+    let parallel =
+        parallel.install(|| CpuRenderer::new().render([97, 79], &snapshot, view, &store))?;
+
+    assert_eq!(parallel, single);
+    Ok(())
+}
+
+#[test]
 fn cpu_depth_test_keeps_near_triangle_when_far_triangle_is_drawn_later()
 -> Result<(), Box<dyn std::error::Error>> {
     let asset = AssetId::new_v4();
