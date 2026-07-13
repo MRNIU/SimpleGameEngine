@@ -9,7 +9,7 @@ use sge_scene::SceneEntityId;
 
 use crate::PreviewFrame;
 
-use super::{project_segment, projection};
+use super::overlays::{project_segment, projection};
 
 const PICK_TOLERANCE: f32 = 7.0;
 
