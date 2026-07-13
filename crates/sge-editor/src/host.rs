@@ -14,7 +14,7 @@ use std::{
 use eframe::egui;
 use sge_app::GameDescriptor;
 use sge_reflect::{ReflectedValue, TypeKey};
-use sge_render::{FramePerformanceMonitor, RenderBackend};
+use sge_render::{FramePerformanceMonitor, RenderBackend, RenderMode};
 
 use crate::{
     EditSession, EditorBuildLauncher, EditorInputAccumulator, EditorOpenError, PlaySession,
@@ -59,6 +59,7 @@ pub struct EditorRunOptions {
     pub initial_size: [u32; 2],
     pub start_in_play: bool,
     pub backend: RenderBackend,
+    pub render_mode: RenderMode,
     pub language: EditorLanguage,
     pub screenshot: Option<PathBuf>,
     pub ui_actions: Vec<EditorUiAction>,
@@ -74,6 +75,7 @@ impl Default for EditorRunOptions {
             initial_size: [1280, 720],
             start_in_play: false,
             backend: RenderBackend::Wgpu,
+            render_mode: RenderMode::Lit,
             language: EditorLanguage::English,
             screenshot: None,
             ui_actions: Vec::new(),
@@ -97,6 +99,7 @@ pub enum EditorUiAction {
     StartPlay,
     StopPlay,
     SetRenderBackend(RenderBackend),
+    SetRenderMode(RenderMode),
     SetLanguage(EditorLanguage),
     Build,
 }
@@ -212,6 +215,7 @@ pub fn run(
                 close_authorized: false,
                 pending_build_confirmation: false,
                 backend: options.backend,
+                render_mode: options.render_mode,
                 language: options.language,
                 cjk_font_available,
                 performance_open: false,
@@ -285,6 +289,7 @@ struct EditorApp {
     close_authorized: bool,
     pending_build_confirmation: bool,
     backend: RenderBackend,
+    render_mode: RenderMode,
     language: EditorLanguage,
     cjk_font_available: bool,
     performance_open: bool,

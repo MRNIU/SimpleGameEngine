@@ -4,6 +4,7 @@ struct FrameUniform {
   view_projection: mat4x4<f32>,
   light_direction_intensity: vec4<f32>,
   light_color: vec4<f32>,
+  render_settings: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -41,12 +42,56 @@ fn vs_mesh(input: MeshInput) -> MeshOutput {
 
 @fragment
 fn fs_mesh(input: MeshOutput) -> @location(0) vec4<f32> {
-  if frame.light_direction_intensity.w < 0.0 {
+  if frame.render_settings.x == 1.0 || frame.light_direction_intensity.w < 0.0 {
     return input.color;
   }
   let light = max(dot(input.normal, -frame.light_direction_intensity.xyz), 0.0);
   let strength = 0.15 + light * frame.light_direction_intensity.w;
   return vec4<f32>(input.color.rgb * frame.light_color.rgb * strength, input.color.a);
+}
+
+@fragment
+fn fs_depth() -> @location(0) vec4<f32> {
+  return vec4<f32>(0.0);
+}
+
+struct WireInput {
+  @location(0) position: vec3<f32>,
+  @location(2) model_0: vec4<f32>,
+  @location(3) model_1: vec4<f32>,
+  @location(4) model_2: vec4<f32>,
+  @location(5) model_3: vec4<f32>,
+  @location(10) barycentric: vec3<f32>,
+};
+
+struct WireOutput {
+  @builtin(position) clip_position: vec4<f32>,
+  @location(0) @interpolate(linear) barycentric: vec3<f32>,
+};
+
+@vertex
+fn vs_wire(input: WireInput) -> WireOutput {
+  let model = mat4x4<f32>(input.model_0, input.model_1, input.model_2, input.model_3);
+  var output: WireOutput;
+  output.clip_position = frame.view_projection * model * vec4<f32>(input.position, 1.0);
+  output.barycentric = input.barycentric;
+  return output;
+}
+
+@fragment
+fn fs_wire(input: WireOutput) -> @location(0) vec4<f32> {
+  let derivatives = max(fwidth(input.barycentric), vec3<f32>(1.0e-6));
+  let edge_distance = min(
+    min(input.barycentric.x / derivatives.x, input.barycentric.y / derivatives.y),
+    input.barycentric.z / derivatives.z,
+  );
+  if edge_distance > frame.render_settings.y {
+    discard;
+  }
+  if frame.render_settings.x == 2.0 {
+    return vec4<f32>(0.75, 0.80, 0.90, 1.0);
+  }
+  return vec4<f32>(0.02, 0.02, 0.02, 1.0);
 }
 
 struct CompositeOutput {

@@ -4,8 +4,8 @@ use sge_app::EngineApp;
 use sge_asset::{AssetId, AssetRef, MeshAsset, MeshVertex, RuntimeAssetStore};
 use sge_math::Transform;
 use sge_render::{
-    Camera, CpuRenderer, Light, Material, MeshRenderer, Projection, RenderPlugin, RenderView,
-    extract,
+    Camera, CpuRenderer, Light, Material, MeshRenderer, Projection, RenderMode, RenderPlugin,
+    RenderSettings, RenderView, extract,
 };
 
 #[test]
@@ -104,6 +104,123 @@ fn cpu_backface_culling_leaves_only_the_clear_color() -> Result<(), Box<dyn std:
     let corner = frame.rgba()[..4].to_vec();
     assert!(frame.rgba().chunks_exact(4).all(|pixel| pixel == corner));
     Ok(())
+}
+
+#[test]
+fn cpu_modes_share_depth_and_hidden_line_contract() -> Result<(), Box<dyn std::error::Error>> {
+    let asset = AssetId::new_v4();
+    let store = RuntimeAssetStore::from_meshes([(asset, triangle(false)?)])?;
+    let near = mode_fixture(asset, false)?;
+    let with_hidden_far = mode_fixture(asset, true)?;
+    let near_snapshot = extract(near.world(), &store)?;
+    let far_snapshot = extract(with_hidden_far.world(), &store)?;
+    let near_view = RenderView::from_active_camera(&near_snapshot)?;
+    let far_view = RenderView::from_active_camera(&far_snapshot)?;
+    let settings = RenderSettings::new(RenderMode::Wireframe, 1);
+
+    let near = CpuRenderer::new().render_with_settings(
+        [64, 64],
+        &near_snapshot,
+        near_view,
+        &store,
+        settings,
+    )?;
+    let hidden = CpuRenderer::new().render_with_settings(
+        [64, 64],
+        &far_snapshot,
+        far_view,
+        &store,
+        settings,
+    )?;
+
+    assert_eq!(
+        hidden, near,
+        "far edges must stay hidden behind the near face"
+    );
+    assert_eq!(pixel(&near, 32, 32), &near.rgba()[..4]);
+    assert!(
+        near.rgba()
+            .chunks_exact(4)
+            .any(|pixel| pixel != &near.rgba()[..4])
+    );
+    Ok(())
+}
+
+#[test]
+fn cpu_unlit_ignores_light_and_lit_wireframe_overlays_lit_fill()
+-> Result<(), Box<dyn std::error::Error>> {
+    let asset = AssetId::new_v4();
+    let store = RuntimeAssetStore::from_meshes([(asset, triangle(false)?)])?;
+    let app = mode_fixture(asset, false)?;
+    let snapshot = extract(app.world(), &store)?;
+    let view = RenderView::from_active_camera(&snapshot)?;
+    let render = |mode| {
+        CpuRenderer::new().render_with_settings(
+            [64, 64],
+            &snapshot,
+            view,
+            &store,
+            RenderSettings::new(mode, 1),
+        )
+    };
+    let lit = render(RenderMode::Lit)?;
+    let unlit = render(RenderMode::Unlit)?;
+    let overlay = render(RenderMode::LitWireframe)?;
+
+    assert!(pixel(&unlit, 32, 32)[0] > pixel(&lit, 32, 32)[0]);
+    assert_eq!(pixel(&overlay, 32, 32), pixel(&lit, 32, 32));
+    assert_ne!(overlay, lit);
+    Ok(())
+}
+
+#[test]
+fn cpu_wire_width_is_measured_in_target_pixels() -> Result<(), Box<dyn std::error::Error>> {
+    let asset = AssetId::new_v4();
+    let store = RuntimeAssetStore::from_meshes([(asset, triangle(false)?)])?;
+    let app = mode_fixture(asset, false)?;
+    let snapshot = extract(app.world(), &store)?;
+    let view = RenderView::from_active_camera(&snapshot)?;
+    let render = |width| {
+        CpuRenderer::new().render_with_settings(
+            [64, 64],
+            &snapshot,
+            view,
+            &store,
+            RenderSettings::new(RenderMode::Wireframe, width),
+        )
+    };
+    let thin = render(1)?;
+    let retina = render(2)?;
+    let changed = |frame: &sge_render::CpuFrame| {
+        let clear = &frame.rgba()[..4];
+        frame
+            .rgba()
+            .chunks_exact(4)
+            .filter(|pixel| *pixel != clear)
+            .count()
+    };
+
+    assert!(changed(&retina) > changed(&thin));
+    Ok(())
+}
+
+fn mode_fixture(
+    asset: AssetId,
+    include_hidden_far_mesh: bool,
+) -> Result<EngineApp, Box<dyn std::error::Error>> {
+    let mut app = render_app()?;
+    {
+        let mut world = app.world_initializer()?;
+        spawn_camera(&mut world)?;
+        spawn_mesh(&mut world, asset, [0.0, 0.0, 2.0], [1.0, 0.05, 0.05, 1.0])?;
+        if include_hidden_far_mesh {
+            spawn_mesh(&mut world, asset, [0.0, 0.0, 3.0], [0.05, 0.05, 1.0, 1.0])?;
+        }
+        let light = world.spawn();
+        world.insert(light, Transform::identity())?;
+        world.insert(light, Light::new([1.0; 4], 1.0))?;
+    }
+    Ok(app)
 }
 
 fn render_app() -> Result<EngineApp, Box<dyn std::error::Error>> {

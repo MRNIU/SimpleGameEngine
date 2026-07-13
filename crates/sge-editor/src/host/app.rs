@@ -187,6 +187,22 @@ impl eframe::App for EditorApp {
                                 }
                             }
                         });
+                    egui::ComboBox::from_id_salt("render_mode")
+                        .selected_text(render_mode_label(self.language, self.render_mode))
+                        .show_ui(ui, |ui| {
+                            for mode in sge_render::RenderMode::ALL {
+                                if ui
+                                    .selectable_value(
+                                        &mut self.render_mode,
+                                        mode,
+                                        render_mode_label(self.language, mode),
+                                    )
+                                    .changed()
+                                {
+                                    ui.ctx().request_repaint();
+                                }
+                            }
+                        });
                     ui.monospace(frame_rate_label(self.probe.frames_per_second()));
                     ui.toggle_value(
                         &mut self.performance_open,
@@ -284,9 +300,16 @@ impl eframe::App for EditorApp {
         }
 
         let response = if let Some(frame) = &self.frame {
-            preview::paint(ui, frame, &self.probe, self.backend, |ui, rect| {
-                self.viewport.paint_background(ui, rect, frame);
-            })
+            preview::paint(
+                ui,
+                frame,
+                &self.probe,
+                self.backend,
+                self.render_mode,
+                |ui, rect| {
+                    self.viewport.paint_background(ui, rect, frame);
+                },
+            )
         } else {
             let available = ui.available_size_before_wrap();
             let (rect, response) =
@@ -336,6 +359,15 @@ impl eframe::App for EditorApp {
             self.advance_play(ui.ctx(), response.hovered());
         }
     }
+}
+
+fn render_mode_label(language: EditorLanguage, mode: sge_render::RenderMode) -> &'static str {
+    language.text(match mode {
+        sge_render::RenderMode::Lit => EditorText::RenderModeLit,
+        sge_render::RenderMode::Unlit => EditorText::RenderModeUnlit,
+        sge_render::RenderMode::Wireframe => EditorText::RenderModeWireframe,
+        sge_render::RenderMode::LitWireframe => EditorText::RenderModeLitWireframe,
+    })
 }
 
 fn frame_rate_label(frames_per_second: Option<u32>) -> String {

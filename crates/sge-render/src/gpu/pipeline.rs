@@ -13,6 +13,14 @@ const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 8] = wgpu::vertex_attr_array!
     8 => Float32x4,
     9 => Float32x4
 ];
+const WIREFRAME_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
+    wgpu::vertex_attr_array![0 => Float32x3, 10 => Float32x3];
+const WIREFRAME_INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
+    2 => Float32x4,
+    3 => Float32x4,
+    4 => Float32x4,
+    5 => Float32x4
+];
 
 pub(super) fn create_mesh_pipeline(
     device: &wgpu::Device,
@@ -70,6 +78,125 @@ pub(super) fn create_mesh_pipeline(
         multiview_mask: None,
         cache: None,
     })
+}
+
+pub(super) fn create_depth_pipeline(
+    device: &wgpu::Device,
+    shader: &wgpu::ShaderModule,
+    frame_layout: &wgpu::BindGroupLayout,
+    format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("sge_render_depth_pipeline_layout"),
+        bind_group_layouts: &[Some(frame_layout)],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("sge_render_depth_pipeline"),
+        layout: Some(&layout),
+        vertex: mesh_vertex_state(shader),
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_depth"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::empty(),
+            })],
+        }),
+        primitive: mesh_primitive_state(),
+        depth_stencil: Some(depth_state(true)),
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+pub(super) fn create_wireframe_pipeline(
+    device: &wgpu::Device,
+    shader: &wgpu::ShaderModule,
+    frame_layout: &wgpu::BindGroupLayout,
+    format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("sge_render_wireframe_pipeline_layout"),
+        bind_group_layouts: &[Some(frame_layout)],
+        immediate_size: 0,
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("sge_render_wireframe_pipeline"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_wire"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &[
+                wgpu::VertexBufferLayout {
+                    array_stride: 24,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &WIREFRAME_VERTEX_ATTRIBUTES,
+                },
+                wgpu::VertexBufferLayout {
+                    array_stride: 128,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &WIREFRAME_INSTANCE_ATTRIBUTES,
+                },
+            ],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_wire"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: mesh_primitive_state(),
+        depth_stencil: Some(depth_state(false)),
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+fn mesh_vertex_state(shader: &wgpu::ShaderModule) -> wgpu::VertexState<'_> {
+    wgpu::VertexState {
+        module: shader,
+        entry_point: Some("vs_mesh"),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        buffers: &[
+            wgpu::VertexBufferLayout {
+                array_stride: 24,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &VERTEX_ATTRIBUTES,
+            },
+            wgpu::VertexBufferLayout {
+                array_stride: 128,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &INSTANCE_ATTRIBUTES,
+            },
+        ],
+    }
+}
+
+fn mesh_primitive_state() -> wgpu::PrimitiveState {
+    wgpu::PrimitiveState {
+        cull_mode: Some(wgpu::Face::Back),
+        ..Default::default()
+    }
+}
+
+fn depth_state(write: bool) -> wgpu::DepthStencilState {
+    wgpu::DepthStencilState {
+        format: DEPTH_FORMAT,
+        depth_write_enabled: Some(write),
+        depth_compare: Some(wgpu::CompareFunction::LessEqual),
+        stencil: wgpu::StencilState::default(),
+        bias: wgpu::DepthBiasState::default(),
+    }
 }
 
 pub(super) fn create_composite_pipeline(

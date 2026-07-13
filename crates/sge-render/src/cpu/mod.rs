@@ -13,15 +13,21 @@ use sge_math::{Mat3, Mat4, Quat, Vec3, Vec4};
 
 use self::{
     clip::{ClipVertex, clip_triangle},
-    raster::{RASTER_TILE_ROWS, prepare_triangle, rasterize_triangle_tile},
+    raster::{
+        RASTER_TILE_ROWS, RasterTile, prepare_triangle, rasterize_triangle_depth_tile,
+        rasterize_triangle_tile, rasterize_triangle_wire_tile,
+    },
     shade::{FrameLight, linear_rgba_to_srgb8},
 };
 use crate::{
-    RenderSnapshot, RenderTargetError, RenderView, ViewProjectionError, view_projection_matrix,
+    RenderMode, RenderSettings, RenderSnapshot, RenderTargetError, RenderView, ViewProjectionError,
+    view_projection_matrix,
 };
 
 const SURFACE_CLEAR: [f32; 4] = [13.0 / 255.0, 15.0 / 255.0, 18.0 / 255.0, 1.0];
 const OFFSCREEN_CLEAR: [f32; 4] = [0.0; 4];
+const WIREFRAME_COLOR: [f32; 4] = [0.75, 0.80, 0.90, 1.0];
+const LIT_WIREFRAME_COLOR: [f32; 4] = [0.02, 0.02, 0.02, 1.0];
 
 #[derive(Debug, Default)]
 pub struct CpuRenderer;
@@ -57,7 +63,24 @@ impl CpuRenderer {
         view: RenderView,
         assets: &RuntimeAssetStore,
     ) -> Result<CpuFrame, CpuRenderError> {
-        self.render_with_clear(target_size, snapshot, view, assets, SURFACE_CLEAR)
+        self.render_with_settings(
+            target_size,
+            snapshot,
+            view,
+            assets,
+            RenderSettings::default(),
+        )
+    }
+
+    pub fn render_with_settings(
+        &mut self,
+        target_size: [u32; 2],
+        snapshot: &RenderSnapshot,
+        view: RenderView,
+        assets: &RuntimeAssetStore,
+        settings: RenderSettings,
+    ) -> Result<CpuFrame, CpuRenderError> {
+        self.render_with_clear(target_size, snapshot, view, assets, settings, SURFACE_CLEAR)
     }
 
     pub(crate) fn render_offscreen(
@@ -66,8 +89,16 @@ impl CpuRenderer {
         snapshot: &RenderSnapshot,
         view: RenderView,
         assets: &RuntimeAssetStore,
+        settings: RenderSettings,
     ) -> Result<CpuFrame, CpuRenderError> {
-        self.render_with_clear(target_size, snapshot, view, assets, OFFSCREEN_CLEAR)
+        self.render_with_clear(
+            target_size,
+            snapshot,
+            view,
+            assets,
+            settings,
+            OFFSCREEN_CLEAR,
+        )
     }
 
     fn render_with_clear(
@@ -76,6 +107,7 @@ impl CpuRenderer {
         snapshot: &RenderSnapshot,
         view: RenderView,
         assets: &RuntimeAssetStore,
+        settings: RenderSettings,
         clear: [f32; 4],
     ) -> Result<CpuFrame, CpuRenderError> {
         let pixel_count = pixel_count(target_size)?;
@@ -104,14 +136,18 @@ impl CpuRenderer {
                     normal: (normal_matrix
                         * Vec3::from_array(vertex.normal().copied().unwrap_or([0.0, 0.0, 1.0])))
                     .normalize_or_zero(),
+                    barycentric: Vec3::ZERO,
                 })
                 .collect::<Vec<_>>();
             for indices in mesh.indices().chunks_exact(3) {
-                let triangle = [
+                let mut triangle = [
                     vertices[indices[0] as usize],
                     vertices[indices[1] as usize],
                     vertices[indices[2] as usize],
                 ];
+                for (vertex, barycentric) in triangle.iter_mut().zip([Vec3::X, Vec3::Y, Vec3::Z]) {
+                    vertex.barycentric = barycentric;
+                }
                 for clipped in clip_triangle(triangle) {
                     if let Some(triangle) =
                         prepare_triangle(clipped, target_size, instance.material().base_color())
@@ -125,6 +161,7 @@ impl CpuRenderer {
         let mut depths = vec![1.0_f32; pixel_count];
         let width = target_size[0] as usize;
         let tile_pixels = width * RASTER_TILE_ROWS;
+        let mode = settings.mode();
         colors
             .par_chunks_mut(tile_pixels)
             .zip(depths.par_chunks_mut(tile_pixels))
@@ -132,18 +169,57 @@ impl CpuRenderer {
             .for_each(|(tile_index, (tile_colors, tile_depths))| {
                 let first_row = (tile_index * RASTER_TILE_ROWS) as u32;
                 let last_row = (first_row + RASTER_TILE_ROWS as u32).min(target_size[1]);
+                let tile = RasterTile {
+                    width: target_size[0],
+                    first_row,
+                    last_row,
+                };
                 for triangle in &triangles {
-                    rasterize_triangle_tile(
-                        *triangle,
-                        target_size[0],
-                        first_row,
-                        last_row,
-                        light,
-                        tile_colors,
-                        tile_depths,
-                    );
+                    if mode.has_fill() {
+                        rasterize_triangle_tile(
+                            *triangle,
+                            tile,
+                            light,
+                            mode.is_lit(),
+                            tile_colors,
+                            tile_depths,
+                        );
+                    } else {
+                        rasterize_triangle_depth_tile(*triangle, tile, tile_depths);
+                    }
                 }
             });
+        if mode.has_wireframe() {
+            let wire_color = match mode {
+                RenderMode::Wireframe => WIREFRAME_COLOR,
+                RenderMode::LitWireframe => LIT_WIREFRAME_COLOR,
+                RenderMode::Lit | RenderMode::Unlit => unreachable!("wireframe mode required"),
+            };
+            let width_pixels = settings.wireframe_width_pixels() as f32;
+            colors
+                .par_chunks_mut(tile_pixels)
+                .zip(depths.par_chunks(tile_pixels))
+                .enumerate()
+                .for_each(|(tile_index, (tile_colors, tile_depths))| {
+                    let first_row = (tile_index * RASTER_TILE_ROWS) as u32;
+                    let last_row = (first_row + RASTER_TILE_ROWS as u32).min(target_size[1]);
+                    let tile = RasterTile {
+                        width: target_size[0],
+                        first_row,
+                        last_row,
+                    };
+                    for triangle in &triangles {
+                        rasterize_triangle_wire_tile(
+                            *triangle,
+                            tile,
+                            width_pixels,
+                            wire_color,
+                            tile_colors,
+                            tile_depths,
+                        );
+                    }
+                });
+        }
         let mut rgba = vec![0_u8; pixel_count * 4];
         rgba.par_chunks_exact_mut(4)
             .zip(colors.par_iter())

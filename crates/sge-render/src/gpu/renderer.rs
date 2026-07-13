@@ -6,16 +6,18 @@ use sge_asset::{AssetId, RuntimeAssetStore};
 use sge_math::Mat3;
 use wgpu::util::DeviceExt;
 
-use crate::{RenderSnapshot, RenderView};
+use crate::{BackendFrame, RenderSettings, RenderSnapshot, RenderView};
 
 use super::{
-    errors::{
-        FrameNotPreparedError, GpuAssetError, GpuBufferKind, RenderFrameError, RenderTargetError,
-    },
+    assets::{GpuMesh, prepare_assets},
+    errors::{FrameNotPreparedError, GpuAssetError, RenderFrameError, RenderTargetError},
     frame::{
         create_depth_target, extent, normalized_model_matrix, uniform_bytes, validate_target_size,
     },
-    pipeline::{create_composite_pipeline, create_mesh_pipeline},
+    pipeline::{
+        create_composite_pipeline, create_depth_pipeline, create_mesh_pipeline,
+        create_wireframe_pipeline,
+    },
 };
 
 const SURFACE_CLEAR_COLOR: wgpu::Color = wgpu::Color {
@@ -29,18 +31,14 @@ const OFFSCREEN_CLEAR_COLOR: wgpu::Color = wgpu::Color::TRANSPARENT;
 pub struct WgpuRenderer {
     target_format: wgpu::TextureFormat,
     mesh_pipeline: wgpu::RenderPipeline,
+    depth_pipeline: wgpu::RenderPipeline,
+    wireframe_pipeline: wgpu::RenderPipeline,
     frame_layout: wgpu::BindGroupLayout,
     composite_pipeline: wgpu::RenderPipeline,
     composite_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     meshes: BTreeMap<AssetId, GpuMesh>,
     offscreen: Option<OffscreenTarget>,
-}
-
-struct GpuMesh {
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    index_count: u32,
 }
 
 struct OffscreenTarget {
@@ -103,6 +101,9 @@ impl WgpuRenderer {
             ],
         });
         let mesh_pipeline = create_mesh_pipeline(device, &shader, &frame_layout, target_format);
+        let depth_pipeline = create_depth_pipeline(device, &shader, &frame_layout, target_format);
+        let wireframe_pipeline =
+            create_wireframe_pipeline(device, &shader, &frame_layout, target_format);
         let composite_pipeline =
             create_composite_pipeline(device, &shader, &composite_layout, target_format);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -114,6 +115,8 @@ impl WgpuRenderer {
         Self {
             target_format,
             mesh_pipeline,
+            depth_pipeline,
+            wireframe_pipeline,
             frame_layout,
             composite_pipeline,
             composite_layout,
@@ -130,64 +133,7 @@ impl WgpuRenderer {
         snapshot: &RenderSnapshot,
         store: &RuntimeAssetStore,
     ) -> Result<(), GpuAssetError> {
-        for instance in snapshot.meshes() {
-            let asset = *instance.mesh().id();
-            if self.meshes.contains_key(&asset) {
-                continue;
-            }
-            let mesh = store
-                .mesh(instance.mesh())
-                .map_err(|_| GpuAssetError::MissingAsset { asset })?;
-            let index_count = u32::try_from(mesh.indices().len())
-                .map_err(|_| GpuAssetError::IndexCountOverflow { asset })?;
-            let vertex_bytes = mesh
-                .vertices()
-                .iter()
-                .flat_map(|vertex| {
-                    vertex
-                        .position()
-                        .iter()
-                        .copied()
-                        .chain(vertex.normal().copied().unwrap_or([0.0, 0.0, 1.0]))
-                })
-                .flat_map(f32::to_ne_bytes)
-                .collect::<Vec<_>>();
-            let index_bytes = mesh
-                .indices()
-                .iter()
-                .copied()
-                .flat_map(u32::to_ne_bytes)
-                .collect::<Vec<_>>();
-            checked_buffer_size(
-                asset,
-                GpuBufferKind::Vertex,
-                vertex_bytes.len(),
-                device.limits().max_buffer_size,
-            )?;
-            checked_buffer_size(
-                asset,
-                GpuBufferKind::Index,
-                index_bytes.len(),
-                device.limits().max_buffer_size,
-            )?;
-            self.meshes.insert(
-                asset,
-                GpuMesh {
-                    vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("sge_render_mesh_vertices"),
-                        contents: &vertex_bytes,
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }),
-                    index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("sge_render_mesh_indices_u32"),
-                        contents: &index_bytes,
-                        usage: wgpu::BufferUsages::INDEX,
-                    }),
-                    index_count,
-                },
-            );
-        }
-        Ok(())
+        prepare_assets(&mut self.meshes, device, snapshot, store)
     }
 
     pub fn render_to_target(
@@ -209,6 +155,29 @@ impl WgpuRenderer {
             },
             snapshot,
             view,
+            RenderSettings::default(),
+        )
+    }
+
+    pub fn render_to_target_frame(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        target_view: &wgpu::TextureView,
+        target_size: [u32; 2],
+        frame: BackendFrame<'_>,
+    ) -> Result<(), RenderFrameError> {
+        self.render_to_target_with_clear(
+            device,
+            encoder,
+            FrameTarget {
+                view: target_view,
+                size: target_size,
+                clear_color: SURFACE_CLEAR_COLOR,
+            },
+            frame.snapshot,
+            frame.view,
+            frame.settings,
         )
     }
 
@@ -219,6 +188,7 @@ impl WgpuRenderer {
         target: FrameTarget<'_>,
         snapshot: &RenderSnapshot,
         view: RenderView,
+        settings: RenderSettings,
     ) -> Result<(), RenderFrameError> {
         validate_target_size(device, target.size)?;
         let (mut instance_bytes, batches) = self.prepare_instances(snapshot)?;
@@ -234,7 +204,7 @@ impl WgpuRenderer {
             }
             .into());
         }
-        let uniform_bytes = uniform_bytes(snapshot, view, target.size)?;
+        let uniform_bytes = uniform_bytes(snapshot, view, target.size, settings)?;
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("sge_render_frame_uniform"),
             contents: &uniform_bytes,
@@ -278,14 +248,22 @@ impl WgpuRenderer {
             timestamp_writes: None,
             multiview_mask: None,
         });
-        pass.set_pipeline(&self.mesh_pipeline);
         pass.set_bind_group(0, &frame_bind_group, &[]);
         pass.set_vertex_buffer(1, instance_buffer.slice(..));
-        for batch in batches {
-            let mesh = &self.meshes[&batch.asset];
-            pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-            pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..mesh.index_count, 0, batch.instances);
+        if settings.mode().has_fill() {
+            pass.set_pipeline(&self.mesh_pipeline);
+            draw_filled_batches(&mut pass, &self.meshes, &batches);
+        } else {
+            pass.set_pipeline(&self.depth_pipeline);
+            draw_filled_batches(&mut pass, &self.meshes, &batches);
+        }
+        if settings.mode().has_wireframe() {
+            pass.set_pipeline(&self.wireframe_pipeline);
+            for batch in &batches {
+                let mesh = &self.meshes[&batch.asset];
+                pass.set_vertex_buffer(0, mesh.wireframe_vertex_buffer.slice(..));
+                pass.draw(0..mesh.wireframe_vertex_count, batch.instances.clone());
+            }
         }
         Ok(())
     }
@@ -297,6 +275,25 @@ impl WgpuRenderer {
         target_size: [u32; 2],
         snapshot: &RenderSnapshot,
         view: RenderView,
+    ) -> Result<(), RenderFrameError> {
+        self.render_offscreen_with_settings(
+            device,
+            encoder,
+            target_size,
+            snapshot,
+            view,
+            RenderSettings::default(),
+        )
+    }
+
+    pub fn render_offscreen_with_settings(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        target_size: [u32; 2],
+        snapshot: &RenderSnapshot,
+        view: RenderView,
+        settings: RenderSettings,
     ) -> Result<(), RenderFrameError> {
         if self
             .offscreen
@@ -319,6 +316,7 @@ impl WgpuRenderer {
             },
             snapshot,
             view,
+            settings,
         );
         self.offscreen = Some(target);
         result
@@ -484,20 +482,15 @@ impl WgpuRenderer {
     }
 }
 
-pub(super) fn checked_buffer_size(
-    asset: AssetId,
-    buffer: GpuBufferKind,
-    size: usize,
-    max: u64,
-) -> Result<u64, GpuAssetError> {
-    let size = u64::try_from(size).unwrap_or(u64::MAX);
-    if size > max {
-        return Err(GpuAssetError::BufferTooLarge {
-            asset,
-            buffer,
-            size,
-            max,
-        });
+fn draw_filled_batches<'pass>(
+    pass: &mut wgpu::RenderPass<'pass>,
+    meshes: &'pass BTreeMap<AssetId, GpuMesh>,
+    batches: &'pass [DrawBatch],
+) {
+    for batch in batches {
+        let mesh = &meshes[&batch.asset];
+        pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+        pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        pass.draw_indexed(0..mesh.index_count, 0, batch.instances.clone());
     }
-    Ok(size)
 }

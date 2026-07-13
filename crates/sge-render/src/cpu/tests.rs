@@ -11,6 +11,7 @@ fn vertex(position: [f32; 4]) -> ClipVertex {
     ClipVertex {
         position: Vec4::from_array(position),
         normal: Vec3::Z,
+        barycentric: Vec3::ZERO,
     }
 }
 

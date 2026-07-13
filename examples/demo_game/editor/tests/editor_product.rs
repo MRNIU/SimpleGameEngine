@@ -220,6 +220,51 @@ fn editor_switches_from_wgpu_to_cpu_without_changing_scene_data()
 }
 
 #[test]
+#[ignore = "requires a real WGPU window; run with xvfb-run"]
+fn editor_switches_all_render_modes_without_changing_scene_data()
+-> Result<(), Box<dyn std::error::Error>> {
+    let project = TestProject::new()?;
+    let scene = project.path().join("Scenes/main.scene.ron");
+    let manifest = project.path().join("Content/asset_manifest.ron");
+    let descriptor = project.path().join("project.sge.ron");
+    let before = [
+        fs::read(&scene)?,
+        fs::read(&manifest)?,
+        fs::read(&descriptor)?,
+    ];
+    let screenshot = project.path().join("lit-wireframe.png");
+    let output = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
+        .arg(project.path())
+        .args([
+            "--ui-action",
+            "mode:unlit",
+            "--ui-action",
+            "mode:wireframe",
+            "--ui-action",
+            "mode:lit-wireframe",
+            "--screenshot",
+        ])
+        .arg(&screenshot)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "editor stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        report_value(&String::from_utf8(output.stdout)?, "ui_actions")?,
+        3
+    );
+    assert_eq!(fs::read(scene)?, before[0]);
+    assert_eq!(fs::read(manifest)?, before[1]);
+    assert_eq!(fs::read(descriptor)?, before[2]);
+    assert!(!project.path().join("Cook").exists());
+    assert!(!project.path().join("Stage").exists());
+    assert_editor_screenshot_size(&image::open(screenshot)?.to_rgba8());
+    Ok(())
+}
+
+#[test]
 #[ignore = "requires a real window manager; run with xvfb-run"]
 fn dirty_native_window_close_waits_for_user_confirmation() -> Result<(), Box<dyn std::error::Error>>
 {

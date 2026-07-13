@@ -3,8 +3,8 @@
 use sge_asset::AssetId;
 
 use super::{
+    assets::checked_buffer_size,
     errors::{GpuAssetError, GpuBufferKind},
-    renderer::checked_buffer_size,
 };
 
 #[test]

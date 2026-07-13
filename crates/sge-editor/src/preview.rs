@@ -10,7 +10,7 @@ use eframe::{egui, egui_wgpu, wgpu};
 use sge_asset::RuntimeAssetStore;
 use sge_render::{
     BackendFrame, BackendRenderContext, BackendRenderer, FramePerformanceMonitor,
-    FramePhaseDurations, RenderBackend,
+    FramePhaseDurations, RenderBackend, RenderMode, RenderSettings,
 };
 
 use crate::PreviewFrame;
@@ -40,6 +40,7 @@ impl PreviewGpuResources {
 struct PreviewCallback {
     frame: PreviewFrame,
     backend: RenderBackend,
+    render_mode: RenderMode,
     logical_size: [f32; 2],
     probe: PreviewProbe,
 }
@@ -58,6 +59,8 @@ impl egui_wgpu::CallbackTrait for PreviewCallback {
             return Vec::new();
         };
         let size = preview_target_size(self.backend, self.logical_size, screen.pixels_per_point);
+        let settings =
+            preview_render_settings(self.backend, self.render_mode, screen.pixels_per_point);
         gpu.renderer.set_backend(self.backend);
         gpu.select_assets(&self.frame.assets);
         let started = Instant::now();
@@ -74,12 +77,15 @@ impl egui_wgpu::CallbackTrait for PreviewCallback {
                     snapshot: &self.frame.snapshot,
                     view: self.frame.view,
                     assets: self.frame.assets.as_ref(),
+                    settings,
                 },
             )
             .map_err(|error| error.to_string());
         let duration = started.elapsed();
         match result {
-            Ok(()) => self.probe.mark_prepared(self.backend, duration),
+            Ok(()) => self
+                .probe
+                .mark_prepared(self.backend, self.render_mode, duration),
             Err(error) => self.probe.fail(error),
         }
         Vec::new()
@@ -97,7 +103,9 @@ impl egui_wgpu::CallbackTrait for PreviewCallback {
         };
         let started = Instant::now();
         match gpu.renderer.composite(pass) {
-            Ok(()) => self.probe.mark_painted(self.backend, started.elapsed()),
+            Ok(()) => self
+                .probe
+                .mark_painted(self.backend, self.render_mode, started.elapsed()),
             Err(error) => self.probe.fail(error.to_string()),
         }
     }
@@ -126,6 +134,7 @@ pub(crate) fn paint(
     frame: &PreviewFrame,
     probe: &PreviewProbe,
     backend: RenderBackend,
+    render_mode: RenderMode,
     paint_background: impl FnOnce(&egui::Ui, egui::Rect),
 ) -> egui::Response {
     let available = ui.available_size_before_wrap();
@@ -139,6 +148,7 @@ pub(crate) fn paint(
         PreviewCallback {
             frame: frame.clone(),
             backend,
+            render_mode,
             logical_size: [rect.width(), rect.height()],
             probe: probe.clone(),
         },
@@ -162,6 +172,21 @@ fn preview_target_size(
     logical_size.map(|points| (points * scale).round().max(1.0) as u32)
 }
 
+fn preview_render_settings(
+    backend: RenderBackend,
+    mode: RenderMode,
+    pixels_per_point: f32,
+) -> RenderSettings {
+    let width = match backend {
+        RenderBackend::Cpu => 1,
+        RenderBackend::Wgpu if pixels_per_point.is_finite() => {
+            pixels_per_point.ceil().clamp(1.0, u32::MAX as f32) as u32
+        }
+        RenderBackend::Wgpu => 1,
+    };
+    RenderSettings::new(mode, width)
+}
+
 fn store_replaced(current: Option<&Arc<RuntimeAssetStore>>, next: &Arc<RuntimeAssetStore>) -> bool {
     current.is_none_or(|current| !Arc::ptr_eq(current, next))
 }
@@ -183,13 +208,13 @@ struct PreviewProbeInner {
 
 #[derive(Debug, Default)]
 struct PreviewPerformanceState {
-    backend: Option<RenderBackend>,
+    render_path: Option<(RenderBackend, RenderMode)>,
     pending_prepare: Option<Duration>,
     monitor: FramePerformanceMonitor,
 }
 
 impl PreviewProbe {
-    fn mark_prepared(&self, backend: RenderBackend, duration: Duration) {
+    fn mark_prepared(&self, backend: RenderBackend, mode: RenderMode, duration: Duration) {
         self.inner.prepared.fetch_add(1, Ordering::Relaxed);
         match backend {
             RenderBackend::Wgpu => &self.inner.wgpu_prepared,
@@ -197,20 +222,20 @@ impl PreviewProbe {
         }
         .fetch_add(1, Ordering::Relaxed);
         if let Ok(mut performance) = self.inner.performance.lock() {
-            if performance.backend != Some(backend) {
+            if performance.render_path != Some((backend, mode)) {
                 performance.monitor.reset();
-                performance.backend = Some(backend);
+                performance.render_path = Some((backend, mode));
             }
             performance.pending_prepare = Some(duration);
         }
     }
 
-    fn mark_painted(&self, backend: RenderBackend, duration: Duration) {
+    fn mark_painted(&self, backend: RenderBackend, mode: RenderMode, duration: Duration) {
         self.inner.painted.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut performance) = self.inner.performance.lock() {
-            if performance.backend != Some(backend) {
+            if performance.render_path != Some((backend, mode)) {
                 performance.monitor.reset();
-                performance.backend = Some(backend);
+                performance.render_path = Some((backend, mode));
             }
             let render = performance
                 .pending_prepare
@@ -282,7 +307,7 @@ mod tests {
     use eframe::egui;
     use sge_asset::RuntimeAssetStore;
 
-    use super::{preview_target_size, store_replaced, viewport_sense};
+    use super::{preview_render_settings, preview_target_size, store_replaced, viewport_sense};
 
     #[test]
     fn wgpu_preview_uses_physical_pixels() {
@@ -297,6 +322,19 @@ mod tests {
         assert_eq!(
             preview_target_size(sge_render::RenderBackend::Cpu, [640.0, 360.0], 2.0),
             [640, 360]
+        );
+    }
+
+    #[test]
+    fn retina_wire_width_is_one_logical_point_for_both_backends() {
+        let mode = sge_render::RenderMode::Wireframe;
+        assert_eq!(
+            preview_render_settings(sge_render::RenderBackend::Wgpu, mode, 2.0),
+            sge_render::RenderSettings::new(mode, 2)
+        );
+        assert_eq!(
+            preview_render_settings(sge_render::RenderBackend::Cpu, mode, 2.0),
+            sge_render::RenderSettings::new(mode, 1)
         );
     }
 
@@ -374,24 +412,41 @@ mod tests {
         let probe = super::PreviewProbe::default();
         probe.mark_prepared(
             sge_render::RenderBackend::Wgpu,
+            sge_render::RenderMode::Lit,
             std::time::Duration::from_millis(2),
         );
         probe.mark_painted(
             sge_render::RenderBackend::Wgpu,
+            sge_render::RenderMode::Lit,
             std::time::Duration::from_millis(1),
         );
         probe.mark_prepared(
             sge_render::RenderBackend::Wgpu,
+            sge_render::RenderMode::Lit,
             std::time::Duration::from_millis(2),
         );
         probe.mark_painted(
             sge_render::RenderBackend::Wgpu,
+            sge_render::RenderMode::Lit,
             std::time::Duration::from_millis(1),
         );
         assert_eq!(probe.report().performance.sample_count(), 1);
 
         probe.mark_prepared(
             sge_render::RenderBackend::Cpu,
+            sge_render::RenderMode::Lit,
+            std::time::Duration::from_millis(4),
+        );
+        assert_eq!(probe.report().performance.sample_count(), 0);
+
+        probe.mark_painted(
+            sge_render::RenderBackend::Cpu,
+            sge_render::RenderMode::Lit,
+            std::time::Duration::from_millis(1),
+        );
+        probe.mark_prepared(
+            sge_render::RenderBackend::Cpu,
+            sge_render::RenderMode::Wireframe,
             std::time::Duration::from_millis(4),
         );
         assert_eq!(probe.report().performance.sample_count(), 0);

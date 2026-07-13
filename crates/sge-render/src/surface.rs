@@ -187,6 +187,7 @@ where
                 snapshot,
                 view,
                 assets,
+                settings: crate::RenderSettings::default(),
             },
         )?;
         let readback_buffer = readback.then(|| {

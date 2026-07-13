@@ -5,8 +5,8 @@ use sge_asset::{AssetId, AssetRef, MeshAsset, MeshVertex, RuntimeAssetStore};
 use sge_math::Transform;
 use sge_render::{
     Camera, FrameNotPreparedError, Light, Material, MeshRenderer, Projection, RenderFrameError,
-    RenderPlugin, RenderSnapshot, RenderTargetError, RenderView, ViewProjectionError, WgpuRenderer,
-    extract, view_projection_matrix,
+    RenderMode, RenderPlugin, RenderSettings, RenderSnapshot, RenderTargetError, RenderView,
+    ViewProjectionError, WgpuRenderer, extract, view_projection_matrix,
 };
 
 #[test]
@@ -104,6 +104,106 @@ fn real_offscreen_adapter_renders_non_clear_pixels() -> Result<(), Box<dyn std::
     queue.submit([encoder.finish()]);
     assert_red_pixel(&mapped_bytes(&device, &readback)?);
     Ok(())
+}
+
+#[test]
+fn real_offscreen_adapter_reads_back_all_render_modes() -> Result<(), Box<dyn std::error::Error>> {
+    let (device, queue) = gpu()?;
+    let (snapshot, view, store, _) = render_fixture()?;
+    let mut renderer = WgpuRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    renderer.prepare_assets(&device, &queue, &snapshot, &store)?;
+    let mut images = Vec::new();
+    for mode in RenderMode::ALL {
+        images.push(render_mode_readback(
+            &device,
+            &queue,
+            &mut renderer,
+            &snapshot,
+            view,
+            &store,
+            mode,
+        )?);
+    }
+    let changed = |bytes: &[u8]| {
+        let clear = &bytes[..4];
+        bytes
+            .chunks_exact(4)
+            .filter(|pixel| *pixel != clear)
+            .count()
+    };
+
+    assert!(images.iter().all(|image| changed(image) > 0));
+    assert!(changed(&images[2]) < changed(&images[1]));
+    assert_ne!(images[0], images[1]);
+    assert_ne!(images[0], images[3]);
+    Ok(())
+}
+
+#[test]
+fn wgpu_wireframe_readback_hides_far_edges() -> Result<(), Box<dyn std::error::Error>> {
+    let (device, queue) = gpu()?;
+    let asset = AssetId::new_v4();
+    let store = RuntimeAssetStore::from_meshes([(asset, triangle_mesh()?)])?;
+    let near = hidden_line_snapshot(asset, &store, false)?;
+    let hidden = hidden_line_snapshot(asset, &store, true)?;
+    let near_view = RenderView::from_active_camera(&near)?;
+    let hidden_view = RenderView::from_active_camera(&hidden)?;
+    let mut renderer = WgpuRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    renderer.prepare_assets(&device, &queue, &hidden, &store)?;
+    let near = render_mode_readback(
+        &device,
+        &queue,
+        &mut renderer,
+        &near,
+        near_view,
+        &store,
+        RenderMode::Wireframe,
+    )?;
+    let hidden = render_mode_readback(
+        &device,
+        &queue,
+        &mut renderer,
+        &hidden,
+        hidden_view,
+        &store,
+        RenderMode::Wireframe,
+    )?;
+
+    assert_eq!(
+        hidden, near,
+        "far edges must stay hidden behind the near face"
+    );
+    Ok(())
+}
+
+fn render_mode_readback(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    renderer: &mut WgpuRenderer,
+    snapshot: &RenderSnapshot,
+    view: RenderView,
+    store: &RuntimeAssetStore,
+    mode: RenderMode,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let size = [64, 64];
+    let target = target_texture(device, size);
+    let readback = readback_buffer(device, size);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+    renderer.render_to_target_frame(
+        device,
+        &mut encoder,
+        &target.create_view(&Default::default()),
+        size,
+        sge_render::BackendFrame {
+            snapshot,
+            view,
+            assets: store,
+            settings: RenderSettings::new(mode, 1),
+        },
+    )?;
+    copy_to_readback(&mut encoder, &target, &readback);
+    queue.submit([encoder.finish()]);
+    mapped_bytes(device, &readback)
 }
 
 #[test]
@@ -313,6 +413,41 @@ fn render_fixture()
     let snapshot = extract(app.world(), &store)?;
     let view = RenderView::from_active_camera(&snapshot)?;
     Ok((snapshot, view, store, asset))
+}
+
+fn hidden_line_snapshot(
+    asset: AssetId,
+    store: &RuntimeAssetStore,
+    include_hidden_far_mesh: bool,
+) -> Result<RenderSnapshot, Box<dyn std::error::Error>> {
+    let mut app = EngineApp::new();
+    app.add_plugin(RenderPlugin)?;
+    app.finish()?;
+    {
+        let mut world = app.world_initializer()?;
+        let camera = world.spawn();
+        world.insert(camera, Transform::identity())?;
+        world.insert(
+            camera,
+            Camera::new(
+                true,
+                Projection::Perspective,
+                std::f32::consts::FRAC_PI_2,
+                10.0,
+                0.1,
+                100.0,
+            ),
+        )?;
+        for (translation, color) in std::iter::once(([0.0, 0.0, 2.0], [1.0, 0.0, 0.0, 1.0]))
+            .chain(include_hidden_far_mesh.then_some(([0.0, 0.0, 3.0], [0.0, 0.0, 1.0, 1.0])))
+        {
+            let mesh = world.spawn();
+            world.insert(mesh, Transform::from_translation(translation))?;
+            world.insert(mesh, MeshRenderer::new(AssetRef::new(asset)))?;
+            world.insert(mesh, Material::new(color))?;
+        }
+    }
+    Ok(extract(app.world(), store)?)
 }
 
 fn triangle_mesh() -> Result<MeshAsset, Box<dyn std::error::Error>> {

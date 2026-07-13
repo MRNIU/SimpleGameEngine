@@ -6,6 +6,7 @@ use sge_math::{Vec3, Vec4};
 pub(super) struct ClipVertex {
     pub(super) position: Vec4,
     pub(super) normal: Vec3,
+    pub(super) barycentric: Vec3,
 }
 
 impl ClipVertex {
@@ -13,6 +14,7 @@ impl ClipVertex {
         Self {
             position: self.position.lerp(other.position, amount),
             normal: self.normal.lerp(other.normal, amount),
+            barycentric: self.barycentric.lerp(other.barycentric, amount),
         }
     }
 }

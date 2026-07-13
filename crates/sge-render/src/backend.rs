@@ -5,7 +5,7 @@ use std::{fmt, str::FromStr};
 use sge_asset::RuntimeAssetStore;
 
 use crate::{
-    CpuRenderError, CpuRenderer, GpuAssetError, RenderFrameError, RenderSnapshot,
+    CpuRenderError, CpuRenderer, GpuAssetError, RenderFrameError, RenderSettings, RenderSnapshot,
     RenderTargetError, RenderView, WgpuRenderer,
 };
 
@@ -75,6 +75,7 @@ pub struct BackendFrame<'a> {
     pub snapshot: &'a RenderSnapshot,
     pub view: RenderView,
     pub assets: &'a RuntimeAssetStore,
+    pub settings: RenderSettings,
 }
 
 impl BackendRenderer {
@@ -115,19 +116,22 @@ impl BackendRenderer {
                     frame.snapshot,
                     frame.assets,
                 )?;
-                self.wgpu.render_to_target(
+                self.wgpu.render_to_target_frame(
                     context.device,
                     context.encoder,
                     target_view,
                     target_size,
-                    frame.snapshot,
-                    frame.view,
+                    frame,
                 )?;
             }
             RenderBackend::Cpu => {
-                let cpu_frame =
-                    self.cpu
-                        .render(target_size, frame.snapshot, frame.view, frame.assets)?;
+                let cpu_frame = self.cpu.render_with_settings(
+                    target_size,
+                    frame.snapshot,
+                    frame.view,
+                    frame.assets,
+                    frame.settings,
+                )?;
                 self.wgpu.upload_offscreen_rgba(
                     context.device,
                     context.queue,
@@ -177,12 +181,13 @@ impl BackendRenderer {
                     frame.snapshot,
                     frame.assets,
                 )?;
-                self.wgpu.render_offscreen(
+                self.wgpu.render_offscreen_with_settings(
                     context.device,
                     context.encoder,
                     target_size,
                     frame.snapshot,
                     frame.view,
+                    frame.settings,
                 )?;
             }
             RenderBackend::Cpu => {
@@ -191,6 +196,7 @@ impl BackendRenderer {
                     frame.snapshot,
                     frame.view,
                     frame.assets,
+                    frame.settings,
                 )?;
                 self.wgpu.upload_offscreen_rgba(
                     context.device,

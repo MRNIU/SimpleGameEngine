@@ -10,6 +10,7 @@ mod gpu;
 mod performance;
 mod plugin;
 mod projection;
+mod settings;
 mod snapshot;
 mod surface;
 
@@ -30,6 +31,7 @@ pub use performance::{
 };
 pub use plugin::RenderPlugin;
 pub use projection::view_projection_matrix;
+pub use settings::{RenderMode, RenderSettings};
 pub use snapshot::{
     RenderCamera, RenderLight, RenderMeshInstance, RenderSnapshot, RenderView, RenderViewError,
 };

@@ -297,6 +297,10 @@ fn parse_ui_action(value: &str) -> Result<sge_editor::EditorUiAction, String> {
         "build" => EditorUiAction::Build,
         "backend:wgpu" => EditorUiAction::SetRenderBackend(sge_editor::RenderBackend::Wgpu),
         "backend:cpu" => EditorUiAction::SetRenderBackend(sge_editor::RenderBackend::Cpu),
+        "mode:lit" => EditorUiAction::SetRenderMode(sge_editor::RenderMode::Lit),
+        "mode:unlit" => EditorUiAction::SetRenderMode(sge_editor::RenderMode::Unlit),
+        "mode:wireframe" => EditorUiAction::SetRenderMode(sge_editor::RenderMode::Wireframe),
+        "mode:lit-wireframe" => EditorUiAction::SetRenderMode(sge_editor::RenderMode::LitWireframe),
         "language:en" => EditorUiAction::SetLanguage(EditorLanguage::English),
         "language:zh-CN" => EditorUiAction::SetLanguage(EditorLanguage::SimplifiedChinese),
         _ => value

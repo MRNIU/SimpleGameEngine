@@ -2,7 +2,7 @@
 
 use sge_math::{Mat4, Quat, Transform, Vec3};
 
-use crate::{RenderSnapshot, RenderView};
+use crate::{RenderSettings, RenderSnapshot, RenderView};
 
 use super::errors::{RenderTargetError, ViewProjectionError};
 use crate::view_projection_matrix;
@@ -13,6 +13,7 @@ pub(super) fn uniform_bytes(
     snapshot: &RenderSnapshot,
     view: RenderView,
     target_size: [u32; 2],
+    settings: RenderSettings,
 ) -> Result<Vec<u8>, ViewProjectionError> {
     let matrix = view_projection_matrix(view, target_size)?;
     let (direction_intensity, color) =
@@ -31,6 +32,12 @@ pub(super) fn uniform_bytes(
         .into_iter()
         .chain(direction_intensity)
         .chain(color)
+        .chain([
+            settings.mode().shader_code(),
+            settings.wireframe_width_pixels() as f32,
+            0.0,
+            0.0,
+        ])
         .flat_map(f32::to_ne_bytes)
         .collect())
 }

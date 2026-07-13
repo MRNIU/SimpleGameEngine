@@ -43,6 +43,8 @@ run_ignored_exact demo-game-editor editor_product \
 run_ignored_exact demo-game-editor editor_product \
   editor_switches_from_wgpu_to_cpu_without_changing_scene_data
 run_ignored_exact demo-game-editor editor_product \
+  editor_switches_all_render_modes_without_changing_scene_data
+run_ignored_exact demo-game-editor editor_product \
   dirty_native_window_close_waits_for_user_confirmation
 run_ignored_exact demo-game-editor editor_product \
   internal_ui_tape_selects_hierarchy_and_reads_back_inspector

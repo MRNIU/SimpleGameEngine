@@ -1,5 +1,6 @@
 // Copyright The SimpleGameEngine Contributors
 
+mod assets;
 mod errors;
 mod frame;
 mod pipeline;

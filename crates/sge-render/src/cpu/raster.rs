@@ -11,11 +11,19 @@ const EDGE_EPSILON: f32 = 1.0e-6;
 pub(super) const RASTER_TILE_ROWS: usize = 32;
 
 #[derive(Debug, Clone, Copy)]
+pub(super) struct RasterTile {
+    pub width: u32,
+    pub first_row: u32,
+    pub last_row: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
 struct ScreenVertex {
     position: Vec2,
     depth: f32,
     inverse_w: f32,
     normal_over_w: Vec3,
+    barycentric: Vec3,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -42,6 +50,7 @@ pub(super) fn prepare_triangle(
             depth: ndc.z,
             inverse_w,
             normal_over_w: vertex.normal * inverse_w,
+            barycentric: vertex.barycentric,
         }
     });
     let area = edge(screen[0].position, screen[1].position, screen[2].position);
@@ -72,16 +81,15 @@ pub(super) fn prepare_triangle(
 
 pub(super) fn rasterize_triangle_tile(
     triangle: RasterTriangle,
-    width: u32,
-    first_row: u32,
-    last_row: u32,
+    tile: RasterTile,
     light: FrameLight,
+    lit: bool,
     colors: &mut [[f32; 4]],
     depths: &mut [f32],
 ) {
     let [min_x, min_y, max_x, max_y] = triangle.bounds;
-    let min_y = min_y.max(first_row);
-    let max_y = max_y.min(last_row);
+    let min_y = min_y.max(tile.first_row);
+    let max_y = max_y.min(tile.last_row);
     if min_y >= max_y {
         return;
     }
@@ -111,7 +119,7 @@ pub(super) fn rasterize_triangle_tile(
             let depth = weights[0] * triangle.screen[0].depth
                 + weights[1] * triangle.screen[1].depth
                 + weights[2] * triangle.screen[2].depth;
-            let index = (y - first_row) as usize * width as usize + x as usize;
+            let index = (y - tile.first_row) as usize * tile.width as usize + x as usize;
             if !(0.0..=1.0).contains(&depth) || depth > depths[index] {
                 continue;
             }
@@ -126,10 +134,118 @@ pub(super) fn rasterize_triangle_tile(
                 + weights[2] * triangle.screen[2].normal_over_w)
                 / inverse_w)
                 .normalize_or_zero();
-            colors[index] = alpha_blend(light.shade(normal, triangle.material), colors[index]);
+            let source = if lit {
+                light.shade(normal, triangle.material)
+            } else {
+                triangle.material
+            };
+            colors[index] = alpha_blend(source, colors[index]);
             depths[index] = depth;
         }
     }
+}
+
+pub(super) fn rasterize_triangle_depth_tile(
+    triangle: RasterTriangle,
+    tile: RasterTile,
+    depths: &mut [f32],
+) {
+    visit_triangle_pixels(triangle, tile, |index, _, depth| {
+        if depth <= depths[index] {
+            depths[index] = depth;
+        }
+    });
+}
+
+pub(super) fn rasterize_triangle_wire_tile(
+    triangle: RasterTriangle,
+    tile: RasterTile,
+    width_pixels: f32,
+    color: [f32; 4],
+    colors: &mut [[f32; 4]],
+    depths: &[f32],
+) {
+    visit_triangle_pixels(triangle, tile, |index, point, depth| {
+        if depth > depths[index] + 1.0e-5 {
+            return;
+        }
+        let barycentric = interpolate_barycentric(triangle, barycentric_weights(triangle, point));
+        let barycentric_x =
+            interpolate_barycentric(triangle, barycentric_weights(triangle, point + Vec2::X));
+        let barycentric_y =
+            interpolate_barycentric(triangle, barycentric_weights(triangle, point + Vec2::Y));
+        let gradient_x = barycentric_x - barycentric;
+        let gradient_y = barycentric_y - barycentric;
+        let edge_distance = (0..3)
+            .map(|index| {
+                barycentric[index].abs()
+                    / gradient_x[index].hypot(gradient_y[index]).max(f32::EPSILON)
+            })
+            .fold(f32::INFINITY, f32::min);
+        if edge_distance <= width_pixels {
+            colors[index] = alpha_blend(color, colors[index]);
+        }
+    });
+}
+
+fn visit_triangle_pixels(
+    triangle: RasterTriangle,
+    tile: RasterTile,
+    mut visit: impl FnMut(usize, Vec2, f32),
+) {
+    let [min_x, min_y, max_x, max_y] = triangle.bounds;
+    let min_y = min_y.max(tile.first_row);
+    let max_y = max_y.min(tile.last_row);
+    if min_y >= max_y {
+        return;
+    }
+    for y in min_y..max_y {
+        for x in min_x..max_x {
+            let point = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
+            let weights = barycentric_weights(triangle, point);
+            if weights.iter().any(|weight| *weight < -EDGE_EPSILON) {
+                continue;
+            }
+            let depth = interpolate_depth(triangle, weights);
+            if !(0.0..=1.0).contains(&depth) {
+                continue;
+            }
+            let index = (y - tile.first_row) as usize * tile.width as usize + x as usize;
+            visit(index, point, depth);
+        }
+    }
+}
+
+fn barycentric_weights(triangle: RasterTriangle, point: Vec2) -> [f32; 3] {
+    [
+        edge(
+            triangle.screen[1].position,
+            triangle.screen[2].position,
+            point,
+        ) / triangle.area,
+        edge(
+            triangle.screen[2].position,
+            triangle.screen[0].position,
+            point,
+        ) / triangle.area,
+        edge(
+            triangle.screen[0].position,
+            triangle.screen[1].position,
+            point,
+        ) / triangle.area,
+    ]
+}
+
+fn interpolate_depth(triangle: RasterTriangle, weights: [f32; 3]) -> f32 {
+    weights[0] * triangle.screen[0].depth
+        + weights[1] * triangle.screen[1].depth
+        + weights[2] * triangle.screen[2].depth
+}
+
+fn interpolate_barycentric(triangle: RasterTriangle, weights: [f32; 3]) -> Vec3 {
+    weights[0] * triangle.screen[0].barycentric
+        + weights[1] * triangle.screen[1].barycentric
+        + weights[2] * triangle.screen[2].barycentric
 }
 
 fn edge(start: Vec2, end: Vec2, point: Vec2) -> f32 {

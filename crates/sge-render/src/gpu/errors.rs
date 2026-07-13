@@ -7,6 +7,7 @@ use crate::RenderViewError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuBufferKind {
     Vertex,
+    WireframeVertex,
     Index,
 }
 

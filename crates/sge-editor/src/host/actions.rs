@@ -236,6 +236,10 @@ impl EditorApp {
                 self.backend = backend;
                 Ok(())
             }
+            EditorUiAction::SetRenderMode(mode) => {
+                self.render_mode = mode;
+                Ok(())
+            }
             EditorUiAction::SetLanguage(language) => {
                 if language == crate::EditorLanguage::SimplifiedChinese && !self.cjk_font_available
                 {
