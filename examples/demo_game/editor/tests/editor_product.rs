@@ -281,7 +281,7 @@ fn internal_ui_tape_edits_saves_plays_stops_and_reads_back()
 
 #[test]
 #[ignore = "requires a real WGPU window; run with xvfb-run"]
-fn internal_ui_tape_rejects_authoring_mutation_during_play()
+fn internal_ui_tape_rejects_authoring_and_build_actions_during_play()
 -> Result<(), Box<dyn std::error::Error>> {
     let project = TestProject::new()?;
     let manifest = project.path().join("Content/asset_manifest.ron");
@@ -302,6 +302,19 @@ fn internal_ui_tape_rejects_authoring_mutation_during_play()
     assert_eq!(fs::read(manifest)?, before_manifest);
     assert_eq!(fs::read_dir(meshes)?.count(), before_meshes);
     assert_editor_screenshot_size(&image::open(screenshot)?.to_rgba8());
+
+    let build_screenshot = project.path().join("play-build-rejected.png");
+    let output = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
+        .arg(project.path())
+        .args(["--play", "--ui-action", "build", "--screenshot"])
+        .arg(&build_screenshot)
+        .output()?;
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)?
+            .contains("UiActionsIncomplete { expected: 1, completed: 0 }")
+    );
+    assert_editor_screenshot_size(&image::open(build_screenshot)?.to_rgba8());
     Ok(())
 }
 

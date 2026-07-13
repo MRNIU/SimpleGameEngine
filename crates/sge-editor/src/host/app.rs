@@ -149,7 +149,16 @@ impl eframe::App for EditorApp {
                         if ui.button("Stop").clicked() {
                             let _ = self.apply_ui_action(EditorUiAction::StopPlay);
                         }
-                    } else if ui.button("Play").clicked() {
+                    } else if ui
+                        .add_enabled(
+                            !self
+                                .build
+                                .as_ref()
+                                .is_some_and(super::BuildProcess::is_running),
+                            egui::Button::new("Play"),
+                        )
+                        .clicked()
+                    {
                         let _ = self.apply_ui_action(EditorUiAction::StartPlay);
                     }
                     self.build_controls(ui);

@@ -196,6 +196,8 @@ impl EditorViewport {
         response: &egui::Response,
         session: &EditSession,
     ) -> bool {
+        let keyboard_capture =
+            viewport_keyboard_capture(response.has_focus(), ui.ctx().text_edit_focused());
         let (
             delta,
             primary_down,
@@ -214,8 +216,8 @@ impl EditorViewport {
                 input.pointer.secondary_down(),
                 input.modifiers.alt,
                 input.smooth_scroll_delta.y,
-                input.key_pressed(egui::Key::Escape),
-                input.key_pressed(egui::Key::F),
+                keyboard_capture && input.key_pressed(egui::Key::Escape),
+                keyboard_capture && input.key_pressed(egui::Key::F),
                 input.stable_dt,
             )
         });
@@ -293,7 +295,7 @@ impl EditorViewport {
                 self.sync_pivot_from_position();
             }
         }
-        if response.hovered() && secondary_down {
+        if keyboard_capture && response.hovered() && secondary_down {
             let movement = ui.input(|input| {
                 let axis = |positive, negative| {
                     f32::from(input.key_down(positive)) - f32::from(input.key_down(negative))
@@ -327,8 +329,7 @@ impl EditorViewport {
     }
 
     fn update_mode(&mut self, ui: &egui::Ui, response: &egui::Response) {
-        if !response.has_focus()
-            || ui.ctx().text_edit_focused()
+        if !viewport_keyboard_capture(response.has_focus(), ui.ctx().text_edit_focused())
             || ui.input(|input| input.pointer.secondary_down())
         {
             return;
@@ -510,6 +511,10 @@ impl EditorViewport {
         }
         Ok(true)
     }
+}
+
+fn viewport_keyboard_capture(has_focus: bool, text_edit_focused: bool) -> bool {
+    has_focus && !text_edit_focused
 }
 
 fn transform_for_drag(mut drag: GizmoDrag, pointer: egui::Pos2) -> Transform {
@@ -1182,6 +1187,13 @@ mod tests {
         assert_eq!(GizmoMode::Move.next(), GizmoMode::Rotate);
         assert_eq!(GizmoMode::Rotate.next(), GizmoMode::Scale);
         assert_eq!(GizmoMode::Scale.next(), GizmoMode::Move);
+    }
+
+    #[test]
+    fn viewport_keyboard_requires_its_own_focus_and_no_text_editor() {
+        assert!(viewport_keyboard_capture(true, false));
+        assert!(!viewport_keyboard_capture(false, false));
+        assert!(!viewport_keyboard_capture(true, true));
     }
 
     #[test]

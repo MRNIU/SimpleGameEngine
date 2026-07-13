@@ -11,7 +11,7 @@ use super::{EditorApp, EditorUiAction};
 
 impl EditorApp {
     fn build_request_state(&self) -> BuildRequestState {
-        build_request_state(&self.session)
+        build_request_state(&self.session, self.play.is_some())
     }
 
     fn start_build(&mut self) -> Result<(), String> {
@@ -39,6 +39,9 @@ impl EditorApp {
                 self.session.descriptor().default_authoring_scene(),
                 self.session.scene_path()
             )),
+            BuildRequestState::PlayRunning => {
+                Err("Build is unavailable while Play is running".to_owned())
+            }
         }
     }
 
@@ -90,6 +93,15 @@ impl EditorApp {
     }
 
     pub(super) fn start_play(&mut self) -> Result<(), String> {
+        if let Some(error) = play_request_error(
+            self.build
+                .as_ref()
+                .is_some_and(super::BuildProcess::is_running),
+        ) {
+            let error = error.to_owned();
+            self.last_error = Some(error.clone());
+            return Err(error);
+        }
         match self.session.start_play() {
             Ok(play) => {
                 self.play = Some(play);
@@ -229,7 +241,7 @@ impl EditorApp {
         };
         let start = ui
             .add_enabled(
-                !build.is_running() && !self.pending_build_confirmation,
+                self.play.is_none() && !build.is_running() && !self.pending_build_confirmation,
                 egui::Button::new("Build"),
             )
             .clicked();
@@ -287,10 +299,13 @@ enum BuildRequestState {
     Ready,
     RequiresSave,
     WrongScene,
+    PlayRunning,
 }
 
-fn build_request_state(session: &EditSession) -> BuildRequestState {
-    if session.scene_path() != session.descriptor().default_authoring_scene() {
+fn build_request_state(session: &EditSession, play_running: bool) -> BuildRequestState {
+    if play_running {
+        BuildRequestState::PlayRunning
+    } else if session.scene_path() != session.descriptor().default_authoring_scene() {
         BuildRequestState::WrongScene
     } else if session.is_dirty() {
         BuildRequestState::RequiresSave
@@ -300,10 +315,14 @@ fn build_request_state(session: &EditSession) -> BuildRequestState {
 }
 
 fn save_for_build(session: &mut EditSession) -> Result<(), String> {
-    if build_request_state(session) != BuildRequestState::RequiresSave {
+    if build_request_state(session, false) != BuildRequestState::RequiresSave {
         return Err("Build save confirmation is no longer valid".to_owned());
     }
     session.save().map_err(|error| error.to_string())
+}
+
+fn play_request_error(build_running: bool) -> Option<&'static str> {
+    build_running.then_some("Play is unavailable while Build is running")
 }
 
 pub(super) fn current_frame(
@@ -322,25 +341,38 @@ mod tests {
 
     use sge_project::ProjectPath;
 
-    use super::{BuildRequestState, build_request_state, save_for_build};
+    use super::{BuildRequestState, build_request_state, play_request_error, save_for_build};
     use crate::EditSession;
 
     #[test]
     fn build_requires_the_saved_project_entry_scene() -> Result<(), Box<dyn std::error::Error>> {
         let project = TestProject::new("build-policy")?;
         let mut session = EditSession::open(demo_game::GAME, project.path())?;
-        assert_eq!(build_request_state(&session), BuildRequestState::Ready);
+        assert_eq!(
+            build_request_state(&session, false),
+            BuildRequestState::Ready
+        );
+        assert_eq!(
+            build_request_state(&session, true),
+            BuildRequestState::PlayRunning
+        );
 
         session.create_entity("Unsaved")?;
         assert_eq!(
-            build_request_state(&session),
+            build_request_state(&session, false),
             BuildRequestState::RequiresSave
         );
         save_for_build(&mut session)?;
-        assert_eq!(build_request_state(&session), BuildRequestState::Ready);
+        assert_eq!(
+            build_request_state(&session, false),
+            BuildRequestState::Ready
+        );
 
         session.save_as(ProjectPath::new("Scenes/alternate.scene.ron")?)?;
-        assert_eq!(build_request_state(&session), BuildRequestState::WrongScene);
+        assert_eq!(
+            build_request_state(&session, false),
+            BuildRequestState::WrongScene
+        );
         Ok(())
     }
 
@@ -355,10 +387,19 @@ mod tests {
         assert!(error.contains("Scenes/main.scene.ron"), "{error}");
         assert!(session.is_dirty());
         assert_eq!(
-            build_request_state(&session),
+            build_request_state(&session, false),
             BuildRequestState::RequiresSave
         );
         Ok(())
+    }
+
+    #[test]
+    fn play_and_build_are_mutually_exclusive() {
+        assert_eq!(
+            play_request_error(true),
+            Some("Play is unavailable while Build is running")
+        );
+        assert_eq!(play_request_error(false), None);
     }
 
     struct TestProject {
