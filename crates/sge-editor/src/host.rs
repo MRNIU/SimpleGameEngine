@@ -174,6 +174,7 @@ pub fn run(
                 pending_replacement: None,
                 viewport,
                 immersive_viewport: false,
+                panel_layout: panels::PanelLayout::default(),
             }))
         }),
     )
@@ -237,6 +238,7 @@ struct EditorApp {
     pending_replacement: Option<ReplacementDialog>,
     viewport: EditorViewport,
     immersive_viewport: bool,
+    panel_layout: panels::PanelLayout,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -551,6 +553,8 @@ impl eframe::App for EditorApp {
         }
 
         if !self.immersive_viewport {
+            self.panel_layout
+                .begin_frame(ui.ctx(), ui.available_width());
             self.inspector(ui);
             self.hierarchy(ui);
         }

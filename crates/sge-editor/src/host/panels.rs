@@ -6,22 +6,107 @@ use sge_scene::{AuthoringEntity, SceneEntityId, SceneName};
 use super::EditorApp;
 use crate::{inspector, inspector_ui};
 
-const MIN_HIERARCHY_WIDTH: f32 = 160.0;
-const MIN_INSPECTOR_WIDTH: f32 = 240.0;
-const MIN_VIEWPORT_WIDTH: f32 = 240.0;
+const HIERARCHY_PANEL_ID: &str = "hierarchy";
+const INSPECTOR_PANEL_ID: &str = "inspector";
+const DEFAULT_HIERARCHY_FRACTION: f32 = 0.18;
+const DEFAULT_INSPECTOR_FRACTION: f32 = 0.24;
+const MIN_HIERARCHY_FRACTION: f32 = 0.12;
+const MIN_INSPECTOR_FRACTION: f32 = 0.18;
+const MIN_VIEWPORT_FRACTION: f32 = 0.40;
+const MAX_SIDE_PANEL_FRACTION: f32 = 0.35;
+
+pub(super) struct PanelLayout {
+    total_width: Option<f32>,
+    hierarchy_fraction: f32,
+    inspector_fraction: f32,
+}
+
+#[derive(Clone, Copy)]
+struct PanelSizes {
+    default: f32,
+    minimum: f32,
+    maximum: f32,
+}
+
+impl Default for PanelLayout {
+    fn default() -> Self {
+        Self {
+            total_width: None,
+            hierarchy_fraction: DEFAULT_HIERARCHY_FRACTION,
+            inspector_fraction: DEFAULT_INSPECTOR_FRACTION,
+        }
+    }
+}
+
+impl PanelLayout {
+    pub(super) fn begin_frame(&mut self, context: &egui::Context, total_width: f32) {
+        if self
+            .total_width
+            .is_some_and(|previous| (previous - total_width).abs() > 0.5)
+        {
+            context.data_mut(|data| {
+                data.remove::<egui::containers::PanelState>(egui::Id::new(HIERARCHY_PANEL_ID));
+                data.remove::<egui::containers::PanelState>(egui::Id::new(INSPECTOR_PANEL_ID));
+            });
+        }
+        self.total_width = Some(total_width.max(f32::EPSILON));
+    }
+
+    fn inspector_sizes(&self) -> PanelSizes {
+        self.sizes(
+            self.inspector_fraction,
+            MIN_INSPECTOR_FRACTION,
+            MAX_SIDE_PANEL_FRACTION.min(1.0 - MIN_HIERARCHY_FRACTION - MIN_VIEWPORT_FRACTION),
+        )
+    }
+
+    fn hierarchy_sizes(&self) -> PanelSizes {
+        self.sizes(
+            self.hierarchy_fraction,
+            MIN_HIERARCHY_FRACTION,
+            MAX_SIDE_PANEL_FRACTION
+                .min(1.0 - self.inspector_fraction - MIN_VIEWPORT_FRACTION)
+                .max(MIN_HIERARCHY_FRACTION),
+        )
+    }
+
+    fn sizes(&self, default: f32, minimum: f32, maximum: f32) -> PanelSizes {
+        let total_width = self.total_width.unwrap_or(1.0);
+        PanelSizes {
+            default: total_width * default.clamp(minimum, maximum),
+            minimum: total_width * minimum,
+            maximum: total_width * maximum,
+        }
+    }
+
+    fn record_inspector(&mut self, width: f32) {
+        self.inspector_fraction = self
+            .width_fraction(width)
+            .clamp(MIN_INSPECTOR_FRACTION, MAX_SIDE_PANEL_FRACTION);
+    }
+
+    fn record_hierarchy(&mut self, width: f32) {
+        let maximum = MAX_SIDE_PANEL_FRACTION
+            .min(1.0 - self.inspector_fraction - MIN_VIEWPORT_FRACTION)
+            .max(MIN_HIERARCHY_FRACTION);
+        self.hierarchy_fraction = self
+            .width_fraction(width)
+            .clamp(MIN_HIERARCHY_FRACTION, maximum);
+    }
+
+    fn width_fraction(&self, width: f32) -> f32 {
+        width / self.total_width.unwrap_or(1.0)
+    }
+}
 
 impl EditorApp {
     pub(super) fn hierarchy(&mut self, ui: &mut egui::Ui) {
-        let max_width = side_panel_max_width(
-            ui.available_width(),
-            MIN_HIERARCHY_WIDTH,
-            MIN_VIEWPORT_WIDTH,
-        );
-        egui::Panel::left("hierarchy")
+        let sizes = self.panel_layout.hierarchy_sizes();
+        let response = egui::Panel::left(HIERARCHY_PANEL_ID)
             .resizable(true)
-            .default_size(230.0)
-            .min_size(MIN_HIERARCHY_WIDTH)
-            .max_size(max_width)
+            .default_size(sizes.default)
+            .min_size(sizes.minimum)
+            .max_size(sizes.maximum)
             .show(ui, |ui| {
                 ui.heading("Hierarchy");
                 ui.add_enabled_ui(self.play.is_none(), |ui| {
@@ -116,23 +201,23 @@ impl EditorApp {
                 }
                 fill_resizable_panel(ui);
             });
+        self.panel_layout
+            .record_hierarchy(response.response.rect.width());
     }
 
     pub(super) fn inspector(&mut self, ui: &mut egui::Ui) {
-        let max_width = side_panel_max_width(
-            ui.available_width(),
-            MIN_INSPECTOR_WIDTH,
-            MIN_HIERARCHY_WIDTH + MIN_VIEWPORT_WIDTH,
-        );
-        egui::Panel::right("inspector")
+        let sizes = self.panel_layout.inspector_sizes();
+        let response = egui::Panel::right(INSPECTOR_PANEL_ID)
             .resizable(true)
-            .default_size(300.0)
-            .min_size(MIN_INSPECTOR_WIDTH)
-            .max_size(max_width)
+            .default_size(sizes.default)
+            .min_size(sizes.minimum)
+            .max_size(sizes.maximum)
             .show(ui, |ui| {
                 self.inspector_contents(ui);
                 fill_resizable_panel(ui);
             });
+        self.panel_layout
+            .record_inspector(response.response.rect.width());
     }
 
     fn inspector_contents(&mut self, ui: &mut egui::Ui) {
@@ -290,18 +375,9 @@ fn fill_resizable_panel(ui: &mut egui::Ui) {
     ui.take_available_space();
 }
 
-fn side_panel_max_width(available_width: f32, minimum: f32, reserved_width: f32) -> f32 {
-    (available_width - reserved_width)
-        .max(minimum)
-        .min(available_width)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        MIN_HIERARCHY_WIDTH, MIN_INSPECTOR_WIDTH, MIN_VIEWPORT_WIDTH, fill_resizable_panel,
-        side_panel_max_width,
-    };
+    use super::{HIERARCHY_PANEL_ID, INSPECTOR_PANEL_ID, PanelLayout, fill_resizable_panel};
     use eframe::egui;
 
     #[test]
@@ -332,22 +408,56 @@ mod tests {
     }
 
     #[test]
-    fn side_panels_reserve_the_other_panel_and_viewport() {
-        let window_width = 1_000.0;
-        let inspector_max = side_panel_max_width(
-            window_width,
-            MIN_INSPECTOR_WIDTH,
-            MIN_HIERARCHY_WIDTH + MIN_VIEWPORT_WIDTH,
-        );
-        let hierarchy_max = side_panel_max_width(
-            window_width - inspector_max,
-            MIN_HIERARCHY_WIDTH,
-            MIN_VIEWPORT_WIDTH,
-        );
+    fn percent_layout_scales_all_columns_with_the_window() {
+        let context = egui::Context::default();
+        let mut layout = PanelLayout::default();
+        let small = panel_widths(&context, &mut layout, 1_000.0);
+        let large = panel_widths(&context, &mut layout, 2_000.0);
 
-        let viewport_width = window_width - inspector_max - hierarchy_max;
-        assert!(viewport_width >= MIN_VIEWPORT_WIDTH);
-        assert!(inspector_max >= MIN_INSPECTOR_WIDTH);
-        assert!(hierarchy_max >= MIN_HIERARCHY_WIDTH);
+        assert!((large.0 - small.0 * 2.0).abs() <= 2.0);
+        assert!((large.1 - small.1 * 2.0).abs() <= 2.0);
+        assert!((large.2 - small.2 * 2.0).abs() <= 2.0);
+        assert!(small.2 >= 400.0);
+    }
+
+    fn panel_widths(
+        context: &egui::Context,
+        layout: &mut PanelLayout,
+        width: f32,
+    ) -> (f32, f32, f32) {
+        let mut widths = (0.0, 0.0, 0.0);
+        let _ = context.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(width, 600.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                layout.begin_frame(ui.ctx(), ui.available_width());
+                let inspector = layout.inspector_sizes();
+                let response = egui::Panel::right(INSPECTOR_PANEL_ID)
+                    .resizable(true)
+                    .default_size(inspector.default)
+                    .min_size(inspector.minimum)
+                    .max_size(inspector.maximum)
+                    .show(ui, fill_resizable_panel);
+                widths.1 = response.response.rect.width();
+                layout.record_inspector(widths.1);
+
+                let hierarchy = layout.hierarchy_sizes();
+                let response = egui::Panel::left(HIERARCHY_PANEL_ID)
+                    .resizable(true)
+                    .default_size(hierarchy.default)
+                    .min_size(hierarchy.minimum)
+                    .max_size(hierarchy.maximum)
+                    .show(ui, fill_resizable_panel);
+                widths.0 = response.response.rect.width();
+                layout.record_hierarchy(widths.0);
+                widths.2 = ui.available_width();
+            },
+        );
+        widths
     }
 }
