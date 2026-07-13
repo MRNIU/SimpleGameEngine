@@ -19,4 +19,6 @@ pub use plugin::RenderPlugin;
 pub use snapshot::{
     RenderCamera, RenderLight, RenderMeshInstance, RenderSnapshot, RenderView, RenderViewError,
 };
-pub use surface::{SkippedSurfaceFrame, SurfaceRenderError, SurfaceRenderOutcome, SurfaceRenderer};
+pub use surface::{
+    SkippedSurfaceFrame, SurfaceReadback, SurfaceRenderError, SurfaceRenderOutcome, SurfaceRenderer,
+};

@@ -87,6 +87,9 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-e
 # Editor内部Build tape：等待真实Build/Stage成功后再读回窗口buffer
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-editor --test editor_product internal_ui_tape_waits_for_build_before_readback -- --ignored --exact'
 
+# Player从present前的surface texture直接读回完整RGBA窗口
+docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-player --test demo_product game_specific_player_reads_back_presented_surface -- --ignored --exact'
+
 # 查看 game-specific host 参数
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p demo-game-player -- --help'
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p demo-game-editor -- --help'
@@ -141,6 +144,9 @@ cargo run -p sge-build --bin sge -- build examples/demo_game
 STAGE=build/demo-game-build/dev/Stage
 PLAYER_REL="$(sed -n 's/^[[:space:]]*executable_path: "\([^"]*\)",$/\1/p' "$STAGE/stage_manifest.ron")"
 "$STAGE/$PLAYER_REL"
+
+# 不依赖系统录屏，从Player surface texture直接保存PNG后退出
+"$STAGE/$PLAYER_REL" --screenshot target/tmp/player.png
 ```
 
 Editor打开project时会生成ignored import cache；Build输出位于ignored `build/`。Player从Stage同级runtime自定位，不需要source project或OBJ parser。

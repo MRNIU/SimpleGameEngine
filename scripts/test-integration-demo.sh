@@ -20,5 +20,7 @@ xvfb-run -a cargo test -p demo-game-editor --test editor_product \
   internal_ui_tape_waits_for_build_before_readback -- --ignored --exact
 xvfb-run -a cargo test -p demo-game-editor --test editor_product \
   game_specific_editor_plays_and_paints_preview -- --ignored --exact
+xvfb-run -a cargo test -p demo-game-player --test demo_product \
+  game_specific_player_reads_back_presented_surface -- --ignored --exact
 xvfb-run -a cargo test -p demo-game-build --test integration_demo \
   independent_demo_closes_the_complete_engine_spine -- --ignored --exact

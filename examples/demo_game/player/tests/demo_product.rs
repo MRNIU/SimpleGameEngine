@@ -59,9 +59,42 @@ fn player_cli_has_stable_help() -> Result<(), Box<dyn std::error::Error>> {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout)?,
-        "Usage: demo-game-player [COOKED_ROOT] [--max-frames N]\n"
+        "Usage: demo-game-player [COOKED_ROOT] [--max-frames N] [--screenshot PATH]\n"
     );
     assert!(output.stderr.is_empty());
+    let conflict = Command::new(env!("CARGO_BIN_EXE_demo-game-player"))
+        .args(["--max-frames", "1", "--screenshot", "player.png"])
+        .output()?;
+    assert!(!conflict.status.success());
+    assert!(String::from_utf8(conflict.stderr)?.contains("cannot be combined"));
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires a real WGPU window; run with xvfb-run"]
+fn game_specific_player_reads_back_presented_surface() -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = CookedDemo::new("readback")?;
+    fixture.cook(&fixture.project()?)?;
+    fixture.delete_source()?;
+    let screenshot = fixture.base.join("player.png");
+    let output = Command::new(env!("CARGO_BIN_EXE_demo-game-player"))
+        .arg(fixture.path())
+        .arg("--screenshot")
+        .arg(&screenshot)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "player stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        report_value(&String::from_utf8(output.stdout)?, "presented_frames")?,
+        1
+    );
+    let screenshot = image::open(screenshot)?.to_rgba8();
+    assert_eq!(screenshot.dimensions(), (1280, 720));
+    let corner = *screenshot.get_pixel(0, 0);
+    assert!(screenshot.pixels().any(|pixel| *pixel != corner));
     Ok(())
 }
 

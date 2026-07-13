@@ -522,6 +522,7 @@ name = "demo-game-player"
 version = "0.1.0"
 dependencies = [
  "demo-game",
+ "image",
  "sge-asset",
  "sge-asset-pipeline",
  "sge-input",
@@ -2608,6 +2609,7 @@ dependencies = [
 name = "sge-player"
 version = "0.1.0"
 dependencies = [
+ "image",
  "sge-app",
  "sge-asset",
  "sge-asset-pipeline",

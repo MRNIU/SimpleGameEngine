@@ -11,6 +11,7 @@ sge-asset = { path = "../sge-asset" }
 sge-input = { path = "../input" }
 sge-render = { path = "../sge-render" }
 sge-scene = { path = "../sge-scene" }
+image.workspace = true
 thiserror.workspace = true
 winit.workspace = true
 

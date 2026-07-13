@@ -10,6 +10,7 @@ demo-game = { path = "../game" }
 sge-player = { path = "../../../crates/player" }
 
 [dev-dependencies]
+image.workspace = true
 sge-asset = { path = "../../../crates/sge-asset" }
 sge-asset-pipeline = { path = "../../../crates/sge-asset-pipeline" }
 sge-input = { path = "../../../crates/input" }

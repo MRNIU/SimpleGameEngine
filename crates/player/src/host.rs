@@ -1,6 +1,10 @@
 // Copyright The SimpleGameEngine Contributors
 
-use std::{path::Path, sync::Arc, time::Instant};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Instant,
+};
 
 use sge_app::{AdvanceError, GameDescriptor};
 use sge_render::{SkippedSurfaceFrame, SurfaceRenderError, SurfaceRenderOutcome, SurfaceRenderer};
@@ -14,10 +18,11 @@ use winit::{
 
 use crate::{PlayerFrameError, PlayerLoadError, PlayerSession, input::InputAccumulator};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunOptions {
     pub max_frames: Option<u64>,
     pub initial_size: [u32; 2],
+    pub screenshot: Option<PathBuf>,
 }
 
 impl Default for RunOptions {
@@ -25,6 +30,7 @@ impl Default for RunOptions {
         Self {
             max_frames: None,
             initial_size: [1280, 720],
+            screenshot: None,
         }
     }
 }
@@ -62,6 +68,9 @@ pub fn run_session(
 ) -> Result<RunReport, PlayerRunError> {
     if options.initial_size.contains(&0) {
         return Err(PlayerRunError::InvalidInitialSize);
+    }
+    if options.screenshot.is_some() && options.max_frames.is_some() {
+        return Err(PlayerRunError::ScreenshotWithFrameLimit);
     }
     let event_loop = create_event_loop()?;
     let mut host = PlayerHost::new(session, options);
@@ -144,9 +153,35 @@ impl PlayerHost {
         let Some(surface) = self.surface.as_mut() else {
             return;
         };
-        match surface.render(&snapshot, view, self.session.assets()) {
-            Ok(SurfaceRenderOutcome::Presented) => {
+        let render = if self.options.screenshot.is_some() {
+            surface.render_with_readback(&snapshot, view, self.session.assets())
+        } else {
+            surface
+                .render(&snapshot, view, self.session.assets())
+                .map(|outcome| (outcome, None))
+        };
+        match render {
+            Ok((SurfaceRenderOutcome::Presented, readback)) => {
                 self.presented_frames = self.presented_frames.saturating_add(1);
+                if let Some(path) = self.options.screenshot.take() {
+                    let Some(readback) = readback else {
+                        self.fail(event_loop, PlayerRunError::ScreenshotIncomplete);
+                        return;
+                    };
+                    if let Err(error) = image::save_buffer_with_format(
+                        &path,
+                        readback.rgba(),
+                        readback.size()[0],
+                        readback.size()[1],
+                        image::ColorType::Rgba8,
+                        image::ImageFormat::Png,
+                    ) {
+                        self.fail(event_loop, PlayerRunError::Screenshot(path, error));
+                        return;
+                    }
+                    event_loop.exit();
+                    return;
+                }
                 if self
                     .options
                     .max_frames
@@ -157,11 +192,17 @@ impl PlayerHost {
                     window.request_redraw();
                 }
             }
-            Ok(SurfaceRenderOutcome::Skipped(
-                SkippedSurfaceFrame::ZeroSize | SkippedSurfaceFrame::Occluded,
+            Ok((
+                SurfaceRenderOutcome::Skipped(
+                    SkippedSurfaceFrame::ZeroSize | SkippedSurfaceFrame::Occluded,
+                ),
+                _,
             )) => {}
-            Ok(SurfaceRenderOutcome::Skipped(
-                SkippedSurfaceFrame::Timeout | SkippedSurfaceFrame::Outdated,
+            Ok((
+                SurfaceRenderOutcome::Skipped(
+                    SkippedSurfaceFrame::Timeout | SkippedSurfaceFrame::Outdated,
+                ),
+                _,
             )) => {
                 if let Some(window) = &self.window {
                     window.request_redraw();
@@ -198,7 +239,12 @@ impl ApplicationHandler for PlayerHost {
                 return;
             };
             let size = window.inner_size();
-            match SurfaceRenderer::new(Arc::clone(window), [size.width, size.height]) {
+            let surface = if self.options.screenshot.is_some() {
+                SurfaceRenderer::new_with_readback(Arc::clone(window), [size.width, size.height])
+            } else {
+                SurfaceRenderer::new(Arc::clone(window), [size.width, size.height])
+            };
+            match surface {
                 Ok(surface) => self.surface = Some(surface),
                 Err(error) => {
                     self.fail(event_loop, error);
@@ -269,6 +315,8 @@ pub enum PlayerRunError {
     Load(#[from] PlayerLoadError),
     #[error("initial player window size must be non-zero")]
     InvalidInitialSize,
+    #[error("Player screenshot cannot be combined with a frame limit")]
+    ScreenshotWithFrameLimit,
     #[error("cannot create player window: {0}")]
     Window(#[from] winit::error::OsError),
     #[error("player event loop failed: {0}")]
@@ -279,4 +327,8 @@ pub enum PlayerRunError {
     Frame(#[from] PlayerFrameError),
     #[error(transparent)]
     Surface(#[from] SurfaceRenderError),
+    #[error("cannot save Player screenshot {0}: {1}")]
+    Screenshot(PathBuf, image::ImageError),
+    #[error("Player surface did not return a screenshot")]
+    ScreenshotIncomplete,
 }
