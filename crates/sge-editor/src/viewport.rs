@@ -15,6 +15,8 @@ use crate::{EditSession, PreviewFrame};
 const HANDLE_LENGTH: f32 = 46.0;
 const HANDLE_SIZE: f32 = 14.0;
 const UNITS_PER_PIXEL: f32 = 0.01;
+const GRID_HALF_EXTENT: i32 = 10;
+const WORLD_AXIS_LENGTH: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum GizmoMode {
@@ -126,22 +128,11 @@ impl EditorViewport {
     pub(crate) fn prepare(&mut self, frame: &mut PreviewFrame) {
         if !self.initialized {
             self.camera = frame.view.camera();
-            let (sum, count) =
-                frame
-                    .snapshot
-                    .meshes()
-                    .iter()
-                    .fold((Vec3::ZERO, 0_u32), |(sum, count), mesh| {
-                        (
-                            sum + Vec3::from_array(mesh.transform().translation),
-                            count + 1,
-                        )
-                    });
-            self.pivot = if count == 0 {
-                Vec3::ZERO
-            } else {
-                sum / count as f32
-            };
+            if let Some((minimum, maximum)) = scene_bounds(frame) {
+                self.pivot = (minimum + maximum) * 0.5;
+                self.distance =
+                    frame_distance(minimum, maximum, self.camera.vertical_fov_radians());
+            }
             let forward = Vec3::new(-1.0, 1.0, -0.65).normalize();
             self.transform.rotation = Quat::from_rotation_arc(Vec3::Z, forward).to_array();
             self.sync_position_from_pivot();
@@ -278,8 +269,9 @@ impl EditorViewport {
 
     fn draw_view_cube(&mut self, ui: &mut egui::Ui, rect: egui::Rect) -> bool {
         let faces = view_cube_faces(rect, Quat::from_array(self.transform.rotation));
+        let painter = ui.painter_at(rect);
         for face in &faces {
-            ui.painter().add(egui::Shape::convex_polygon(
+            painter.add(egui::Shape::convex_polygon(
                 face.polygon.to_vec(),
                 face.color,
                 egui::Stroke::new(1.0, egui::Color32::WHITE),
@@ -289,7 +281,7 @@ impl EditorViewport {
                 .into_iter()
                 .fold(egui::Vec2::ZERO, |sum, point| sum + point.to_vec2())
                 / 4.0;
-            ui.painter().text(
+            painter.text(
                 center.to_pos2(),
                 egui::Align2::CENTER_CENTER,
                 face.label,
@@ -494,25 +486,21 @@ fn paint_gizmo(
     let Some(center) = project(matrix, Vec3::from_array(transform.translation), rect) else {
         return;
     };
+    let painter = ui.painter_at(rect);
     for handle in handles {
-        ui.painter().line_segment(
+        painter.line_segment(
             [center.position, handle.end],
             egui::Stroke::new(3.0, handle.axis.color()),
         );
         match mode {
             GizmoMode::Move => {
-                ui.painter()
-                    .rect_filled(handle.hit, 1.0, handle.axis.color());
+                painter.rect_filled(handle.hit, 1.0, handle.axis.color());
             }
             GizmoMode::Rotate => {
-                ui.painter().circle_stroke(
-                    handle.end,
-                    6.0,
-                    egui::Stroke::new(3.0, handle.axis.color()),
-                );
+                painter.circle_stroke(handle.end, 6.0, egui::Stroke::new(3.0, handle.axis.color()));
             }
             GizmoMode::Scale => {
-                ui.painter().rect_stroke(
+                painter.rect_stroke(
                     handle.hit,
                     1.0,
                     egui::Stroke::new(3.0, handle.axis.color()),
@@ -608,34 +596,63 @@ fn draw_grid_and_axes(ui: &egui::Ui, rect: egui::Rect, frame: &PreviewFrame) {
     let Some(matrix) = projection(frame, rect) else {
         return;
     };
-    for index in -20..=20 {
+    let painter = ui.painter_at(rect);
+    for index in -GRID_HALF_EXTENT..=GRID_HALF_EXTENT {
         let value = index as f32;
         draw_world_line(
-            ui,
+            &painter,
             rect,
             matrix,
-            Vec3::new(-20.0, value, 0.0),
-            Vec3::new(20.0, value, 0.0),
+            Vec3::new(-GRID_HALF_EXTENT as f32, value, 0.0),
+            Vec3::new(GRID_HALF_EXTENT as f32, value, 0.0),
             egui::Color32::from_gray(52),
             1.0,
         );
         draw_world_line(
-            ui,
+            &painter,
             rect,
             matrix,
-            Vec3::new(value, -20.0, 0.0),
-            Vec3::new(value, 20.0, 0.0),
+            Vec3::new(value, -GRID_HALF_EXTENT as f32, 0.0),
+            Vec3::new(value, GRID_HALF_EXTENT as f32, 0.0),
             egui::Color32::from_gray(52),
             1.0,
         );
     }
     for (axis, end) in [(Axis::X, Vec3::X), (Axis::Y, Vec3::Y), (Axis::Z, Vec3::Z)] {
-        draw_world_line(ui, rect, matrix, Vec3::ZERO, end * 3.0, axis.color(), 2.5);
+        draw_world_line(
+            &painter,
+            rect,
+            matrix,
+            Vec3::ZERO,
+            end * WORLD_AXIS_LENGTH,
+            axis.color(),
+            2.5,
+        );
     }
 }
 
+fn scene_bounds(frame: &PreviewFrame) -> Option<(Vec3, Vec3)> {
+    let mut bounds = None::<(Vec3, Vec3)>;
+    for instance in frame.snapshot.meshes() {
+        let mesh = frame.assets.mesh(instance.mesh()).ok()?;
+        let model = instance.transform().matrix();
+        for vertex in mesh.vertices() {
+            let point = model.transform_point3(Vec3::from_array(*vertex.position()));
+            bounds = Some(bounds.map_or((point, point), |(minimum, maximum)| {
+                (minimum.min(point), maximum.max(point))
+            }));
+        }
+    }
+    bounds
+}
+
+fn frame_distance(minimum: Vec3, maximum: Vec3, vertical_fov_radians: f32) -> f32 {
+    let radius = ((maximum - minimum).length() * 0.5).max(0.5);
+    (radius / (vertical_fov_radians * 0.5).tan() * 2.7).max(2.5)
+}
+
 fn draw_world_line(
-    ui: &egui::Ui,
+    painter: &egui::Painter,
     rect: egui::Rect,
     matrix: Mat4,
     start: Vec3,
@@ -644,7 +661,7 @@ fn draw_world_line(
     width: f32,
 ) {
     if let (Some(start), Some(end)) = (project(matrix, start, rect), project(matrix, end, rect)) {
-        ui.painter().line_segment(
+        painter.line_segment(
             [start.position, end.position],
             egui::Stroke::new(width, color),
         );
@@ -831,5 +848,21 @@ mod tests {
             .fold(egui::Vec2::ZERO, |sum, point| sum + point.to_vec2())
             / 4.0;
         assert!(point_in_polygon(center.to_pos2(), face.polygon));
+    }
+
+    #[test]
+    fn initial_framing_scales_with_visible_geometry() {
+        let small = frame_distance(
+            Vec3::splat(-0.5),
+            Vec3::splat(0.5),
+            std::f32::consts::FRAC_PI_3,
+        );
+        let large = frame_distance(
+            Vec3::splat(-5.0),
+            Vec3::splat(5.0),
+            std::f32::consts::FRAC_PI_3,
+        );
+        assert!(small >= 2.5);
+        assert!(large > small * 5.0);
     }
 }
