@@ -6,14 +6,15 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sge_asset::RuntimeAssetStore;
 
 use crate::{
-    GpuAssetError, RenderFrameError, RenderSnapshot, RenderTargetError, RenderView, WgpuRenderer,
+    BackendFrame, BackendRenderContext, BackendRenderError, BackendRenderer, RenderBackend,
+    RenderSnapshot, RenderTargetError, RenderView,
 };
 
 pub struct SurfaceRenderer<W>
 where
     W: HasDisplayHandle + HasWindowHandle + 'static,
 {
-    renderer: WgpuRenderer,
+    renderer: BackendRenderer,
     queue: wgpu::Queue,
     device: wgpu::Device,
     surface: wgpu::Surface<'static>,
@@ -29,14 +30,35 @@ where
     W: HasDisplayHandle + HasWindowHandle + Send + Sync + 'static,
 {
     pub fn new(target: Arc<W>, size: [u32; 2]) -> Result<Self, SurfaceRenderError> {
-        Self::create(target, size, false)
+        Self::new_with_backend(target, size, RenderBackend::Wgpu)
+    }
+
+    pub fn new_with_backend(
+        target: Arc<W>,
+        size: [u32; 2],
+        backend: RenderBackend,
+    ) -> Result<Self, SurfaceRenderError> {
+        Self::create(target, size, false, backend)
     }
 
     pub fn new_with_readback(target: Arc<W>, size: [u32; 2]) -> Result<Self, SurfaceRenderError> {
-        Self::create(target, size, true)
+        Self::new_with_readback_and_backend(target, size, RenderBackend::Wgpu)
     }
 
-    fn create(target: Arc<W>, size: [u32; 2], readback: bool) -> Result<Self, SurfaceRenderError> {
+    pub fn new_with_readback_and_backend(
+        target: Arc<W>,
+        size: [u32; 2],
+        backend: RenderBackend,
+    ) -> Result<Self, SurfaceRenderError> {
+        Self::create(target, size, true, backend)
+    }
+
+    fn create(
+        target: Arc<W>,
+        size: [u32; 2],
+        readback: bool,
+        backend: RenderBackend,
+    ) -> Result<Self, SurfaceRenderError> {
         validate_surface_size(size)?;
         let instance =
             wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
@@ -61,7 +83,7 @@ where
             config.usage |= wgpu::TextureUsages::COPY_SRC;
         }
         surface.configure(&device, &config);
-        let renderer = WgpuRenderer::new(&device, config.format);
+        let renderer = BackendRenderer::new(&device, config.format, backend);
         Ok(Self {
             renderer,
             queue,
@@ -121,8 +143,6 @@ where
                 None,
             ));
         }
-        self.renderer
-            .prepare_assets(&self.device, &self.queue, snapshot, assets)?;
         let (frame, reconfigure_after_present) = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => (frame, false),
             wgpu::CurrentSurfaceTexture::Suboptimal(frame) => (frame, true),
@@ -156,12 +176,18 @@ where
                 label: Some("sge_surface_frame"),
             });
         self.renderer.render_to_target(
-            &self.device,
-            &mut encoder,
+            BackendRenderContext {
+                device: &self.device,
+                queue: &self.queue,
+                encoder: &mut encoder,
+            },
             &frame.texture.create_view(&Default::default()),
             [self.config.width, self.config.height],
-            snapshot,
-            view,
+            BackendFrame {
+                snapshot,
+                view,
+                assets,
+            },
         )?;
         let readback_buffer = readback.then(|| {
             let padded_bytes_per_row = padded_bytes_per_row(self.config.width);
@@ -353,9 +379,7 @@ pub enum SurfaceRenderError {
     #[error("GPU surface readback callback was dropped")]
     ReadbackChannel,
     #[error(transparent)]
-    Assets(#[from] GpuAssetError),
-    #[error(transparent)]
-    Frame(#[from] RenderFrameError),
+    Backend(#[from] BackendRenderError),
     #[error("WGPU surface was lost")]
     Lost,
     #[error("WGPU surface acquisition failed validation")]

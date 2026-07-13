@@ -72,7 +72,7 @@ fn player_cli_has_stable_help() -> Result<(), Box<dyn std::error::Error>> {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout)?,
-        "Usage: demo-game-player [COOKED_ROOT] [--max-frames N] [--screenshot PATH]\n"
+        "Usage: demo-game-player [COOKED_ROOT] [--backend wgpu|cpu] [--max-frames N] [--screenshot PATH]\n"
     );
     assert!(output.stderr.is_empty());
     let conflict = Command::new(env!("CARGO_BIN_EXE_demo-game-player"))
@@ -80,6 +80,11 @@ fn player_cli_has_stable_help() -> Result<(), Box<dyn std::error::Error>> {
         .output()?;
     assert!(!conflict.status.success());
     assert!(String::from_utf8(conflict.stderr)?.contains("cannot be combined"));
+    let invalid = Command::new(env!("CARGO_BIN_EXE_demo-game-player"))
+        .args(["--backend", "metal"])
+        .output()?;
+    assert!(!invalid.status.success());
+    assert!(String::from_utf8(invalid.stderr)?.contains("expected wgpu or cpu"));
     Ok(())
 }
 
@@ -119,6 +124,43 @@ fn game_specific_player_reads_back_presented_surface() -> Result<(), Box<dyn std
         })
         .count();
     assert!(visible_pixels > (u64::from(width) * u64::from(height) / 100) as usize);
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires a real WGPU window for CPU frame presentation; run with xvfb-run"]
+fn game_specific_player_cpu_backend_reads_back_presented_surface()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = CookedDemo::new("cpu-readback")?;
+    fixture.cook(&fixture.project()?)?;
+    fixture.delete_source()?;
+    let screenshot = fixture.base.join("player-cpu.png");
+    let output = Command::new(env!("CARGO_BIN_EXE_demo-game-player"))
+        .arg(fixture.path())
+        .args(["--backend", "cpu", "--screenshot"])
+        .arg(&screenshot)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "player stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        report_value(&String::from_utf8(output.stdout)?, "presented_frames")?,
+        1
+    );
+    let screenshot = image::open(screenshot)?.to_rgba8();
+    let corner = *screenshot.get_pixel(0, 0);
+    let visible_pixels = screenshot
+        .pixels()
+        .filter(|pixel| {
+            pixel.0[..3]
+                .iter()
+                .zip(corner.0[..3].iter())
+                .any(|(channel, background)| channel.abs_diff(*background) > 16)
+        })
+        .count();
+    assert!(visible_pixels > (screenshot.width() * screenshot.height() / 100) as usize);
     Ok(())
 }
 

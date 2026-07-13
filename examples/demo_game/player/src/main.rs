@@ -2,7 +2,7 @@
 
 use std::{error::Error, path::PathBuf};
 
-use sge_player::{RunOptions, run, staged_runtime_root};
+use sge_player::{RenderBackend, RunOptions, run, staged_runtime_root};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let Some(arguments) = arguments()? else {
@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         RunOptions {
             max_frames: arguments.max_frames,
             screenshot: arguments.screenshot,
+            backend: arguments.backend,
             ..RunOptions::default()
         },
     )?;
@@ -33,6 +34,7 @@ struct Arguments {
     cooked_root: Option<PathBuf>,
     max_frames: Option<u64>,
     screenshot: Option<PathBuf>,
+    backend: RenderBackend,
 }
 
 fn arguments() -> Result<Option<Arguments>, String> {
@@ -48,6 +50,8 @@ fn arguments() -> Result<Option<Arguments>, String> {
     let mut cooked_root = None;
     let mut max_frames = None;
     let mut screenshot = None;
+    let mut backend = RenderBackend::Wgpu;
+    let mut backend_set = false;
     while let Some(argument) = pending.take().or_else(|| values.next()) {
         if argument == "--max-frames" && max_frames.is_none() {
             let value = values
@@ -67,6 +71,15 @@ fn arguments() -> Result<Option<Arguments>, String> {
                     .next()
                     .ok_or_else(|| usage("--screenshot requires a path"))?,
             ));
+        } else if argument == "--backend" && !backend_set {
+            let value = values
+                .next()
+                .ok_or_else(|| usage("--backend requires wgpu or cpu"))?;
+            let value = value
+                .to_str()
+                .ok_or_else(|| usage("--backend must be UTF-8"))?;
+            backend = value.parse().map_err(|error| usage(&format!("{error}")))?;
+            backend_set = true;
         } else if !argument.to_string_lossy().starts_with('-') && cooked_root.is_none() {
             cooked_root = Some(PathBuf::from(argument));
         } else {
@@ -85,6 +98,7 @@ fn arguments() -> Result<Option<Arguments>, String> {
         cooked_root,
         max_frames,
         screenshot,
+        backend,
     }))
 }
 
@@ -94,5 +108,7 @@ fn usage(error: &str) -> String {
     } else {
         format!("{error}\n\n")
     };
-    format!("{prefix}Usage: demo-game-player [COOKED_ROOT] [--max-frames N] [--screenshot PATH]")
+    format!(
+        "{prefix}Usage: demo-game-player [COOKED_ROOT] [--backend wgpu|cpu] [--max-frames N] [--screenshot PATH]"
+    )
 }

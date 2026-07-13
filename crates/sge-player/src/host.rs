@@ -7,7 +7,9 @@ use std::{
 };
 
 use sge_app::{AdvanceError, GameDescriptor};
-use sge_render::{SkippedSurfaceFrame, SurfaceRenderError, SurfaceRenderOutcome, SurfaceRenderer};
+use sge_render::{
+    RenderBackend, SkippedSurfaceFrame, SurfaceRenderError, SurfaceRenderOutcome, SurfaceRenderer,
+};
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalSize},
@@ -23,6 +25,7 @@ pub struct RunOptions {
     pub max_frames: Option<u64>,
     pub initial_size: [u32; 2],
     pub screenshot: Option<PathBuf>,
+    pub backend: RenderBackend,
 }
 
 impl Default for RunOptions {
@@ -31,6 +34,7 @@ impl Default for RunOptions {
             max_frames: None,
             initial_size: [1280, 720],
             screenshot: None,
+            backend: RenderBackend::Wgpu,
         }
     }
 }
@@ -240,9 +244,17 @@ impl ApplicationHandler for PlayerHost {
             };
             let size = window.inner_size();
             let surface = if self.options.screenshot.is_some() {
-                SurfaceRenderer::new_with_readback(Arc::clone(window), [size.width, size.height])
+                SurfaceRenderer::new_with_readback_and_backend(
+                    Arc::clone(window),
+                    [size.width, size.height],
+                    self.options.backend,
+                )
             } else {
-                SurfaceRenderer::new(Arc::clone(window), [size.width, size.height])
+                SurfaceRenderer::new_with_backend(
+                    Arc::clone(window),
+                    [size.width, size.height],
+                    self.options.backend,
+                )
             };
             match surface {
                 Ok(surface) => self.surface = Some(surface),

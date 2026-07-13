@@ -143,6 +143,10 @@ audit_exact_files 'canonical OBJ importer owner' 'tobj::load_obj_buf' \
   'crates/sge-asset-pipeline/src/obj.rs' crates/sge-asset-pipeline/src
 audit_exact_files 'canonical WGPU pipeline owner' 'create_render_pipeline' \
   'crates/sge-render/src/gpu/pipeline.rs' crates examples
+audit_exact_files 'canonical render backend facade owner' 'pub struct BackendRenderer' \
+  'crates/sge-render/src/backend.rs' crates examples
+audit_exact_files 'canonical CPU renderer owner' 'pub struct CpuRenderer' \
+  'crates/sge-render/src/cpu.rs' crates examples
 audit_exact_files 'retained bare OBJ callers' 'asset::load_obj_mesh' \
   '' crates examples
 audit_exact_files 'canonical full Cook owner' 'pub fn full_cook' \

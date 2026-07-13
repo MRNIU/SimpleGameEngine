@@ -138,6 +138,7 @@ fn real_window_advances_extracts_renders_and_presents_before_exit()
             max_frames: Some(2),
             initial_size: [320, 240],
             screenshot: None,
+            backend: sge_player::RenderBackend::Wgpu,
         },
     )?;
 

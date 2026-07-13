@@ -25,3 +25,4 @@ pub use inspector::{InspectorComponent, InspectorField, SceneComponentType};
 pub use play::{PlaySession, PlayStartError};
 pub use preview::{PreviewProbe, PreviewProbeReport};
 pub use session::{CreatedMeshEntity, EditSession, EditorWorkspace, PreviewFrame, PrimitiveKind};
+pub use sge_render::RenderBackend;

@@ -28,6 +28,8 @@ run_ignored_exact() {
 run_ignored_exact demo-game-editor editor_product \
   game_specific_editor_paints_the_authoring_viewport
 run_ignored_exact demo-game-editor editor_product \
+  editor_switches_from_wgpu_to_cpu_without_changing_scene_data
+run_ignored_exact demo-game-editor editor_product \
   dirty_native_window_close_waits_for_user_confirmation
 run_ignored_exact demo-game-editor editor_product \
   internal_ui_tape_selects_hierarchy_and_reads_back_inspector
@@ -45,5 +47,7 @@ run_ignored_exact demo-game-editor editor_product \
   game_specific_editor_plays_and_paints_preview
 run_ignored_exact demo-game-player demo_product \
   game_specific_player_reads_back_presented_surface
+run_ignored_exact demo-game-player demo_product \
+  game_specific_player_cpu_backend_reads_back_presented_surface
 run_ignored_exact demo-game-build integration_demo \
   independent_demo_closes_the_complete_engine_spine

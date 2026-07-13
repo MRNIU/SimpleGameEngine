@@ -7,19 +7,19 @@ use std::sync::{
 
 use eframe::{egui, egui_wgpu, wgpu};
 use sge_asset::RuntimeAssetStore;
-use sge_render::WgpuRenderer;
+use sge_render::{BackendFrame, BackendRenderContext, BackendRenderer, RenderBackend};
 
 use crate::PreviewFrame;
 
 struct PreviewGpuResources {
-    renderer: WgpuRenderer,
+    renderer: BackendRenderer,
     assets: Option<Arc<RuntimeAssetStore>>,
 }
 
 impl PreviewGpuResources {
     fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         Self {
-            renderer: WgpuRenderer::new(device, format),
+            renderer: BackendRenderer::new(device, format, RenderBackend::Wgpu),
             assets: None,
         }
     }
@@ -35,6 +35,7 @@ impl PreviewGpuResources {
 #[derive(Clone)]
 struct PreviewCallback {
     frame: PreviewFrame,
+    backend: RenderBackend,
     logical_size: [f32; 2],
     probe: PreviewProbe,
 }
@@ -56,23 +57,26 @@ impl egui_wgpu::CallbackTrait for PreviewCallback {
             logical_dimension(self.logical_size[0], screen.pixels_per_point),
             logical_dimension(self.logical_size[1], screen.pixels_per_point),
         ];
+        gpu.renderer.set_backend(self.backend);
         gpu.select_assets(&self.frame.assets);
         let result = gpu
             .renderer
-            .prepare_assets(
-                device,
-                queue,
-                &self.frame.snapshot,
-                self.frame.assets.as_ref(),
+            .render_offscreen(
+                BackendRenderContext {
+                    device,
+                    queue,
+                    encoder,
+                },
+                size,
+                BackendFrame {
+                    snapshot: &self.frame.snapshot,
+                    view: self.frame.view,
+                    assets: self.frame.assets.as_ref(),
+                },
             )
-            .map_err(|error| error.to_string())
-            .and_then(|()| {
-                gpu.renderer
-                    .render_offscreen(device, encoder, size, &self.frame.snapshot, self.frame.view)
-                    .map_err(|error| error.to_string())
-            });
+            .map_err(|error| error.to_string());
         match result {
-            Ok(()) => self.probe.mark_prepared(),
+            Ok(()) => self.probe.mark_prepared(self.backend),
             Err(error) => self.probe.fail(error),
         }
         Vec::new()
@@ -89,7 +93,7 @@ impl egui_wgpu::CallbackTrait for PreviewCallback {
             return;
         };
         match gpu.renderer.composite(pass) {
-            Ok(()) => self.probe.mark_painted(),
+            Ok(()) => self.probe.mark_painted(self.backend),
             Err(error) => self.probe.fail(error.to_string()),
         }
     }
@@ -117,6 +121,7 @@ pub(crate) fn paint(
     ui: &mut egui::Ui,
     frame: &PreviewFrame,
     probe: &PreviewProbe,
+    backend: RenderBackend,
     paint_background: impl FnOnce(&egui::Ui, egui::Rect),
 ) -> egui::Response {
     let available = ui.available_size_before_wrap();
@@ -129,6 +134,7 @@ pub(crate) fn paint(
         rect,
         PreviewCallback {
             frame: frame.clone(),
+            backend,
             logical_size: [rect.width(), rect.height()],
             probe: probe.clone(),
         },
@@ -157,15 +163,22 @@ pub struct PreviewProbe {
 struct PreviewProbeInner {
     prepared: AtomicUsize,
     painted: AtomicUsize,
+    wgpu_prepared: AtomicUsize,
+    cpu_prepared: AtomicUsize,
     error: Mutex<Option<String>>,
 }
 
 impl PreviewProbe {
-    fn mark_prepared(&self) {
+    fn mark_prepared(&self, backend: RenderBackend) {
         self.inner.prepared.fetch_add(1, Ordering::Relaxed);
+        match backend {
+            RenderBackend::Wgpu => &self.inner.wgpu_prepared,
+            RenderBackend::Cpu => &self.inner.cpu_prepared,
+        }
+        .fetch_add(1, Ordering::Relaxed);
     }
 
-    fn mark_painted(&self) {
+    fn mark_painted(&self, _backend: RenderBackend) {
         self.inner.painted.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -182,6 +195,8 @@ impl PreviewProbe {
         PreviewProbeReport {
             prepare_count: self.inner.prepared.load(Ordering::Relaxed),
             paint_count: self.inner.painted.load(Ordering::Relaxed),
+            wgpu_prepare_count: self.inner.wgpu_prepared.load(Ordering::Relaxed),
+            cpu_prepare_count: self.inner.cpu_prepared.load(Ordering::Relaxed),
             error: self.inner.error.lock().map_or_else(
                 |_| Some("preview probe lock poisoned".to_owned()),
                 |slot| slot.clone(),
@@ -273,5 +288,7 @@ mod tests {
 pub struct PreviewProbeReport {
     pub prepare_count: usize,
     pub paint_count: usize,
+    pub wgpu_prepare_count: usize,
+    pub cpu_prepare_count: usize,
     pub error: Option<String>,
 }

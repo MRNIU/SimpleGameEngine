@@ -142,6 +142,18 @@ impl eframe::App for EditorApp {
                         .on_hover_text(self.project_root.display().to_string());
                     ui.separator();
                     self.file_controls(ui);
+                    egui::ComboBox::from_id_salt("render_backend")
+                        .selected_text(self.backend.label())
+                        .show_ui(ui, |ui| {
+                            for backend in sge_render::RenderBackend::ALL {
+                                if ui
+                                    .selectable_value(&mut self.backend, backend, backend.label())
+                                    .changed()
+                                {
+                                    ui.ctx().request_repaint();
+                                }
+                            }
+                        });
                     if self.play.is_some() {
                         ui.colored_label(egui::Color32::LIGHT_GREEN, "PLAY");
                         if ui.button("Stop").clicked() {
@@ -209,7 +221,7 @@ impl eframe::App for EditorApp {
         }
 
         let response = if let Some(frame) = &self.frame {
-            preview::paint(ui, frame, &self.probe, |ui, rect| {
+            preview::paint(ui, frame, &self.probe, self.backend, |ui, rect| {
                 self.viewport.paint_background(ui, rect, frame);
             })
         } else {

@@ -22,6 +22,7 @@ mod host;
 mod input;
 
 pub use host::{PlayerRunError, RunOptions, RunReport, run, run_session};
+pub use sge_render::RenderBackend;
 
 pub fn staged_runtime_root() -> Result<PathBuf, StagedRuntimeRootError> {
     let executable = std::env::current_exe().map_err(StagedRuntimeRootError::CurrentExecutable)?;

@@ -131,6 +131,42 @@ fn game_specific_editor_paints_the_authoring_viewport() -> Result<(), Box<dyn st
 }
 
 #[test]
+#[ignore = "requires a real WGPU window; run with xvfb-run"]
+fn editor_switches_from_wgpu_to_cpu_without_changing_scene_data()
+-> Result<(), Box<dyn std::error::Error>> {
+    let project = TestProject::new()?;
+    let scene = project.path().join("Scenes/main.scene.ron");
+    let before = fs::read(&scene)?;
+    let screenshot = project.path().join("cpu-backend.png");
+    let output = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
+        .arg(project.path())
+        .args(["--ui-action", "backend:cpu", "--screenshot"])
+        .arg(&screenshot)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "editor stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout)?;
+    assert!(
+        report_value(&stdout, "preview_wgpu_prepare")? > 0,
+        "{stdout}"
+    );
+    assert!(
+        report_value(&stdout, "preview_cpu_prepare")? > 0,
+        "{stdout}"
+    );
+    assert_eq!(report_value(&stdout, "ui_actions")?, 1);
+    assert_eq!(fs::read(scene)?, before);
+    let image = image::open(screenshot)?.to_rgba8();
+    assert_editor_screenshot_size(&image);
+    let first = *image.get_pixel(0, 0);
+    assert!(image.pixels().any(|pixel| *pixel != first));
+    Ok(())
+}
+
+#[test]
 #[ignore = "requires a real window manager; run with xvfb-run"]
 fn dirty_native_window_close_waits_for_user_confirmation() -> Result<(), Box<dyn std::error::Error>>
 {
@@ -415,6 +451,14 @@ fn assert_editor_screenshot_size(image: &image::RgbaImage) {
         u64::from(height) * 1280,
         "unexpected aspect ratio: {width}x{height}"
     );
+}
+
+fn report_value(output: &str, name: &str) -> Result<u64, Box<dyn std::error::Error>> {
+    output
+        .split_whitespace()
+        .find_map(|field| field.strip_prefix(&format!("{name}=")))
+        .ok_or_else(|| format!("missing {name} report").into())
+        .and_then(|value| Ok(value.parse()?))
 }
 
 struct WindowManager(std::process::Child);

@@ -4,10 +4,8 @@ use sge_math::{Mat4, Quat, Transform, Vec3};
 
 use crate::{RenderSnapshot, RenderView};
 
-use super::{
-    errors::{RenderTargetError, ViewProjectionError},
-    projection::view_projection_matrix,
-};
+use super::errors::{RenderTargetError, ViewProjectionError};
+use crate::view_projection_matrix;
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 

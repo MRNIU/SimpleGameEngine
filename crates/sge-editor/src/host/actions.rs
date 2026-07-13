@@ -229,6 +229,10 @@ impl EditorApp {
                     Ok(())
                 }
             }
+            EditorUiAction::SetRenderBackend(backend) => {
+                self.backend = backend;
+                Ok(())
+            }
             EditorUiAction::Build => self.request_build(),
         }
     }

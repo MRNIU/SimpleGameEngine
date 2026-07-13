@@ -14,6 +14,7 @@ use std::{
 use eframe::egui;
 use sge_app::GameDescriptor;
 use sge_reflect::{ReflectedValue, TypeKey};
+use sge_render::RenderBackend;
 
 use crate::{
     EditSession, EditorBuildLauncher, EditorInputAccumulator, EditorOpenError, PlaySession,
@@ -50,6 +51,7 @@ pub struct EditorRunOptions {
     pub max_frames: Option<u64>,
     pub initial_size: [u32; 2],
     pub start_in_play: bool,
+    pub backend: RenderBackend,
     pub screenshot: Option<PathBuf>,
     pub ui_actions: Vec<EditorUiAction>,
     pub build_launcher: Option<EditorBuildLauncher>,
@@ -62,6 +64,7 @@ impl Default for EditorRunOptions {
             max_frames: None,
             initial_size: [1280, 720],
             start_in_play: false,
+            backend: RenderBackend::Wgpu,
             screenshot: None,
             ui_actions: Vec::new(),
             build_launcher: None,
@@ -82,6 +85,7 @@ pub enum EditorUiAction {
     Redo,
     StartPlay,
     StopPlay,
+    SetRenderBackend(RenderBackend),
     Build,
 }
 
@@ -184,6 +188,7 @@ pub fn run(
                 pending_close_confirmation: false,
                 close_authorized: false,
                 pending_build_confirmation: false,
+                backend: options.backend,
                 viewport,
                 immersive_viewport: false,
                 panel_layout: panels::PanelLayout::default(),
@@ -251,6 +256,7 @@ struct EditorApp {
     pending_close_confirmation: bool,
     close_authorized: bool,
     pending_build_confirmation: bool,
+    backend: RenderBackend,
     viewport: EditorViewport,
     immersive_viewport: bool,
     panel_layout: panels::PanelLayout,

@@ -33,9 +33,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
     )?;
     println!(
-        "preview_prepare={} preview_paint={} play_frames={} gameplay_input_frames={} gameplay_key_w_frames={} ui_actions={}",
+        "preview_prepare={} preview_paint={} preview_wgpu_prepare={} preview_cpu_prepare={} play_frames={} gameplay_input_frames={} gameplay_key_w_frames={} ui_actions={}",
         report.preview.prepare_count,
         report.preview.paint_count,
+        report.preview.wgpu_prepare_count,
+        report.preview.cpu_prepare_count,
         report.play_frames,
         report.gameplay_input_frames,
         report.gameplay_key_w_frames,
@@ -262,6 +264,8 @@ fn parse_ui_action(value: &str) -> Result<sge_editor::EditorUiAction, String> {
         "play" => EditorUiAction::StartPlay,
         "stop" => EditorUiAction::StopPlay,
         "build" => EditorUiAction::Build,
+        "backend:wgpu" => EditorUiAction::SetRenderBackend(sge_editor::RenderBackend::Wgpu),
+        "backend:cpu" => EditorUiAction::SetRenderBackend(sge_editor::RenderBackend::Cpu),
         _ => value
             .strip_prefix("select:")
             .and_then(|index| index.parse().ok())

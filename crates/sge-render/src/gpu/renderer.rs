@@ -1,6 +1,6 @@
 // Copyright The SimpleGameEngine Contributors
 
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use sge_asset::{AssetId, RuntimeAssetStore};
 use sge_math::Mat3;
@@ -45,7 +45,7 @@ struct GpuMesh {
 
 struct OffscreenTarget {
     size: [u32; 2],
-    _color: wgpu::Texture,
+    color: wgpu::Texture,
     color_view: wgpu::TextureView,
     composite_bind_group: wgpu::BindGroup,
 }
@@ -324,6 +324,58 @@ impl WgpuRenderer {
         result
     }
 
+    pub(crate) fn upload_offscreen_rgba(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        size: [u32; 2],
+        rgba: &[u8],
+    ) -> Result<(), RenderTargetError> {
+        validate_target_size(device, size)?;
+        if self
+            .offscreen
+            .as_ref()
+            .is_none_or(|target| target.size != size)
+        {
+            self.offscreen = Some(self.create_offscreen_target(device, size)?);
+        }
+        let expected = size[0] as usize * size[1] as usize * 4;
+        if rgba.len() != expected {
+            return Err(RenderTargetError::InvalidRgbaLength {
+                expected,
+                found: rgba.len(),
+            });
+        }
+        let bytes = match self.target_format {
+            wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb => {
+                Cow::Borrowed(rgba)
+            }
+            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb => {
+                let mut bgra = rgba.to_vec();
+                for pixel in bgra.chunks_exact_mut(4) {
+                    pixel.swap(0, 2);
+                }
+                Cow::Owned(bgra)
+            }
+            format => return Err(RenderTargetError::CpuUploadFormat(format)),
+        };
+        let target = self
+            .offscreen
+            .as_ref()
+            .ok_or(RenderTargetError::OffscreenUnavailable)?;
+        queue.write_texture(
+            target.color.as_image_copy(),
+            bytes.as_ref(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size[0] * 4),
+                rows_per_image: Some(size[1]),
+            },
+            extent(size),
+        );
+        Ok(())
+    }
+
     pub fn composite(&self, pass: &mut wgpu::RenderPass<'_>) -> Result<(), RenderTargetError> {
         let target = self
             .offscreen
@@ -403,7 +455,9 @@ impl WgpuRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: self.target_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         let color_view = color.create_view(&wgpu::TextureViewDescriptor::default());
@@ -423,7 +477,7 @@ impl WgpuRenderer {
         });
         Ok(OffscreenTarget {
             size,
-            _color: color,
+            color,
             color_view,
             composite_bind_group,
         })

@@ -23,7 +23,7 @@ flowchart LR
     Build["sge-build<br/>Cargo + Stage"]
     Runtime["immutable runtime generation"]
     Player["demo-game-player<br/>sge-player"]
-    Render["sge-render<br/>shared WGPU backend"]
+    Render["sge-render<br/>WGPU/CPU backend facade"]
 
     Source --> Editor --> Edit
     Edit --> Play
@@ -37,7 +37,7 @@ flowchart LR
     Player --> Render
 ```
 
-Editor、Build 和 Player 使用同一个静态 game library、`GameDescriptor`、typed World、Reflect registry、scene validation、runtime asset store、render extraction 与 WGPU backend。Editor 使用 eframe 拥有的 GPU context；Player 由 `sge-render::SurfaceRenderer` 拥有 surface/device/queue/config。
+Editor、Build 和 Player 使用同一个静态 game library、`GameDescriptor`、typed World、Reflect registry、scene validation、runtime asset store 与 render extraction。WGPU/CPU 后端共用 `RenderSnapshot`、`RenderView`、`RuntimeAssetStore` 和投影逻辑；Editor 使用 eframe 拥有的 WGPU context 显示两种后端结果，Player 由 `sge-render::SurfaceRenderer` 拥有 surface/device/queue/config，CPU 路径只借该 presentation 层上传和合成最终 RGBA 帧。
 
 ## 分层关系
 
@@ -73,14 +73,14 @@ flowchart TB
 | `crates/sge-project/` / `sge-project` | project identity、portable path/root、authoring manifest、atomic single-file I/O | importer、Editor session、multi-file transaction |
 | `crates/sge-scene/` / `sge-scene` | authoring/runtime scene、`SceneName`、prepare/instantiate/snapshot | project/Cook I/O、GPU、Editor history |
 | `crates/sge-asset-pipeline/` / `sge-asset-pipeline` | canonical OBJ import、rebuildable cache、dependency closure、full Cook、immutable generation publication | Editor/Player host、GPU、第二 importer facade |
-| `crates/sge-render/` / `sge-render` | reflected render components、owned `RenderSnapshot`、retained GPU cache、offscreen/direct WGPU、safe surface | project/source ownership、egui ownership、多 backend facade |
+| `crates/sge-render/` / `sge-render` | reflected render components、owned `RenderSnapshot`、共享投影、窄 backend facade、retained WGPU 与 CPU 光栅器、safe surface | project/source ownership、egui ownership、第二套 snapshot/store/host |
 | `crates/sge-player/` / `sge-player` | identity-first source-free `PlayerSession`、winit presentation/input loop、resize/occlusion/surface policy | project、OBJ parser、Editor、native dialog |
 | `crates/sge-editor/` / `sge-editor` | candidate open、`EditSession`、Inspector/history/save、authoring viewport/gizmo、isolated `PlaySession`、egui input routing、eframe host | arbitrary World mutation、第二 registry/backend/event loop、Play writeback |
 | `crates/sge-build/` / `sge-build` | bootstrap launcher、full Cook/Cargo 编排、immutable Stage generation、atomic current manifest | game logic、Editor UI、Player runtime |
 | `examples/demo_game/game/` / `demo-game` | 静态 game composition root、`Rotator`/`PlayerController` systems、固定类型注册 | engine 通用 shortcut |
 | `examples/demo_game/{editor,player,build}/` | game-specific 薄产品入口与 native integration | 复制 engine owner 或数据格式 |
 
-旧 C++、bare Rust prototype package、旧 sample、第二套 ECS/schema/OBJ importer/WGPU backend 已删除。它们不是当前兼容目标，回归门禁会拒绝重新引入。
+旧 C++、bare Rust prototype package、旧 sample、第二套 ECS/schema/OBJ importer/WGPU pipeline 已删除。它们不是当前兼容目标，回归门禁会拒绝重新引入。
 
 ## 持久化与运行时边界
 
@@ -108,7 +108,10 @@ flowchart TB
 
 - extractor 从 typed World 复制出 owned、确定排序的 `RenderSnapshot`。
 - active camera、projection、mesh asset 和 GPU target 错误均 typed fail，不静默恢复。
-- GPU mesh cache 以 `AssetId` retained；direct surface 与 offscreen/composite 共享 mesh draw path 和 depth policy。
+- `BackendRenderer` 只选择执行路径，不拥有 scene 或 asset truth；切换后端不会重建、写回或修改场景数据。
+- WGPU mesh cache 以 `AssetId` retained；direct surface 与 offscreen/composite 共享 mesh draw path 和 depth policy。
+- CPU 后端直接读取同一个 `RuntimeAssetStore`，执行 WGPU 深度范围下的六平面三角形裁剪、背面剔除、透视校正法线插值、深度测试、alpha blend 与首个方向光 Lambert 光照，再把 RGBA 帧交给既有 presentation 层。
+- Editor 顶栏实时选择 WGPU/CPU；Player 使用 `--backend wgpu|cpu`，默认 WGPU。该选择是 host session 状态，不进入 project、authoring/runtime scene 或 Cook/Stage 数据。
 - Player redraw 固定为 advance → extract/view → acquire → render → submit → present；只有 present 成功才累计 frame。
 - `sge build` 通过 `ProjectBootstrap` 定位 game-specific Build target；目标进程重新验证 identity 并执行 full Cook。
 - Editor 独占本次 Build 生命周期；Unix launcher 使用独立进程组，取消、关闭或 drop 会终止整棵 Cargo/Build 子进程树并回收直接子进程。
@@ -124,7 +127,7 @@ flowchart TB
 - `cargo build --workspace`
 - `scripts/audit-boundaries.sh`
 
-完整产品 gate 是 `scripts/test-integration-demo.sh`，覆盖 Editor authoring/Play、真实 WGPU、full Cook、Cargo Build、copied Stage 和 source-free staged Player。自动 smoke 只证明所覆盖路径能够运行，不替代 Mac 物理输入、视觉布局和长路径人工验收。
+完整产品 gate 是 `scripts/test-integration-demo.sh`，覆盖 Editor authoring/Play、WGPU/CPU 切换、两种后端 surface readback、full Cook、Cargo Build、copied Stage 和 source-free staged Player。自动 smoke 只证明所覆盖路径能够运行，不替代 Mac 物理输入、视觉布局和长路径人工验收。
 
 ## 延期边界
 

@@ -35,6 +35,10 @@ pub enum RenderTargetError {
     TooLarge { width: u32, height: u32, max: u32 },
     #[error("offscreen render target has not been prepared")]
     OffscreenUnavailable,
+    #[error("CPU frame upload requires RGBA/BGRA 8-bit target format, found {0:?}")]
+    CpuUploadFormat(wgpu::TextureFormat),
+    #[error("CPU frame RGBA length mismatch: expected {expected}, found {found}")]
+    InvalidRgbaLength { expected: usize, found: usize },
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
