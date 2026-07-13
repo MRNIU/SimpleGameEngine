@@ -1,6 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
 mod errors;
+mod frame;
 mod pipeline;
 mod projection;
 mod renderer;

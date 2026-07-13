@@ -3,20 +3,21 @@
 use std::collections::BTreeMap;
 
 use sge_asset::{AssetId, RuntimeAssetStore};
-use sge_math::{Mat3, Mat4, Quat, Transform, Vec3};
+use sge_math::Mat3;
 use wgpu::util::DeviceExt;
 
-use crate::{RenderSnapshot, RenderView, view_projection_matrix};
+use crate::{RenderSnapshot, RenderView};
 
 use super::{
     errors::{
         FrameNotPreparedError, GpuAssetError, GpuBufferKind, RenderFrameError, RenderTargetError,
-        ViewProjectionError,
+    },
+    frame::{
+        create_depth_target, extent, normalized_model_matrix, uniform_bytes, validate_target_size,
     },
     pipeline::{create_composite_pipeline, create_mesh_pipeline},
 };
 
-const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const SURFACE_CLEAR_COLOR: wgpu::Color = wgpu::Color {
     r: 13.0 / 255.0,
     g: 15.0 / 255.0,
@@ -233,7 +234,7 @@ impl WgpuRenderer {
             }
             .into());
         }
-        let uniform_bytes = frame_uniform_bytes(snapshot, view, target.size)?;
+        let uniform_bytes = uniform_bytes(snapshot, view, target.size)?;
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("sge_render_frame_uniform"),
             contents: &uniform_bytes,
@@ -429,53 +430,6 @@ impl WgpuRenderer {
     }
 }
 
-fn frame_uniform_bytes(
-    snapshot: &RenderSnapshot,
-    view: RenderView,
-    target_size: [u32; 2],
-) -> Result<Vec<u8>, ViewProjectionError> {
-    let matrix = view_projection_matrix(view, target_size)?;
-    let (direction_intensity, color) =
-        snapshot
-            .lights()
-            .first()
-            .map_or(([0.0, 0.0, 0.0, -1.0], [1.0; 4]), |light| {
-                let direction = Quat::from_array(light.transform().rotation).normalize() * Vec3::Z;
-                let intensity = light.light().intensity();
-                (
-                    [direction.x, direction.y, direction.z, intensity],
-                    light.light().color(),
-                )
-            });
-    Ok(matrix
-        .into_iter()
-        .chain(direction_intensity)
-        .chain(color)
-        .flat_map(f32::to_ne_bytes)
-        .collect())
-}
-
-fn create_depth_target(device: &wgpu::Device, size: [u32; 2]) -> wgpu::Texture {
-    device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("sge_render_depth"),
-        size: extent(size),
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: DEPTH_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-        view_formats: &[],
-    })
-}
-
-fn normalized_model_matrix(transform: Transform) -> Mat4 {
-    Mat4::from_scale_rotation_translation(
-        Vec3::from_array(transform.scale),
-        Quat::from_array(transform.rotation).normalize(),
-        Vec3::from_array(transform.translation),
-    )
-}
-
 pub(super) fn checked_buffer_size(
     asset: AssetId,
     buffer: GpuBufferKind,
@@ -492,27 +446,4 @@ pub(super) fn checked_buffer_size(
         });
     }
     Ok(size)
-}
-
-fn validate_target_size(device: &wgpu::Device, size: [u32; 2]) -> Result<(), RenderTargetError> {
-    if size.contains(&0) {
-        return Err(RenderTargetError::ZeroSize);
-    }
-    let max = device.limits().max_texture_dimension_2d;
-    if size[0] > max || size[1] > max {
-        return Err(RenderTargetError::TooLarge {
-            width: size[0],
-            height: size[1],
-            max,
-        });
-    }
-    Ok(())
-}
-
-const fn extent(size: [u32; 2]) -> wgpu::Extent3d {
-    wgpu::Extent3d {
-        width: size[0],
-        height: size[1],
-        depth_or_array_layers: 1,
-    }
 }
