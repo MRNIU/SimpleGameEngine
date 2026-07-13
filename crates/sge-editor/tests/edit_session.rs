@@ -10,7 +10,7 @@ use sge_input::{Button, InputFrame, KeyCode};
 use sge_math::Transform;
 use sge_project::ProjectPath;
 use sge_reflect::{FieldKind, Value};
-use sge_render::Material;
+use sge_render::{Material, MeshRenderer};
 use sge_scene::{AuthoringEntity, SceneEntityId, SceneName};
 
 const CAMERA: &str = "50000000-0000-4000-8000-000000000001";
@@ -317,6 +317,9 @@ fn authoring_workflow_uses_generic_history_and_formal_assets()
             .as_str(),
         "Empty"
     );
+    assert!(session.component::<Transform>(empty).is_some());
+    assert!(session.component::<MeshRenderer>(empty).is_none());
+    assert!(session.component::<Material>(empty).is_none());
 
     let alternate = ProjectPath::new("Scenes/alternate.scene.ron")?;
     session.save_as(alternate.clone())?;

@@ -250,7 +250,7 @@ fn parse_ui_action(value: &str) -> Result<sge_editor::EditorUiAction, String> {
     use sge_editor::{EditorUiAction, PrimitiveKind};
 
     let action = match value {
-        "create-entity" => EditorUiAction::CreateEntity,
+        "create-empty-actor" => EditorUiAction::CreateEmptyActor,
         "create-cube" => EditorUiAction::CreatePrimitive(PrimitiveKind::Cube),
         "create-sphere" => EditorUiAction::CreatePrimitive(PrimitiveKind::Sphere),
         "create-cone" => EditorUiAction::CreatePrimitive(PrimitiveKind::Cone),

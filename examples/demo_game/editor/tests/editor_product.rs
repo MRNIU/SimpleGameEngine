@@ -203,7 +203,9 @@ fn internal_ui_tape_edits_saves_plays_stops_and_reads_back()
         .arg(project.path())
         .args([
             "--ui-action",
-            "create-entity",
+            "create-empty-actor",
+            "--ui-action",
+            "create-cube",
             "--ui-action",
             "undo",
             "--ui-action",
@@ -223,10 +225,13 @@ fn internal_ui_tape_edits_saves_plays_stops_and_reads_back()
         "editor stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(String::from_utf8(output.stdout)?.contains("ui_actions=6"));
+    assert!(String::from_utf8(output.stdout)?.contains("ui_actions=7"));
     let after = fs::read(&scene)?;
     assert_ne!(after, before);
-    assert!(String::from_utf8(after)?.contains("Entity"));
+    let after = String::from_utf8(after)?;
+    assert!(after.contains("Empty Actor"));
+    assert!(after.contains("Cube"));
+    assert!(after.contains("sge.material"));
     assert_editor_screenshot_size(&image::open(screenshot)?.to_rgba8());
     Ok(())
 }

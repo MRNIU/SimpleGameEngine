@@ -33,7 +33,11 @@ impl EditSession {
             "value",
             Value::String(name.into()),
         )?;
-        self.add_entity(AuthoringEntity::new(id, None, vec![name])?)?;
+        self.add_entity(AuthoringEntity::new(
+            id,
+            None,
+            vec![self.component_draft("sge.transform")?, name],
+        )?)?;
         Ok(id)
     }
 

@@ -24,11 +24,14 @@ impl EditorApp {
             .max_size(max_width)
             .show(ui, |ui| {
                 ui.heading("Hierarchy");
-                if self.play.is_none() && ui.button("New Entity").clicked() {
-                    let _ = self.apply_ui_action(super::EditorUiAction::CreateEntity);
-                }
                 ui.add_enabled_ui(self.play.is_none(), |ui| {
-                    ui.menu_button("Create Primitive", |ui| {
+                    ui.menu_button("Place Actors", |ui| {
+                        if ui.button("Empty Actor").clicked() {
+                            ui.close();
+                            let _ = self.apply_ui_action(super::EditorUiAction::CreateEmptyActor);
+                        }
+                        ui.separator();
+                        ui.label("Basic Shapes");
                         for (label, primitive) in [
                             ("Cube", crate::PrimitiveKind::Cube),
                             ("Sphere", crate::PrimitiveKind::Sphere),

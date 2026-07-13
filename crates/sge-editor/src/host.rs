@@ -64,7 +64,7 @@ impl Default for EditorRunOptions {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorUiAction {
-    CreateEntity,
+    CreateEmptyActor,
     CreatePrimitive(crate::PrimitiveKind),
     SelectEntity(sge_scene::SceneEntityId),
     SelectHierarchyIndex(usize),
@@ -314,7 +314,7 @@ impl EditorApp {
         if self.play.is_some()
             && matches!(
                 action,
-                EditorUiAction::CreateEntity
+                EditorUiAction::CreateEmptyActor
                     | EditorUiAction::CreatePrimitive(_)
                     | EditorUiAction::Save
                     | EditorUiAction::Undo
@@ -324,10 +324,10 @@ impl EditorApp {
             return Err("authoring action is unavailable during Play".to_owned());
         }
         match action {
-            EditorUiAction::CreateEntity => {
+            EditorUiAction::CreateEmptyActor => {
                 let result = self
                     .session
-                    .create_entity("Entity")
+                    .create_entity("Empty Actor")
                     .and_then(|entity| self.session.select(Some(entity)));
                 self.finish_edit(result)
             }
