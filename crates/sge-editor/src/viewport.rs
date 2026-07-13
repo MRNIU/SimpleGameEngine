@@ -20,6 +20,9 @@ const UNITS_PER_PIXEL: f32 = 0.01;
 const WORLD_AXIS_LENGTH: f32 = 1.0;
 const CAMERA_MOVE_SPEED: f32 = 4.0;
 const CAMERA_SPEED_MULTIPLIERS: [f32; 8] = [0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0];
+const CAMERA_LOOK_SENSITIVITY: f32 = 0.01;
+const CAMERA_MIN_ELEVATION: f32 = -1.45;
+const CAMERA_MAX_ELEVATION: f32 = 1.45;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum GizmoMode {
@@ -228,7 +231,11 @@ impl EditorViewport {
                 input.modifiers.alt,
                 input.smooth_scroll_delta.y,
                 keyboard_capture && input.key_pressed(egui::Key::Escape),
-                keyboard_capture && input.key_pressed(egui::Key::F),
+                frame_selected_requested(
+                    keyboard_capture,
+                    input.pointer.secondary_down(),
+                    input.key_pressed(egui::Key::F),
+                ),
                 input.stable_dt,
             )
         });
@@ -251,17 +258,21 @@ impl EditorViewport {
         let orbit = self.orbiting && primary_down;
         let pan = alt && middle_down && response.dragged_by(egui::PointerButton::Middle);
         let dolly = alt && secondary_down && response.dragged_by(egui::PointerButton::Secondary);
-        let vertical = !alt && primary_down && secondary_down;
+        let vertical = vertical_navigation_requested(
+            alt,
+            primary_down,
+            secondary_down,
+            response.hovered(),
+            response.dragged(),
+        );
         let look = !alt && !primary_down && response.dragged_by(egui::PointerButton::Secondary);
         let lmb_navigate = !alt
             && !secondary_down
             && self.drag.is_none()
             && response.dragged_by(egui::PointerButton::Primary);
         if orbit || look {
-            let rotation = Quat::from_rotation_z(-delta.x * 0.01)
-                * Quat::from_array(self.transform.rotation)
-                * Quat::from_rotation_x(-delta.y * 0.01);
-            self.transform.rotation = rotation.normalize().to_array();
+            self.transform.rotation =
+                camera_look_rotation(Quat::from_array(self.transform.rotation), delta).to_array();
             if orbit {
                 self.sync_position_from_pivot();
             } else {
@@ -286,9 +297,8 @@ impl EditorViewport {
             self.pivot += movement;
         }
         if lmb_navigate {
-            let rotation =
-                Quat::from_rotation_z(-delta.x * 0.01) * Quat::from_array(self.transform.rotation);
-            self.transform.rotation = rotation.normalize().to_array();
+            let rotation = camera_yaw_rotation(Quat::from_array(self.transform.rotation), delta.x);
+            self.transform.rotation = rotation.to_array();
             let movement =
                 camera_lmb_forward_motion(rotation, self.effective_camera_speed(), delta.y);
             self.transform.translation =
@@ -307,20 +317,10 @@ impl EditorViewport {
             }
         }
         if keyboard_capture && response.hovered() && secondary_down {
-            let movement = ui.input(|input| {
-                let axis = |positive, negative| {
-                    f32::from(input.key_down(positive)) - f32::from(input.key_down(negative))
-                };
-                Vec3::new(
-                    axis(egui::Key::D, egui::Key::A),
-                    axis(egui::Key::E, egui::Key::Q),
-                    axis(egui::Key::W, egui::Key::S),
-                )
-            });
+            let (local_movement, global_vertical) =
+                ui.input(|input| camera_fly_axes(|key| input.key_down(key)));
             let rotation = Quat::from_array(self.transform.rotation);
-            let motion = rotation * Vec3::X * movement.x
-                + Vec3::Z * movement.y
-                + rotation * Vec3::Z * movement.z;
+            let motion = rotation * local_movement + Vec3::Z * global_vertical;
             let motion = camera_fly_motion(motion, self.effective_camera_speed(), stable_dt);
             self.transform.translation =
                 (Vec3::from_array(self.transform.translation) + motion).to_array();
@@ -614,6 +614,45 @@ fn update_drag_preview(drag: &mut Option<GizmoDrag>, pointer: Option<egui::Pos2>
     if let (Some(drag), Some(pointer)) = (drag.as_mut(), pointer) {
         drag.preview = transform_for_drag(*drag, pointer);
     }
+}
+
+fn frame_selected_requested(keyboard_capture: bool, secondary_down: bool, f_pressed: bool) -> bool {
+    keyboard_capture && !secondary_down && f_pressed
+}
+
+fn vertical_navigation_requested(
+    alt: bool,
+    primary_down: bool,
+    secondary_down: bool,
+    hovered: bool,
+    dragged: bool,
+) -> bool {
+    !alt && primary_down && secondary_down && hovered && dragged
+}
+
+fn camera_look_rotation(rotation: Quat, delta: egui::Vec2) -> Quat {
+    let yawed = camera_yaw_rotation(rotation, delta.x);
+    let elevation = (yawed * Vec3::Z).z.clamp(-1.0, 1.0).asin();
+    let next_elevation = (elevation - delta.y * CAMERA_LOOK_SENSITIVITY)
+        .clamp(CAMERA_MIN_ELEVATION, CAMERA_MAX_ELEVATION);
+    let pitch_delta = elevation - next_elevation;
+    (yawed * Quat::from_rotation_x(pitch_delta)).normalize()
+}
+
+fn camera_yaw_rotation(rotation: Quat, delta_x: f32) -> Quat {
+    (Quat::from_rotation_z(delta_x * CAMERA_LOOK_SENSITIVITY) * rotation).normalize()
+}
+
+fn camera_fly_axes(key_down: impl Fn(egui::Key) -> bool) -> (Vec3, f32) {
+    let axis = |positive, negative| f32::from(key_down(positive)) - f32::from(key_down(negative));
+    (
+        Vec3::new(
+            axis(egui::Key::D, egui::Key::A),
+            axis(egui::Key::R, egui::Key::F),
+            axis(egui::Key::W, egui::Key::S),
+        ),
+        axis(egui::Key::E, egui::Key::Q),
+    )
 }
 
 fn camera_pan_motion(rotation: Quat, distance: f32, delta: egui::Vec2) -> Vec3 {
@@ -1268,6 +1307,73 @@ mod tests {
         assert!(viewport_keyboard_capture(true, false));
         assert!(!viewport_keyboard_capture(false, false));
         assert!(!viewport_keyboard_capture(true, true));
+    }
+
+    #[test]
+    fn ue_camera_look_maps_pointer_directions_to_view_directions() {
+        let forward = |rotation: Quat| rotation * Vec3::Z;
+        let initial = camera_rotation(0.0, 0.0);
+
+        assert!(
+            forward(camera_look_rotation(initial, egui::vec2(20.0, 0.0))).y > 0.0,
+            "dragging right must turn the view right"
+        );
+        assert!(
+            forward(camera_look_rotation(initial, egui::vec2(-20.0, 0.0))).y < 0.0,
+            "dragging left must turn the view left"
+        );
+        assert!(
+            forward(camera_look_rotation(initial, egui::vec2(0.0, -20.0))).z > 0.0,
+            "dragging up must turn the view up"
+        );
+        assert!(
+            forward(camera_look_rotation(initial, egui::vec2(0.0, 20.0))).z < 0.0,
+            "dragging down must turn the view down"
+        );
+    }
+
+    #[test]
+    fn ue_camera_look_clamps_pitch_before_the_view_flips() {
+        let initial = camera_rotation(0.0, 0.0);
+        let up = camera_look_rotation(initial, egui::vec2(0.0, -10_000.0)) * Vec3::Z;
+        let down = camera_look_rotation(initial, egui::vec2(0.0, 10_000.0)) * Vec3::Z;
+
+        assert!(up.z > 0.0 && up.z < 1.0);
+        assert!(down.z < 0.0 && down.z > -1.0);
+    }
+
+    #[test]
+    fn ue_lmb_horizontal_navigation_uses_the_same_yaw_direction_as_look() {
+        let initial = camera_rotation(0.0, 0.0);
+        let right = camera_yaw_rotation(initial, 20.0) * Vec3::Z;
+        let left = camera_yaw_rotation(initial, -20.0) * Vec3::Z;
+
+        assert!(right.y > 0.0);
+        assert!(left.y < 0.0);
+    }
+
+    #[test]
+    fn rmb_f_uses_local_flight_axis_instead_of_framing_selection() {
+        assert!(frame_selected_requested(true, false, true));
+        assert!(!frame_selected_requested(true, true, true));
+
+        let only = |pressed| camera_fly_axes(|key| key == pressed);
+        assert_eq!(only(egui::Key::R), (Vec3::Y, 0.0));
+        assert_eq!(only(egui::Key::F), (-Vec3::Y, 0.0));
+        assert_eq!(only(egui::Key::E), (Vec3::ZERO, 1.0));
+        assert_eq!(only(egui::Key::Q), (Vec3::ZERO, -1.0));
+    }
+
+    #[test]
+    fn lmb_rmb_vertical_navigation_requires_a_viewport_drag() {
+        assert!(vertical_navigation_requested(false, true, true, true, true));
+        assert!(!vertical_navigation_requested(
+            false, true, true, false, true
+        ));
+        assert!(!vertical_navigation_requested(
+            false, true, true, true, false
+        ));
+        assert!(!vertical_navigation_requested(true, true, true, true, true));
     }
 
     #[test]
