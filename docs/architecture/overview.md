@@ -100,7 +100,7 @@ flowchart TB
 - authoring viewport 拥有独立 editor camera；grid/axis、ViewCube、selection 和 gizmo 不修改 scene camera。
 - 1280×720 顶栏只显示 compact project identity，完整路径通过 hover 保留；viewport 显式显示 active tool/Game View，错误条在 central viewport 布局前占位并可关闭。
 - `PlaySession` 每次从同一 `GameDescriptor` 创建 fresh World；Stop 直接丢弃且不写回 `EditWorld`。
-- game-specific Editor 独占 native dialog 依赖；dirty scene replacement 必须经过 Save/Discard/Cancel。
+- game-specific Editor 独占 native dialog 依赖；dirty scene replacement 与窗口关闭必须经过 Save/Discard/Cancel。Save失败保持窗口、EditWorld、selection与history可恢复，Discard不写盘，Cancel不改变session。
 - Editor 只把 Play viewport 已聚焦且未被 egui 消费的输入发送给 gameplay。
 - authoring viewport 的 framing、tool hotkey 与飞行键盘输入同样要求 viewport focus 且无 text edit focus；Play 与 Build 互斥，Build child尚未回收时host禁止authoring mutation、文件写入和project/scene replacement。
 

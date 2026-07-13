@@ -82,15 +82,16 @@ impl EditorApp {
         let Some(decision) = decision else {
             return;
         };
-        if decision == CloseDecision::Cancel {
-            self.pending_close_confirmation = false;
-            return;
-        }
-        if decision == CloseDecision::Save
-            && let Err(error) = self.session.save()
-        {
-            self.last_error = Some(error.to_string());
-            return;
+        match apply_close_decision(&mut self.session, decision) {
+            Ok(CloseOutcome::KeepOpen) => {
+                self.pending_close_confirmation = false;
+                return;
+            }
+            Ok(CloseOutcome::Close) => {}
+            Err(error) => {
+                self.last_error = Some(error.to_string());
+                return;
+            }
         }
         if let Some(build) = self.build.as_mut()
             && let Err(error) = build.cancel()
@@ -263,6 +264,26 @@ enum CloseDecision {
     Cancel,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CloseOutcome {
+    KeepOpen,
+    Close,
+}
+
+fn apply_close_decision(
+    session: &mut EditSession,
+    decision: CloseDecision,
+) -> Result<CloseOutcome, crate::EditError> {
+    match decision {
+        CloseDecision::Save => {
+            session.save()?;
+            Ok(CloseOutcome::Close)
+        }
+        CloseDecision::Discard => Ok(CloseOutcome::Close),
+        CloseDecision::Cancel => Ok(CloseOutcome::KeepOpen),
+    }
+}
+
 fn close_requires_confirmation(dirty: bool, build_running: bool) -> bool {
     dirty || build_running
 }
@@ -294,9 +315,16 @@ fn project_path(root: &Path, path: &Path) -> Result<sge_project::ProjectPath, St
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use eframe::egui;
 
-    use super::{close_requires_confirmation, intercept_close_request};
+    use super::super::test_support::TestProject;
+    use super::{
+        CloseDecision, CloseOutcome, apply_close_decision, close_requires_confirmation,
+        intercept_close_request,
+    };
+    use crate::EditSession;
 
     #[test]
     fn close_only_needs_confirmation_for_unsaved_work_or_a_running_build() {
@@ -348,5 +376,90 @@ mod tests {
             .expect("root viewport output")
             .commands;
         assert!(!commands.contains(&egui::ViewportCommand::CancelClose));
+    }
+
+    #[test]
+    fn cancel_close_preserves_scene_selection_and_history() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let project = TestProject::new("cancel-close")?;
+        let scene_path = project.path().join("Scenes/main.scene.ron");
+        let disk_before = fs::read(&scene_path)?;
+        let mut session = EditSession::open(demo_game::GAME, project.path())?;
+        let entity = session.create_entity("Unsaved Before Cancel")?;
+        session.select(Some(entity))?;
+        let scene_before = session.snapshot()?.to_ron()?;
+        let cursor_before = session.history_cursor();
+
+        assert_eq!(
+            apply_close_decision(&mut session, CloseDecision::Cancel)?,
+            CloseOutcome::KeepOpen
+        );
+        assert!(session.is_dirty());
+        assert_eq!(session.selection(), Some(entity));
+        assert_eq!(session.history_cursor(), cursor_before);
+        assert_eq!(session.snapshot()?.to_ron()?, scene_before);
+        assert_eq!(fs::read(&scene_path)?, disk_before);
+        session.undo()?;
+        assert_eq!(session.history_cursor(), cursor_before - 1);
+        Ok(())
+    }
+
+    #[test]
+    fn save_close_persists_before_authorizing_close() -> Result<(), Box<dyn std::error::Error>> {
+        let project = TestProject::new("save-close")?;
+        let scene_path = project.path().join("Scenes/main.scene.ron");
+        let disk_before = fs::read(&scene_path)?;
+        let mut session = EditSession::open(demo_game::GAME, project.path())?;
+        session.create_entity("Saved Before Close")?;
+
+        assert_eq!(
+            apply_close_decision(&mut session, CloseDecision::Save)?,
+            CloseOutcome::Close
+        );
+        assert!(!session.is_dirty());
+        let disk_after = fs::read(&scene_path)?;
+        assert_ne!(disk_after, disk_before);
+        assert!(
+            std::str::from_utf8(&disk_after)?.contains("Saved Before Close"),
+            "saved scene must contain the pending edit"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn failed_save_close_keeps_the_session_recoverable() -> Result<(), Box<dyn std::error::Error>> {
+        let project = TestProject::new("failed-save-close")?;
+        let mut session = EditSession::open(demo_game::GAME, project.path())?;
+        let entity = session.create_entity("Unsaved After Failure")?;
+        session.select(Some(entity))?;
+        let scene_before = session.snapshot()?.to_ron()?;
+        let cursor_before = session.history_cursor();
+        fs::remove_dir_all(project.path().join("Scenes"))?;
+
+        assert!(apply_close_decision(&mut session, CloseDecision::Save).is_err());
+        assert!(session.is_dirty());
+        assert_eq!(session.selection(), Some(entity));
+        assert_eq!(session.history_cursor(), cursor_before);
+        assert_eq!(session.snapshot()?.to_ron()?, scene_before);
+        session.undo()?;
+        assert_eq!(session.history_cursor(), cursor_before - 1);
+        Ok(())
+    }
+
+    #[test]
+    fn discard_close_does_not_write_the_pending_edit() -> Result<(), Box<dyn std::error::Error>> {
+        let project = TestProject::new("discard-close")?;
+        let scene_path = project.path().join("Scenes/main.scene.ron");
+        let disk_before = fs::read(&scene_path)?;
+        let mut session = EditSession::open(demo_game::GAME, project.path())?;
+        session.create_entity("Discarded Before Close")?;
+
+        assert_eq!(
+            apply_close_decision(&mut session, CloseDecision::Discard)?,
+            CloseOutcome::Close
+        );
+        assert!(session.is_dirty());
+        assert_eq!(fs::read(scene_path)?, disk_before);
+        Ok(())
     }
 }

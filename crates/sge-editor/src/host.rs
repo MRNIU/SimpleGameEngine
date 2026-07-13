@@ -26,6 +26,8 @@ mod app;
 mod files;
 mod panels;
 mod shortcuts;
+#[cfg(test)]
+mod test_support;
 
 use actions::current_frame;
 use files::ReplacementDialog;
