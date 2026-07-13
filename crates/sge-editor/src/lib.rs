@@ -18,8 +18,8 @@ use input::EditorInputAccumulator;
 pub use build::EditorBuildLauncher;
 pub use error::{EditError, EditorOpenError, EditorPreviewError};
 pub use host::{
-    EditorFileDialogs, EditorRunError, EditorRunOptions, EditorRunReport, NewProjectDialog,
-    OpenProjectDialog, ProjectFileDialog, run,
+    EditorFileDialogs, EditorRunError, EditorRunOptions, EditorRunReport, EditorUiAction,
+    NewProjectDialog, OpenProjectDialog, ProjectFileDialog, run,
 };
 pub use inspector::{InspectorComponent, InspectorField, SceneComponentType};
 pub use play::{PlaySession, PlayStartError};

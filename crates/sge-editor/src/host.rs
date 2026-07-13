@@ -1,6 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
 use std::{
+    collections::VecDeque,
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -42,6 +43,7 @@ pub struct EditorRunOptions {
     pub initial_size: [u32; 2],
     pub start_in_play: bool,
     pub screenshot: Option<PathBuf>,
+    pub ui_actions: Vec<EditorUiAction>,
     pub build_launcher: Option<EditorBuildLauncher>,
     pub file_dialogs: Option<EditorFileDialogs>,
 }
@@ -53,10 +55,25 @@ impl Default for EditorRunOptions {
             initial_size: [1280, 720],
             start_in_play: false,
             screenshot: None,
+            ui_actions: Vec::new(),
             build_launcher: None,
             file_dialogs: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditorUiAction {
+    CreateEntity,
+    CreatePrimitive(crate::PrimitiveKind),
+    SelectEntity(sge_scene::SceneEntityId),
+    SelectHierarchyIndex(usize),
+    Save,
+    Undo,
+    Redo,
+    StartPlay,
+    StopPlay,
+    Build,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +82,7 @@ pub struct EditorRunReport {
     pub play_frames: u64,
     pub gameplay_input_frames: u64,
     pub gameplay_key_w_frames: u64,
+    pub ui_actions: u64,
 }
 
 pub fn run(
@@ -100,6 +118,9 @@ pub fn run(
     let gameplay_key_w_frames = Arc::new(AtomicU64::new(0));
     let report_gameplay_key_w_frames = Arc::clone(&gameplay_key_w_frames);
     let build = options.build_launcher.map(BuildProcess::new);
+    let expected_ui_actions = options.ui_actions.len() as u64;
+    let ui_action_count = Arc::new(AtomicU64::new(0));
+    let report_ui_action_count = Arc::clone(&ui_action_count);
     let (screenshot_result, screenshot_receiver) = if options.screenshot.is_some() {
         let (sender, receiver) = mpsc::channel();
         (Some(sender), Some(receiver))
@@ -136,6 +157,8 @@ pub fn run(
                 screenshot: options.screenshot,
                 screenshot_requested_at: None,
                 screenshot_result,
+                ui_actions: options.ui_actions.into(),
+                ui_action_count,
                 play_frames,
                 gameplay_input_frames,
                 gameplay_key_w_frames,
@@ -166,11 +189,19 @@ pub fn run(
     if preview_expected && (preview.prepare_count == 0 || preview.paint_count == 0) {
         return Err(EditorRunError::PreviewIncomplete);
     }
+    let completed_ui_actions = report_ui_action_count.load(Ordering::Relaxed);
+    if completed_ui_actions != expected_ui_actions {
+        return Err(EditorRunError::UiActionsIncomplete {
+            expected: expected_ui_actions,
+            completed: completed_ui_actions,
+        });
+    }
     Ok(EditorRunReport {
         preview,
         play_frames: report_play_frames.load(Ordering::Relaxed),
         gameplay_input_frames: report_gameplay_input_frames.load(Ordering::Relaxed),
         gameplay_key_w_frames: report_gameplay_key_w_frames.load(Ordering::Relaxed),
+        ui_actions: completed_ui_actions,
     })
 }
 
@@ -187,6 +218,8 @@ struct EditorApp {
     screenshot: Option<PathBuf>,
     screenshot_requested_at: Option<Instant>,
     screenshot_result: Option<Sender<Result<(), String>>>,
+    ui_actions: VecDeque<EditorUiAction>,
+    ui_action_count: Arc<AtomicU64>,
     play_frames: Arc<AtomicU64>,
     gameplay_input_frames: Arc<AtomicU64>,
     gameplay_key_w_frames: Arc<AtomicU64>,
@@ -226,7 +259,7 @@ impl EditorApp {
         }
     }
 
-    fn start_play(&mut self) {
+    fn start_play(&mut self) -> Result<(), String> {
         match self.session.start_play() {
             Ok(play) => {
                 self.play = Some(play);
@@ -235,8 +268,13 @@ impl EditorApp {
                 self.last_tick = Instant::now();
                 self.last_error = None;
                 self.refresh_frame();
+                Ok(())
             }
-            Err(error) => self.last_error = Some(error.to_string()),
+            Err(error) => {
+                let error = error.to_string();
+                self.last_error = Some(error.clone());
+                Err(error)
+            }
         }
     }
 
@@ -248,14 +286,108 @@ impl EditorApp {
     }
 
     fn apply_edit(&mut self, result: Result<(), crate::EditError>) {
+        let _ = self.finish_edit(result);
+    }
+
+    fn finish_edit(&mut self, result: Result<(), crate::EditError>) -> Result<(), String> {
         match result {
             Ok(()) => {
                 self.last_error = None;
                 self.component_draft = None;
                 self.inspector_drafts.clear();
                 self.refresh_frame();
+                Ok(())
             }
-            Err(error) => self.last_error = Some(error.to_string()),
+            Err(error) => {
+                let error = error.to_string();
+                self.last_error = Some(error.clone());
+                Err(error)
+            }
+        }
+    }
+
+    fn apply_ui_action(&mut self, action: EditorUiAction) -> Result<(), String> {
+        if self.play.is_some()
+            && matches!(
+                action,
+                EditorUiAction::CreateEntity
+                    | EditorUiAction::CreatePrimitive(_)
+                    | EditorUiAction::Save
+                    | EditorUiAction::Undo
+                    | EditorUiAction::Redo
+            )
+        {
+            return Err("authoring action is unavailable during Play".to_owned());
+        }
+        match action {
+            EditorUiAction::CreateEntity => {
+                let result = self
+                    .session
+                    .create_entity("Entity")
+                    .and_then(|entity| self.session.select(Some(entity)));
+                self.finish_edit(result)
+            }
+            EditorUiAction::CreatePrimitive(primitive) => {
+                let result = self
+                    .session
+                    .create_primitive(primitive)
+                    .and_then(|created| self.session.select(Some(created.entity)));
+                self.finish_edit(result)
+            }
+            EditorUiAction::SelectHierarchyIndex(index) => {
+                let entity = self
+                    .session
+                    .snapshot()
+                    .map_err(|error| error.to_string())?
+                    .entities()
+                    .nth(index)
+                    .map(sge_scene::AuthoringEntity::id)
+                    .ok_or_else(|| format!("Hierarchy index {index} does not exist"))?;
+                let result = self.session.select(Some(entity));
+                self.finish_edit(result)
+            }
+            EditorUiAction::SelectEntity(entity) => {
+                let result = self.session.select(Some(entity));
+                self.finish_edit(result)
+            }
+            EditorUiAction::Save => {
+                let result = self.session.save();
+                self.finish_edit(result)
+            }
+            EditorUiAction::Undo => {
+                let result = self.session.undo();
+                self.finish_edit(result)
+            }
+            EditorUiAction::Redo => {
+                let result = self.session.redo();
+                self.finish_edit(result)
+            }
+            EditorUiAction::StartPlay => {
+                if self.play.is_some() {
+                    Err("Play is already running".to_owned())
+                } else {
+                    self.start_play()
+                }
+            }
+            EditorUiAction::StopPlay => {
+                if self.play.is_none() {
+                    Err("Play is not running".to_owned())
+                } else {
+                    self.stop_play();
+                    Ok(())
+                }
+            }
+            EditorUiAction::Build => {
+                let build = self
+                    .build
+                    .as_mut()
+                    .ok_or_else(|| "Build launcher is unavailable".to_owned())?;
+                if build.start(&self.project_root) {
+                    Ok(())
+                } else {
+                    Err("Build is already running".to_owned())
+                }
+            }
         }
     }
 }
@@ -294,7 +426,26 @@ impl eframe::App for EditorApp {
             return;
         }
         self.frames = self.frames.saturating_add(1);
-        if self.screenshot.is_some() && self.screenshot_requested_at.is_none() && self.frames >= 3 {
+        if self.frames >= 3
+            && let Some(action) = self.ui_actions.pop_front()
+        {
+            match self.apply_ui_action(action) {
+                Ok(()) => {
+                    self.ui_action_count.fetch_add(1, Ordering::Relaxed);
+                }
+                Err(error) => {
+                    self.last_error = Some(error);
+                    self.ui_actions.clear();
+                }
+            }
+            context.request_repaint();
+            return;
+        }
+        if self.screenshot.is_some()
+            && self.screenshot_requested_at.is_none()
+            && self.frames >= 3
+            && self.ui_actions.is_empty()
+        {
             self.screenshot_requested_at = Some(Instant::now());
             context.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
             context.request_repaint();
@@ -328,32 +479,29 @@ impl eframe::App for EditorApp {
                 self.file_controls(ui);
                 if self.play.is_some() {
                     if ui.button("Stop").clicked() {
-                        self.stop_play();
+                        let _ = self.apply_ui_action(EditorUiAction::StopPlay);
                     }
                 } else if ui.button("Play").clicked() {
-                    self.start_play();
+                    let _ = self.apply_ui_action(EditorUiAction::StartPlay);
                 }
                 self.build_controls(ui);
                 if ui
                     .add_enabled(self.play.is_none(), egui::Button::new("Save"))
                     .clicked()
                 {
-                    let result = self.session.save();
-                    self.apply_edit(result);
+                    let _ = self.apply_ui_action(EditorUiAction::Save);
                 }
                 if ui
                     .add_enabled(self.play.is_none(), egui::Button::new("Undo"))
                     .clicked()
                 {
-                    let result = self.session.undo();
-                    self.apply_edit(result);
+                    let _ = self.apply_ui_action(EditorUiAction::Undo);
                 }
                 if ui
                     .add_enabled(self.play.is_none(), egui::Button::new("Redo"))
                     .clicked()
                 {
-                    let result = self.session.redo();
-                    self.apply_edit(result);
+                    let _ = self.apply_ui_action(EditorUiAction::Redo);
                 }
                 ui.label(if self.session.is_dirty() {
                     "modified"
@@ -570,15 +718,18 @@ impl EditorApp {
     }
 
     fn build_controls(&mut self, ui: &mut egui::Ui) {
-        let Some(build) = self.build.as_mut() else {
+        let Some(build) = self.build.as_ref() else {
             return;
         };
-        if ui
+        let start = ui
             .add_enabled(!build.is_running(), egui::Button::new("Build"))
-            .clicked()
-        {
-            build.start(&self.project_root);
+            .clicked();
+        if start {
+            let _ = self.apply_ui_action(EditorUiAction::Build);
         }
+        let Some(build) = self.build.as_ref() else {
+            return;
+        };
         let color = if build.failed() {
             egui::Color32::LIGHT_RED
         } else {
@@ -662,4 +813,6 @@ pub enum EditorRunError {
     Screenshot(String),
     #[error("Editor screenshot was not captured before the window closed")]
     ScreenshotIncomplete,
+    #[error("Editor UI action tape stopped after {completed} of {expected} actions")]
+    UiActionsIncomplete { expected: u64, completed: u64 },
 }

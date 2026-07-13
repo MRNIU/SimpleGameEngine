@@ -14,32 +14,24 @@ impl EditorApp {
             .show(ui, |ui| {
                 ui.heading("Hierarchy");
                 if self.play.is_none() && ui.button("New Entity").clicked() {
-                    match self.session.create_entity("Entity") {
-                        Ok(entity) => {
-                            let result = self.session.select(Some(entity));
-                            self.apply_edit(result);
-                        }
-                        Err(error) => self.last_error = Some(error.to_string()),
-                    }
+                    let _ = self.apply_ui_action(super::EditorUiAction::CreateEntity);
                 }
-                ui.menu_button("Create Primitive", |ui| {
-                    for (label, primitive) in [
-                        ("Cube", crate::PrimitiveKind::Cube),
-                        ("Sphere", crate::PrimitiveKind::Sphere),
-                        ("Cone", crate::PrimitiveKind::Cone),
-                        ("Cylinder", crate::PrimitiveKind::Cylinder),
-                    ] {
-                        if ui.button(label).clicked() {
-                            ui.close();
-                            match self.session.create_primitive(primitive) {
-                                Ok(created) => {
-                                    let result = self.session.select(Some(created.entity));
-                                    self.apply_edit(result);
-                                }
-                                Err(error) => self.last_error = Some(error.to_string()),
+                ui.add_enabled_ui(self.play.is_none(), |ui| {
+                    ui.menu_button("Create Primitive", |ui| {
+                        for (label, primitive) in [
+                            ("Cube", crate::PrimitiveKind::Cube),
+                            ("Sphere", crate::PrimitiveKind::Sphere),
+                            ("Cone", crate::PrimitiveKind::Cone),
+                            ("Cylinder", crate::PrimitiveKind::Cylinder),
+                        ] {
+                            if ui.button(label).clicked() {
+                                ui.close();
+                                let _ = self.apply_ui_action(
+                                    super::EditorUiAction::CreatePrimitive(primitive),
+                                );
                             }
                         }
-                    }
+                    });
                 });
                 let selection = self.session.selection();
                 match self.session.snapshot() {
@@ -56,8 +48,9 @@ impl EditorApp {
                                 .selectable_label(selection == Some(entity.id()), label)
                                 .clicked()
                             {
-                                let result = self.session.select(Some(entity.id()));
-                                self.apply_edit(result);
+                                let _ = self.apply_ui_action(super::EditorUiAction::SelectEntity(
+                                    entity.id(),
+                                ));
                             }
                         }
                     }

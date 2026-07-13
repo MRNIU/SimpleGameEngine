@@ -78,6 +78,12 @@ docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-e
 # game-specific demo Editor authoring viewport：独立camera/grid/ViewCube/gizmo路径真实WGPU prepare/paint
 docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-editor --test editor_product game_specific_editor_paints_the_authoring_viewport -- --ignored --exact'
 
+# Editor内部UI action tape：选择Hierarchy后从WGPU buffer读回并验证Inspector
+docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-editor --test editor_product internal_ui_tape_selects_hierarchy_and_reads_back_inspector -- --ignored --exact'
+
+# Editor内部完整编辑tape：Create/Undo/Redo/Save/Play/Stop后读回窗口buffer
+docker exec "$DEVCONTAINER_NAME" bash -lc 'xvfb-run -a cargo test -p demo-game-editor --test editor_product internal_ui_tape_edits_saves_plays_stops_and_reads_back -- --ignored --exact'
+
 # 查看 game-specific host 参数
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p demo-game-player -- --help'
 docker exec "$DEVCONTAINER_NAME" bash -lc 'cargo run -p demo-game-editor -- --help'

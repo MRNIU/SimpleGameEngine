@@ -19,6 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             max_frames: arguments.max_frames,
             start_in_play: arguments.start_in_play,
             screenshot: arguments.screenshot,
+            ui_actions: arguments.ui_actions,
             build_launcher: Some(EditorBuildLauncher::new(
                 "cargo",
                 ["run", "--package", "sge-build", "--bin", "sge", "--"],
@@ -34,12 +35,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
     )?;
     println!(
-        "preview_prepare={} preview_paint={} play_frames={} gameplay_input_frames={} gameplay_key_w_frames={}",
+        "preview_prepare={} preview_paint={} play_frames={} gameplay_input_frames={} gameplay_key_w_frames={} ui_actions={}",
         report.preview.prepare_count,
         report.preview.paint_count,
         report.play_frames,
         report.gameplay_input_frames,
-        report.gameplay_key_w_frames
+        report.gameplay_key_w_frames,
+        report.ui_actions
     );
     Ok(())
 }
@@ -141,6 +143,7 @@ struct Arguments {
     max_frames: Option<u64>,
     start_in_play: bool,
     screenshot: Option<PathBuf>,
+    ui_actions: Vec<sge_editor::EditorUiAction>,
 }
 
 fn arguments() -> Result<Option<Arguments>, String> {
@@ -156,6 +159,7 @@ fn arguments() -> Result<Option<Arguments>, String> {
     let mut max_frames = None;
     let mut start_in_play = false;
     let mut screenshot = None;
+    let mut ui_actions = Vec::new();
     while let Some(argument) = values.next() {
         if argument == "--play" {
             start_in_play = true;
@@ -167,6 +171,16 @@ fn arguments() -> Result<Option<Arguments>, String> {
                     .next()
                     .ok_or_else(|| usage("--screenshot requires a path"))?,
             ));
+            continue;
+        }
+        if argument == "--ui-action" {
+            let value = values
+                .next()
+                .ok_or_else(|| usage("--ui-action requires a value"))?;
+            let value = value
+                .to_str()
+                .ok_or_else(|| usage("--ui-action must be UTF-8"))?;
+            ui_actions.push(parse_ui_action(value)?);
             continue;
         }
         if argument != "--max-frames" {
@@ -197,6 +211,7 @@ fn arguments() -> Result<Option<Arguments>, String> {
         max_frames,
         start_in_play,
         screenshot,
+        ui_actions,
     }))
 }
 
@@ -207,8 +222,32 @@ fn usage(error: &str) -> String {
         format!("{error}\n\n")
     };
     format!(
-        "{prefix}Usage: demo-game-editor PROJECT_ROOT [--play] [--max-frames N] [--screenshot PATH]"
+        "{prefix}Usage: demo-game-editor PROJECT_ROOT [--play] [--max-frames N] [--screenshot PATH] [--ui-action ACTION]..."
     )
+}
+
+fn parse_ui_action(value: &str) -> Result<sge_editor::EditorUiAction, String> {
+    use sge_editor::{EditorUiAction, PrimitiveKind};
+
+    let action = match value {
+        "create-entity" => EditorUiAction::CreateEntity,
+        "create-cube" => EditorUiAction::CreatePrimitive(PrimitiveKind::Cube),
+        "create-sphere" => EditorUiAction::CreatePrimitive(PrimitiveKind::Sphere),
+        "create-cone" => EditorUiAction::CreatePrimitive(PrimitiveKind::Cone),
+        "create-cylinder" => EditorUiAction::CreatePrimitive(PrimitiveKind::Cylinder),
+        "save" => EditorUiAction::Save,
+        "undo" => EditorUiAction::Undo,
+        "redo" => EditorUiAction::Redo,
+        "play" => EditorUiAction::StartPlay,
+        "stop" => EditorUiAction::StopPlay,
+        "build" => EditorUiAction::Build,
+        _ => value
+            .strip_prefix("select:")
+            .and_then(|index| index.parse().ok())
+            .map(EditorUiAction::SelectHierarchyIndex)
+            .ok_or_else(|| usage(&format!("unknown --ui-action: {value}")))?,
+    };
+    Ok(action)
 }
 
 #[cfg(test)]

@@ -16,7 +16,7 @@ fn editor_cli_has_stable_help() -> Result<(), Box<dyn std::error::Error>> {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout)?,
-        "Usage: demo-game-editor PROJECT_ROOT [--play] [--max-frames N] [--screenshot PATH]\n"
+        "Usage: demo-game-editor PROJECT_ROOT [--play] [--max-frames N] [--screenshot PATH] [--ui-action ACTION]...\n"
     );
     assert!(output.stderr.is_empty());
     let conflict = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
@@ -126,6 +126,104 @@ fn game_specific_editor_paints_the_authoring_viewport() -> Result<(), Box<dyn st
     assert_eq!(screenshot.dimensions(), (1280, 720));
     let first = *screenshot.get_pixel(0, 0);
     assert!(screenshot.pixels().any(|pixel| *pixel != first));
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires a real WGPU window; run with xvfb-run"]
+fn internal_ui_tape_selects_hierarchy_and_reads_back_inspector()
+-> Result<(), Box<dyn std::error::Error>> {
+    let project = TestProject::new()?;
+    let screenshot = project.path().join("selected.png");
+    let output = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
+        .arg(project.path())
+        .args(["--ui-action", "select:1", "--screenshot"])
+        .arg(&screenshot)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "editor stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8(output.stdout)?.contains("ui_actions=1"));
+    let screenshot = image::open(screenshot)?.to_rgba8();
+    let dark_inspector_pixels = screenshot
+        .enumerate_pixels()
+        .filter(|(x, y, pixel)| *x >= 980 && *y >= 40 && pixel.0[..3].iter().all(|v| *v < 200))
+        .count();
+    assert!(dark_inspector_pixels > 2_000, "Inspector remained empty");
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires a real WGPU window; run with xvfb-run"]
+fn internal_ui_tape_edits_saves_plays_stops_and_reads_back()
+-> Result<(), Box<dyn std::error::Error>> {
+    let project = TestProject::new()?;
+    let scene = project.path().join("Scenes/main.scene.ron");
+    let before = fs::read(&scene)?;
+    let screenshot = project.path().join("workflow.png");
+    let output = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
+        .arg(project.path())
+        .args([
+            "--ui-action",
+            "create-entity",
+            "--ui-action",
+            "undo",
+            "--ui-action",
+            "redo",
+            "--ui-action",
+            "save",
+            "--ui-action",
+            "play",
+            "--ui-action",
+            "stop",
+            "--screenshot",
+        ])
+        .arg(&screenshot)
+        .output()?;
+    assert!(
+        output.status.success(),
+        "editor stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8(output.stdout)?.contains("ui_actions=6"));
+    let after = fs::read(&scene)?;
+    assert_ne!(after, before);
+    assert!(String::from_utf8(after)?.contains("Entity"));
+    assert_eq!(
+        image::open(screenshot)?.to_rgba8().dimensions(),
+        (1280, 720)
+    );
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires a real WGPU window; run with xvfb-run"]
+fn internal_ui_tape_rejects_authoring_mutation_during_play()
+-> Result<(), Box<dyn std::error::Error>> {
+    let project = TestProject::new()?;
+    let manifest = project.path().join("Content/asset_manifest.ron");
+    let before_manifest = fs::read(&manifest)?;
+    let meshes = project.path().join("Content/Meshes");
+    let before_meshes = fs::read_dir(&meshes)?.count();
+    let screenshot = project.path().join("play-rejected.png");
+    let output = Command::new(env!("CARGO_BIN_EXE_demo-game-editor"))
+        .arg(project.path())
+        .args(["--play", "--ui-action", "create-cube", "--screenshot"])
+        .arg(&screenshot)
+        .output()?;
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)?
+            .contains("UiActionsIncomplete { expected: 1, completed: 0 }")
+    );
+    assert_eq!(fs::read(manifest)?, before_manifest);
+    assert_eq!(fs::read_dir(meshes)?.count(), before_meshes);
+    assert_eq!(
+        image::open(screenshot)?.to_rgba8().dimensions(),
+        (1280, 720)
+    );
     Ok(())
 }
 
