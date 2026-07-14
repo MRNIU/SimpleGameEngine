@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use eframe::egui;
+use sge_math::{EulerRot, Quat};
 use sge_reflect::{FieldKey, FieldKind, TypeKey, Value};
 use sge_scene::SceneEntityId;
 
@@ -128,6 +129,12 @@ fn edit_value(
     field_key: &str,
     translations: Option<&EditorTranslations>,
 ) -> bool {
+    if type_key == "sge.transform"
+        && field_key == "rotation"
+        && let Value::Quat(rotation) = value
+    {
+        return edit_transform_rotation(ui, rotation);
+    }
     match value {
         Value::Bool(value) => ui.checkbox(value, "").changed(),
         Value::I64(value) => ui.add(egui::DragValue::new(value)).changed(),
@@ -191,6 +198,42 @@ fn edit_value(
     }
 }
 
+fn edit_transform_rotation(ui: &mut egui::Ui, rotation: &mut Quat) -> bool {
+    let mut degrees = euler_degrees_from_quat(*rotation);
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        for (axis, value) in ["X", "Y", "Z"].into_iter().zip(&mut degrees) {
+            changed |= ui
+                .add(
+                    egui::DragValue::new(value)
+                        .speed(0.25)
+                        .prefix(format!("{axis} "))
+                        .suffix("°"),
+                )
+                .changed();
+        }
+    });
+    if changed {
+        *rotation = quat_from_euler_degrees(degrees);
+    }
+    changed
+}
+
+fn euler_degrees_from_quat(rotation: Quat) -> [f32; 3] {
+    let (yaw, pitch, roll) = rotation.normalize().to_euler(EulerRot::ZYX);
+    [roll.to_degrees(), pitch.to_degrees(), yaw.to_degrees()]
+}
+
+fn quat_from_euler_degrees([roll, pitch, yaw]: [f32; 3]) -> Quat {
+    Quat::from_euler(
+        EulerRot::ZYX,
+        yaw.to_radians(),
+        pitch.to_radians(),
+        roll.to_radians(),
+    )
+    .normalize()
+}
+
 fn floats<const N: usize>(ui: &mut egui::Ui, values: &mut [f32; N]) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
@@ -203,10 +246,37 @@ fn floats<const N: usize>(ui: &mut egui::Ui, values: &mut [f32; N]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use sge_math::{EulerRot, Quat};
     use sge_reflect::{FieldKey, TypeKey};
     use sge_scene::SceneEntityId;
 
-    use super::InspectorDrafts;
+    use super::{InspectorDrafts, euler_degrees_from_quat, quat_from_euler_degrees};
+
+    #[test]
+    fn transform_rotation_is_presented_as_xyz_euler_degrees() {
+        let rotation = Quat::from_euler(
+            EulerRot::ZYX,
+            120.0_f32.to_radians(),
+            -40.0_f32.to_radians(),
+            25.0_f32.to_radians(),
+        );
+
+        let degrees = euler_degrees_from_quat(rotation);
+
+        assert!((degrees[0] - 25.0).abs() < 0.001);
+        assert!((degrees[1] + 40.0).abs() < 0.001);
+        assert!((degrees[2] - 120.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn edited_xyz_euler_degrees_round_trip_to_the_same_rotation() {
+        let degrees = [25.0, -40.0, 120.0];
+
+        let rotation = quat_from_euler_degrees(degrees);
+        let round_trip = quat_from_euler_degrees(euler_degrees_from_quat(rotation));
+
+        assert!(rotation.dot(round_trip).abs() > 0.999_999);
+    }
 
     #[test]
     fn invalid_reference_text_remains_an_editor_draft_until_successful_commit() {

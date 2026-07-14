@@ -97,7 +97,7 @@ flowchart TB
 ## Editor 与 Play
 
 - `EditWorld` 是唯一 live authoring truth；mutation 从 snapshot 构造 fresh candidate，通过 validation/instantiate 后原子替换。
-- Inspector、entity/component operation、gizmo commit 和文件操作统一进入 `EditSession` history，不维护 mirrored DTO。
+- Inspector、entity/component operation、gizmo commit 和文件操作统一进入 `EditSession` history，不维护 mirrored DTO。Transform rotation 只在 Inspector presentation 层映射为 X（Roll）、Y（Pitch）、Z（Yaw）欧拉角度数；Reflect、scene、gizmo 与 runtime 的 owner value 仍是四元数。
 - authoring viewport 拥有独立 editor camera；grid/axis、ViewCube、selection 和 gizmo 不修改 scene camera。scene Camera 与 Directional Light 仍是带 `Transform` 的普通场景实体，viewport 只为它们绘制可拾取的 editor-only 三维线框（camera body/frustum、light source/direction），不注入 `MeshRenderer`、runtime asset 或 Player draw item。
 - 1280×720 顶栏只显示 compact project identity，完整路径通过 hover 保留；viewport 显式显示 active tool/Game View，错误条在 central viewport 布局前占位并可关闭。
 - `PlaySession` 每次从同一 `GameDescriptor` 创建 fresh World；Stop 直接丢弃且不写回 `EditWorld`。
