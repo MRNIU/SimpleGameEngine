@@ -26,5 +26,8 @@ pub use inspector::{InspectorComponent, InspectorField, SceneComponentType};
 pub use localization::{EditorLanguage, EditorTranslations};
 pub use play::{PlaySession, PlayStartError};
 pub use preview::{PreviewProbe, PreviewProbeReport};
-pub use session::{CreatedMeshEntity, EditSession, EditorWorkspace, PreviewFrame, PrimitiveKind};
+pub use session::{
+    CreatedMeshEntity, EditSession, EditorWorkspace, PreviewFrame, PrimitiveKind,
+    primitive_obj_source,
+};
 pub use sge_render::{RenderBackend, RenderMode};

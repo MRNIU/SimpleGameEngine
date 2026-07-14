@@ -1,7 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
 use serde::{Deserialize, Serialize};
-use sge_asset::{AssetId, AssetIdError, AssetLookup, MESH_ASSET_TYPE_KEY};
+use sge_asset::{AssetId, AssetIdError, AssetLookup, MESH_ASSET_TYPE_KEY, TEXTURE_ASSET_TYPE_KEY};
 use sge_reflect::{KeyError, TypeKey};
 
 use crate::{ProjectIoError, ProjectPath, ProjectPathError, ProjectRoot, canonical_pretty_config};
@@ -29,6 +29,7 @@ impl ObjImportSettings {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceImporter {
     Obj(ObjImportSettings),
+    Png,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,6 +70,22 @@ impl SourceAssetRecord {
                 return Err(ManifestError::InvalidObjSource { path: source });
             }
             SourceImporter::Obj(_) => {}
+            SourceImporter::Png if asset_type.as_str() != TEXTURE_ASSET_TYPE_KEY => {
+                let expected = TypeKey::new(TEXTURE_ASSET_TYPE_KEY).map_err(|source| {
+                    ManifestError::InvalidAssetType {
+                        value: TEXTURE_ASSET_TYPE_KEY.to_owned(),
+                        source,
+                    }
+                })?;
+                return Err(ManifestError::ImporterAssetTypeMismatch {
+                    expected,
+                    actual: asset_type,
+                });
+            }
+            SourceImporter::Png if !source.as_str().ends_with(".png") => {
+                return Err(ManifestError::InvalidPngSource { path: source });
+            }
+            SourceImporter::Png => {}
         }
         Ok(Self {
             id,
@@ -129,6 +146,7 @@ struct SourceAssetRecordWire {
 #[serde(deny_unknown_fields)]
 enum SourceImporterWire {
     Obj { settings: ObjImportSettingsWire },
+    Png,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -267,6 +285,7 @@ impl SourceImporterWire {
                     flip_texcoord_v: settings.flip_texcoord_v(),
                 },
             },
+            SourceImporter::Png => Self::Png,
         }
     }
 
@@ -275,6 +294,7 @@ impl SourceImporterWire {
             Self::Obj { settings } => {
                 SourceImporter::Obj(ObjImportSettings::new(settings.flip_texcoord_v))
             }
+            Self::Png => SourceImporter::Png,
         }
     }
 }
@@ -342,6 +362,8 @@ pub enum ManifestError {
     ImporterAssetTypeMismatch { expected: TypeKey, actual: TypeKey },
     #[error("OBJ source must use a lowercase .obj suffix: {path}")]
     InvalidObjSource { path: ProjectPath },
+    #[error("PNG source must use a lowercase .png suffix: {path}")]
+    InvalidPngSource { path: ProjectPath },
     #[error("duplicate asset ID in authoring manifest: {id}")]
     DuplicateAssetId { id: AssetId },
 }

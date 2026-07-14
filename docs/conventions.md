@@ -25,6 +25,7 @@
 - 新增 crate 必须有真实 public API 和测试；不为未来可能需要的能力创建空壳 crate。
 - 不把 editor-only 状态、测试 helper、演示窗口逻辑或资源路径耦合进核心 ECS 和 scene crate。
 - Editor backend、Lit/Unlit/Lit Wireframe/Wireframe与线宽只属于host session；不得进入project、scene、Cook或Stage。Player不暴露render mode产品选项并保持Lit。
+- 颜色 PNG 作为 `sge.texture` 资产按 sRGB 存储和采样；材质颜色factor在线性空间参与相乘。纹理引用使用强类型 `AssetRef`，不得把source路径、压缩字节或GPU handle写入scene/Material。
 
 ## 旧 C++ 处理
 
@@ -53,3 +54,4 @@
 - Rust 构建产物放在 `target/`，该目录不提交。
 - 不提交下载缓存、生成文档输出或本地 IDE 状态。
 - 不直接修改第三方源码或安装目录中的依赖源码；确需补丁时记录来源、原因和验证方式。
+- 提交仓库内置第三方素材时必须同时保留可审核的来源URL、版本/发布日期、原始文件hash和许可文本；产品创建与运行路径不得依赖在线下载。

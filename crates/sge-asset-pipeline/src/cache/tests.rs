@@ -87,7 +87,9 @@ fn assert_metadata_tamper_rebuilds(name: &str, from: &str, to: &str, expected_fi
     assert_ne!(tampered, original, "tamper pattern must exist");
     fixture.write_cache(&imported.cache_path, tampered.as_bytes());
     let decoded = decode_cache(tampered.as_bytes()).expect("tampered wrapper must remain strict");
-    let SourceImporter::Obj(settings) = record.importer();
+    let SourceImporter::Obj(settings) = record.importer() else {
+        panic!("fixture must use OBJ importer");
+    };
     let mismatch = validate_metadata(decoded, &record, settings, &digest_hex(TRIANGLE.as_bytes()))
         .expect_err("tampered metadata must mismatch");
 
@@ -191,7 +193,9 @@ fn structurally_valid_product_tamper_rebuilds_matching_cache() {
 fn write_failure_preserves_the_cache_issue_that_triggered_rebuild() {
     let fixture = Fixture::new("write_context");
     let record = fixture.record(false);
-    let SourceImporter::Obj(settings) = record.importer();
+    let SourceImporter::Obj(settings) = record.importer() else {
+        panic!("fixture must use OBJ importer");
+    };
     let key = cache_key(TRIANGLE.as_bytes(), settings);
     let directory = fixture
         .root_path
@@ -324,7 +328,9 @@ fn corrupt_cache_and_invalid_obj_preserve_both_typed_sources() {
     let fixture = Fixture::new("rebuild_context");
     let record = fixture.record(false);
     fixture.write_source("v invalid 0 0\n");
-    let SourceImporter::Obj(settings) = record.importer();
+    let SourceImporter::Obj(settings) = record.importer() else {
+        panic!("fixture must use OBJ importer");
+    };
     let key = cache_key(INVALID_OBJ, settings);
     let directory = ProjectPath::new(format!("Cache/Imported/{}", record.id()))
         .expect("cache directory must be valid");

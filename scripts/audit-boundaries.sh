@@ -35,7 +35,7 @@ audit_source() {
   shift 2
   local status
 
-  if git grep -nE "$forbidden" -- "$@"; then
+  if grep -r -nE "$forbidden" -- "$@"; then
     echo "$label boundary violated" >&2
     return 1
   else
@@ -55,7 +55,7 @@ audit_exact_files() {
   shift 3
   local actual status
 
-  if actual="$(git grep -lE "$pattern" -- "$@" | sort)"; then
+  if actual="$(grep -r -lE "$pattern" -- "$@" | sort)"; then
     :
   else
     status=$?
@@ -141,6 +141,8 @@ audit_source 'Player build/source ownership' 'ProjectRoot|full_cook|StageRoot|Bu
 
 audit_exact_files 'canonical OBJ importer owner' 'tobj::load_obj_buf' \
   'crates/sge-asset-pipeline/src/obj.rs' crates/sge-asset-pipeline/src
+audit_exact_files 'canonical PNG decoder owner' 'load_from_memory_with_format' \
+  'crates/sge-asset-pipeline/src/png.rs' crates/sge-asset-pipeline/src
 audit_exact_files 'canonical WGPU pipeline owner' 'create_render_pipeline' \
   'crates/sge-render/src/gpu/pipeline.rs' crates examples
 audit_exact_files 'canonical render backend facade owner' 'pub struct BackendRenderer' \

@@ -12,19 +12,22 @@ use std::{
 };
 
 use demo_game::{GameRuntimeState, PlayerController, Rotator};
-use sge_asset::RuntimeContentRoot;
+use sge_asset::{AssetRef, RuntimeContentRoot};
 use sge_build::StageRoot;
 use sge_editor::EditSession;
 use sge_input::{Button, InputFrame, KeyCode};
 use sge_math::Transform;
 use sge_player::PlayerSession;
 use sge_reflect::Value;
-use sge_render::{Camera, Light, MeshRenderer, RenderSnapshot};
+use sge_render::{Camera, Light, Material, MeshRenderer, RenderSnapshot};
 use sge_scene::{AuthoringEntity, RuntimeScene, SceneEntityId};
 
-const ASSET_ID: &str = "40000000-0000-4000-8000-000000000001";
+const KENNEY_MESH_ASSET_ID: &str = "40000000-0000-4000-8000-000000000001";
+const KENNEY_TEXTURE_ASSET_ID: &str = "40000000-0000-4000-8000-000000000002";
+const BASIC_CUBE_ASSET_ID: &str = "40000000-0000-4000-8000-000000000003";
 const CAMERA_ID: &str = "50000000-0000-4000-8000-000000000001";
-const MESH_ID: &str = "50000000-0000-4000-8000-000000000002";
+const KENNEY_MESH_ID: &str = "50000000-0000-4000-8000-000000000002";
+const MESH_ID: &str = "50000000-0000-4000-8000-000000000004";
 const LIGHT_ID: &str = "50000000-0000-4000-8000-000000000003";
 const CHILD_ID: &str = "60000000-0000-4000-8000-000000000001";
 
@@ -33,8 +36,15 @@ const CHILD_ID: &str = "60000000-0000-4000-8000-000000000001";
 fn independent_demo_closes_the_complete_engine_spine() -> Result<(), Box<dyn std::error::Error>> {
     let fixture = Fixture::new()?;
     let mesh = MESH_ID.parse::<SceneEntityId>()?;
+    let kenney_mesh = KENNEY_MESH_ID.parse::<SceneEntityId>()?;
     let child = CHILD_ID.parse::<SceneEntityId>()?;
     let mut edit = EditSession::open(demo_game::GAME, &fixture.project)?;
+    let imported_texture =
+        edit.import_png(fixture.project.join("Content/Textures/Kenney/colormap.png"))?;
+    assert!(
+        !edit.is_dirty(),
+        "asset import must not dirty scene history"
+    );
 
     assert_eq!(
         edit.component::<MeshRenderer>(mesh)
@@ -42,8 +52,31 @@ fn independent_demo_closes_the_complete_engine_spine() -> Result<(), Box<dyn std
             .mesh()
             .id()
             .to_string(),
-        ASSET_ID
+        BASIC_CUBE_ASSET_ID
     );
+    assert_eq!(
+        edit.component::<MeshRenderer>(kenney_mesh)
+            .ok_or("missing Kenney MeshRenderer")?
+            .mesh()
+            .id()
+            .to_string(),
+        KENNEY_MESH_ASSET_ID
+    );
+    assert_eq!(
+        edit.component::<Material>(kenney_mesh)
+            .ok_or("missing Kenney Material")?
+            .texture()
+            .ok_or("Kenney Material is missing its texture")?
+            .id()
+            .to_string(),
+        KENNEY_TEXTURE_ASSET_ID
+    );
+    edit.set_field(
+        kenney_mesh,
+        "sge.material",
+        "texture",
+        Value::Reference(imported_texture.to_string()),
+    )?;
     assert!(
         edit.component::<Camera>(CAMERA_ID.parse::<SceneEntityId>()?)
             .is_some()
@@ -85,6 +118,14 @@ fn independent_demo_closes_the_complete_engine_spine() -> Result<(), Box<dyn std
             .ok_or("missing Rotator after undo")?
             .radians_per_second(),
         *current_speed
+    );
+    assert_eq!(
+        edit.component::<Material>(kenney_mesh)
+            .ok_or("reopened Kenney Material is missing")?
+            .texture()
+            .ok_or("reopened Kenney texture reference is missing")?
+            .id(),
+        &imported_texture
     );
     edit.redo()?;
     edit.save()?;
@@ -133,6 +174,7 @@ fn independent_demo_closes_the_complete_engine_spine() -> Result<(), Box<dyn std
     fixture.run_sge_build()?;
     copy_tree(&fixture.stage, &fixture.copied_stage)?;
     assert!(!contains_extension(&fixture.copied_stage, "obj")?);
+    assert!(!contains_extension(&fixture.copied_stage, "png")?);
     assert!(!contains_name(&fixture.copied_stage, "asset_manifest.ron")?);
     fs::remove_dir_all(&fixture.project)?;
 
@@ -140,6 +182,13 @@ fn independent_demo_closes_the_complete_engine_spine() -> Result<(), Box<dyn std
     let runtime = fixture.copied_stage.join(manifest.runtime_root().as_str());
     assert_cooked_authoring_changes(&runtime, child, mesh, edited_speed)?;
     let player = PlayerSession::load(demo_game::GAME, &runtime)?;
+    assert_eq!(
+        player
+            .assets()
+            .texture(AssetRef::new(imported_texture))?
+            .size(),
+        [512, 512]
+    );
     let (player_snapshot, player_view) = player.render_frame()?;
     assert!(player_view.camera().active());
     assert_semantic_snapshot_eq(&play_initial, &player_snapshot);

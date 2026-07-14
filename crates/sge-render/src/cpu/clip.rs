@@ -1,11 +1,12 @@
 // Copyright The SimpleGameEngine Contributors
 
-use sge_math::{Vec3, Vec4};
+use sge_math::{Vec2, Vec3, Vec4};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct ClipVertex {
     pub(super) position: Vec4,
     pub(super) normal: Vec3,
+    pub(super) texcoord: Vec2,
     pub(super) barycentric: Vec3,
 }
 
@@ -14,6 +15,7 @@ impl ClipVertex {
         Self {
             position: self.position.lerp(other.position, amount),
             normal: self.normal.lerp(other.normal, amount),
+            texcoord: self.texcoord.lerp(other.texcoord, amount),
             barycentric: self.barycentric.lerp(other.barycentric, amount),
         }
     }

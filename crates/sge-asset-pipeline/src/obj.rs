@@ -9,7 +9,12 @@ pub(crate) fn parse_obj(
     record: &SourceAssetRecord,
     raw_bytes: &[u8],
 ) -> Result<MeshAsset, ObjImportError> {
-    let SourceImporter::Obj(settings) = record.importer();
+    let SourceImporter::Obj(settings) = record.importer() else {
+        return Err(ObjImportError::new(
+            record,
+            ObjImportErrorKind::WrongImporter,
+        ));
+    };
     let options = tobj::LoadOptions {
         triangulate: true,
         single_index: true,
@@ -181,6 +186,8 @@ impl ObjImportError {
 
 #[derive(Debug, thiserror::Error)]
 enum ObjImportErrorKind {
+    #[error("source record does not use the OBJ importer")]
+    WrongImporter,
     #[error("cannot parse OBJ: {0}")]
     Parse(#[source] tobj::LoadError),
     #[error("model {model} contains no triangle geometry")]

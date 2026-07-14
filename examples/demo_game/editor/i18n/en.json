@@ -1,5 +1,6 @@
 {
   "dialog.import_obj.title": "Import Wavefront OBJ",
+  "dialog.import_png.title": "Import PNG Texture",
   "dialog.new_project.choose_parent": "Choose a parent folder for DemoGame",
   "dialog.open_project.filter": "SimpleGameEngine Project",
   "dialog.open_project.title": "Open Project",
@@ -11,6 +12,7 @@
   "reflect.type.demo.player_controller": "Player Controller",
   "reflect.type.demo.rotator": "Rotator",
   "scene.entity.50000000-0000-4000-8000-000000000001.name": "Camera",
-  "scene.entity.50000000-0000-4000-8000-000000000002.name": "Demo Cube",
-  "scene.entity.50000000-0000-4000-8000-000000000003.name": "Directional Light"
+  "scene.entity.50000000-0000-4000-8000-000000000002.name": "Kenney Conveyor",
+  "scene.entity.50000000-0000-4000-8000-000000000003.name": "Directional Light",
+  "scene.entity.50000000-0000-4000-8000-000000000004.name": "Basic Shapes Cube"
 }

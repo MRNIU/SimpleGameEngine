@@ -22,8 +22,8 @@ fn demo_project_opens_as_a_preview_candidate() -> Result<(), Box<dyn std::error:
     for record in session.manifest().records() {
         assert!(project.path().join(record.source().as_str()).is_file());
     }
-    assert_eq!(session.snapshot()?.entities().count(), 3);
-    assert_eq!(frame.snapshot.meshes().len(), 1);
+    assert_eq!(session.snapshot()?.entities().count(), 4);
+    assert_eq!(frame.snapshot.meshes().len(), 2);
     assert_eq!(frame.snapshot.lights().len(), 1);
     Ok(())
 }
@@ -86,7 +86,12 @@ fn every_candidate_stage_failure_preserves_the_live_session()
     })?;
 
     let source = TestProject::new("bad-source")?;
-    fs::write(source.path().join("Content/Meshes/demo.obj"), b"bad obj")?;
+    fs::write(
+        source
+            .path()
+            .join("Content/Meshes/Kenney/conveyor-bars-stripe.obj"),
+        b"bad obj",
+    )?;
     assert_preserved(&mut workspace, source.path(), live_address, |error| {
         matches!(error, EditorOpenError::Import(_))
     })?;
@@ -159,22 +164,13 @@ impl TestProject {
             .join("../../target/tmp/sge_editor")
             .join(format!("{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("Content/Meshes"))?;
-        fs::create_dir_all(root.join("Scenes"))?;
-        for relative in [
-            "project.sge.ron",
-            "Content/asset_manifest.ron",
-            "Scenes/main.scene.ron",
-        ] {
-            fs::copy(demo_root().join(relative), root.join(relative))?;
-        }
-        for entry in fs::read_dir(demo_root().join("Content/Meshes"))? {
-            let entry = entry?;
-            fs::copy(
-                entry.path(),
-                root.join("Content/Meshes").join(entry.file_name()),
-            )?;
-        }
+        fs::create_dir_all(&root)?;
+        copy_tree(&demo_root().join("Content"), &root.join("Content"))?;
+        copy_tree(&demo_root().join("Scenes"), &root.join("Scenes"))?;
+        fs::copy(
+            demo_root().join("project.sge.ron"),
+            root.join("project.sge.ron"),
+        )?;
         Ok(Self { root })
     }
 
@@ -203,11 +199,26 @@ fn demo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/demo_game")
 }
 
+fn copy_tree(from: &Path, to: &Path) -> Result<(), std::io::Error> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
 const MATERIAL_COMPONENT: &str = r#"                (
                     type_key: "sge.material",
-                    schema_version: 1,
+                    schema_version: 2,
                     fields: ({
-                        "base_color": Color((0.9, 0.25, 0.1, 1.0)),
+                        "base_color": Color((1.0, 1.0, 1.0, 1.0)),
+                        "texture": Reference("40000000-0000-4000-8000-000000000002"),
                     }),
                 ),
 "#;

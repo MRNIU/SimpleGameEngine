@@ -1,7 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
 use sge_app::EngineApp;
-use sge_asset::{AssetId, AssetRef, MeshAsset, MeshVertex, RuntimeAssetStore};
+use sge_asset::{AssetId, AssetRef, MeshAsset, MeshVertex, RuntimeAssetStore, TextureAsset};
 use sge_math::Transform;
 use sge_render::{
     Camera, CpuRenderer, Light, Material, MeshRenderer, Projection, RenderMode, RenderPlugin,
@@ -227,6 +227,37 @@ fn cpu_wire_width_is_measured_in_target_pixels() -> Result<(), Box<dyn std::erro
     };
 
     assert!(changed(&retina) > changed(&thin));
+    Ok(())
+}
+
+#[test]
+fn extraction_rejects_a_textured_mesh_without_uvs() -> Result<(), Box<dyn std::error::Error>> {
+    let mesh = AssetId::new_v4();
+    let texture = AssetId::new_v4();
+    let store = RuntimeAssetStore::from_assets(
+        [(mesh, triangle(false)?)],
+        [(texture, TextureAsset::new(1, 1, vec![255; 4])?)],
+    )?;
+    let mut app = render_app()?;
+    {
+        let mut world = app.world_initializer()?;
+        spawn_camera(&mut world)?;
+        let entity = world.spawn();
+        world.insert(entity, Transform::from_translation([0.0, 0.0, 2.0]))?;
+        world.insert(entity, MeshRenderer::new(AssetRef::new(mesh)))?;
+        world.insert(
+            entity,
+            Material::with_texture([1.0; 4], AssetRef::new(texture)),
+        )?;
+    }
+
+    assert!(matches!(
+        extract(app.world(), &store),
+        Err(sge_render::RenderExtractionError::MissingTextureCoordinates {
+            asset,
+            ..
+        }) if asset == mesh
+    ));
     Ok(())
 }
 

@@ -1,7 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
 use sge_app::{EngineBuildError, InitializationError};
-use sge_asset_pipeline::{ObjImportError, ProjectAssetImportError};
+use sge_asset_pipeline::{ObjImportError, PngImportError, ProjectAssetImportError};
 use sge_project::{ManifestError, ProjectFormatError, ProjectIoError, ProjectPathError};
 use sge_reflect::{KeyError, ReflectError};
 use sge_render::{RenderExtractionError, RenderViewError};
@@ -104,6 +104,8 @@ pub enum EditError {
     Import(#[from] ProjectAssetImportError),
     #[error(transparent)]
     ObjImport(#[from] ObjImportError),
+    #[error(transparent)]
+    PngImport(#[from] PngImportError),
     #[error(
         "asset import failed and source rollback also failed for {path}: operation: {operation}; rollback: {rollback}"
     )]

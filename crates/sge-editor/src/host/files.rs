@@ -142,6 +142,15 @@ impl EditorApp {
                     }
                 }
             }
+            if ui.button(language.text(EditorText::ImportPng)).clicked() {
+                ui.close();
+                if let Some(path) = (dialogs.import_png)(language, &self.project_root) {
+                    match self.session.import_png(path) {
+                        Ok(_) => self.apply_edit(Ok(())),
+                        Err(error) => self.last_error = Some(error.to_string()),
+                    }
+                }
+            }
         });
         if let Some(replacement) = replacement {
             if self.session.is_dirty() {

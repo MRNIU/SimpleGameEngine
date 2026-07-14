@@ -30,10 +30,10 @@
 | `crates/sge-ecs/` | typed World、opaque Entity、resources/query、受限 WorldInitializer | scene 格式、任意 `world_mut()` host seam |
 | `crates/sge-reflect/` | metadata、codec、clone、validation、scene-saveable/reference semantics | ECS、Inspector UI |
 | `crates/sge-input/` | 平台无关逐帧 InputFrame | winit/egui adapter |
-| `crates/sge-asset/` | AssetId、AssetRef、MeshAsset、runtime catalog/content/store | source import、Cook、GPU handles |
+| `crates/sge-asset/` | AssetId、AssetRef、MeshAsset、TextureAsset、runtime catalog/content/store | source import、Cook、GPU handles |
 | `crates/sge-project/` | project identity、portable path/root、manifest v2、atomic single-file writes | importer、Editor session、multi-file transaction |
 | `crates/sge-scene/` | authoring/runtime scene、SceneEntityId/Parent、prepare/instantiate/snapshot | project/Cook I/O、GPU |
-| `crates/sge-asset-pipeline/` | canonical OBJ importer、cache、dependency closure、deterministic full Cook/publication | Editor/Player host、GPU、Cargo build |
+| `crates/sge-asset-pipeline/` | canonical OBJ/PNG importer、cache、dependency closure、deterministic full Cook/publication | Editor/Player host、GPU、Cargo build、通用 MTL importer |
 | `crates/sge-render/` | reflected render components、owned RenderSnapshot、共享投影与Lit/Unlit/Lit Wireframe/Wireframe合同、WGPU/并行CPU backend facade、会话级帧性能采样、safe surface | source/project ownership、egui ownership、第二套 snapshot/store/host |
 | `crates/sge-player/` | source-free PlayerSession、winit loop、input mapping、resize/occlusion/surface policy | project、OBJ parser、Editor、native dialog |
 | `crates/sge-editor/` | candidate open、EditSession、Reflect Inspector/history/save、English/简体中文host localization、会话级backend/render mode、独立 PlaySession、egui input routing与 eframe/WGPU host | arbitrary World mutation、第二 registry/backend/event loop、Play writeback、game content localization |

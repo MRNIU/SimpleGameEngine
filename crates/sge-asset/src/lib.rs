@@ -9,6 +9,7 @@ mod runtime_catalog;
 mod runtime_content;
 mod runtime_path;
 mod runtime_store;
+mod texture;
 
 use std::{
     cmp::Ordering,
@@ -33,8 +34,12 @@ pub use runtime_path::{
     RuntimeGenerationId, RuntimeGenerationIdError, RuntimeProductPath, RuntimeProductPathError,
 };
 pub use runtime_store::{RuntimeAssetStore, RuntimeAssetStoreError};
+pub use texture::{
+    TEXTURE_ASSET_FORMAT_VERSION, TextureAsset, TextureAssetError, TextureAssetFormatError,
+};
 
 pub const MESH_ASSET_TYPE_KEY: &str = "sge.mesh";
+pub const TEXTURE_ASSET_TYPE_KEY: &str = "sge.texture";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AssetId(uuid::Uuid);
@@ -50,6 +55,71 @@ pub trait AssetLookup {
 pub struct AssetRef<T: AssetType> {
     id: AssetId,
     marker: PhantomData<fn() -> T>,
+}
+
+pub struct OptionalAssetRef<T: AssetType>(Option<AssetRef<T>>);
+
+impl<T: AssetType> Clone for OptionalAssetRef<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: AssetType> Copy for OptionalAssetRef<T> {}
+
+impl<T: AssetType> PartialEq for OptionalAssetRef<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T: AssetType> Eq for OptionalAssetRef<T> {}
+
+impl<T: AssetType> fmt::Debug for OptionalAssetRef<T> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("OptionalAssetRef")
+            .field(&self.0.map(|value| *value.id()))
+            .finish()
+    }
+}
+
+impl<T: AssetType> OptionalAssetRef<T> {
+    #[must_use]
+    pub const fn none() -> Self {
+        Self(None)
+    }
+
+    #[must_use]
+    pub const fn some(reference: AssetRef<T>) -> Self {
+        Self(Some(reference))
+    }
+
+    #[must_use]
+    pub const fn get(self) -> Option<AssetRef<T>> {
+        self.0
+    }
+}
+
+impl<T: AssetType> ReferenceValue for OptionalAssetRef<T> {
+    fn semantic() -> Result<ReferenceSemantic, KeyError> {
+        Ok(ReferenceSemantic::OptionalAsset {
+            asset_type: TypeKey::new(T::TYPE_KEY)?,
+        })
+    }
+
+    fn to_reference(&self) -> String {
+        self.0
+            .map_or_else(String::new, |reference| reference.to_reference())
+    }
+
+    fn from_reference(value: &str) -> Result<Self, String> {
+        if value.is_empty() {
+            Ok(Self::none())
+        } else {
+            AssetRef::from_reference(value).map(Self::some)
+        }
+    }
 }
 
 impl<T: AssetType> Clone for AssetRef<T> {
@@ -83,6 +153,12 @@ impl<T: AssetType> Ord for AssetRef<T> {
 impl<T: AssetType> Hash for AssetRef<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
+    }
+}
+
+impl<T: AssetType> fmt::Debug for AssetRef<T> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_tuple("AssetRef").field(&self.id).finish()
     }
 }
 

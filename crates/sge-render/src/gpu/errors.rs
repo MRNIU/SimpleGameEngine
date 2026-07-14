@@ -15,6 +15,8 @@ pub enum GpuBufferKind {
 pub enum GpuAssetError {
     #[error("GPU mesh asset is missing: {asset}")]
     MissingAsset { asset: AssetId },
+    #[error("GPU texture asset is missing: {asset}")]
+    MissingTexture { asset: AssetId },
     #[error("GPU mesh index count exceeds u32 for asset {asset}")]
     IndexCountOverflow { asset: AssetId },
     #[error(
@@ -25,6 +27,13 @@ pub enum GpuAssetError {
         buffer: GpuBufferKind,
         size: u64,
         max: u64,
+    },
+    #[error("GPU texture {asset:?} extent {width}x{height} exceeds device 2D texture limit {max}")]
+    TextureTooLarge {
+        asset: Option<AssetId>,
+        width: u32,
+        height: u32,
+        max: u32,
     },
 }
 
@@ -54,6 +63,8 @@ pub enum ViewProjectionError {
 pub enum FrameNotPreparedError {
     #[error("GPU mesh asset is not prepared: {asset}")]
     Asset { asset: AssetId },
+    #[error("GPU texture asset is not prepared: {asset}")]
+    Texture { asset: AssetId },
     #[error("render instance count exceeds u32 for asset {asset}")]
     InstanceCountOverflow { asset: AssetId },
     #[error("render instance buffer requires {size} bytes, exceeding device limit {max}")]

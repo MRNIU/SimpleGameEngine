@@ -2576,6 +2576,7 @@ name = "sge-asset-pipeline"
 version = "0.1.0"
 dependencies = [
  "atomic-write-file",
+ "image",
  "ron",
  "serde",
  "sge-app",

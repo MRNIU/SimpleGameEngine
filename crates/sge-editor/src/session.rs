@@ -18,7 +18,7 @@ use crate::{
 };
 
 mod mutation;
-pub use mutation::{CreatedMeshEntity, PrimitiveKind};
+pub use mutation::{CreatedMeshEntity, PrimitiveKind, primitive_obj_source};
 
 pub struct EditSession {
     game: GameDescriptor,

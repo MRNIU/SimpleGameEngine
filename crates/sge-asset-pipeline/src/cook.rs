@@ -18,8 +18,10 @@ use sge_scene::{
 };
 
 use crate::{
-    cache::{CacheStatus, ImportCacheError, ImportedMesh, import_obj},
+    ImportedAsset, ImportedProduct, SourceImportError,
+    cache::CacheStatus,
     closure::{ClosureError, dependency_closure},
+    import_source_asset,
     output::{CookOutputRoot, CookPublishError},
     publish::publish,
 };
@@ -100,7 +102,7 @@ pub fn full_cook(
     let mut imported = BTreeMap::new();
     let mut import_statuses = Vec::with_capacity(manifest.records().len());
     for record in manifest.records() {
-        let product = import_obj(project, record).map_err(|source| CookError::Import {
+        let product = import_source_asset(project, record).map_err(|source| CookError::Import {
             asset: record.id(),
             source: Box::new(source),
         })?;
@@ -158,7 +160,7 @@ pub fn full_cook(
 
 fn runtime_products(
     published_assets: &[AssetId],
-    imported: &BTreeMap<AssetId, ImportedMesh>,
+    imported: &BTreeMap<AssetId, ImportedProduct>,
 ) -> Result<RuntimeProducts, CookError> {
     let mut records = Vec::with_capacity(published_assets.len());
     let mut bytes = BTreeMap::new();
@@ -166,25 +168,30 @@ fn runtime_products(
         let product = imported
             .get(id)
             .ok_or(CookError::MissingClosureRoot { root: *id })?;
-        let path = RuntimeProductPath::new(format!("Content/{id}.mesh.ron"))?;
+        let (asset_type, path, product_bytes) = match &product.asset {
+            ImportedAsset::Mesh(mesh) => (
+                sge_asset::MESH_ASSET_TYPE_KEY,
+                RuntimeProductPath::new(format!("Content/{id}.mesh.ron"))?,
+                mesh.to_ron()
+                    .map_err(|source| CookError::ProductEncode { asset: *id, source })?
+                    .into_bytes(),
+            ),
+            ImportedAsset::Texture(texture) => (
+                sge_asset::TEXTURE_ASSET_TYPE_KEY,
+                RuntimeProductPath::new(format!("Content/{id}.texture.bin"))?,
+                texture.to_bytes(),
+            ),
+        };
         records.push(
             RuntimeAssetRecord::new(
                 *id,
-                sge_reflect::TypeKey::new(sge_asset::MESH_ASSET_TYPE_KEY)
-                    .map_err(CookError::BuiltInType)?,
+                sge_reflect::TypeKey::new(asset_type).map_err(CookError::BuiltInType)?,
                 path,
                 Vec::new(),
             )
             .map_err(CookError::Catalog)?,
         );
-        bytes.insert(
-            *id,
-            product
-                .mesh
-                .to_ron()
-                .map_err(|source| CookError::ProductEncode { asset: *id, source })?
-                .into_bytes(),
-        );
+        bytes.insert(*id, product_bytes);
     }
     Ok((records, bytes))
 }
@@ -225,7 +232,7 @@ pub enum CookError {
     Import {
         asset: AssetId,
         #[source]
-        source: Box<ImportCacheError>,
+        source: Box<SourceImportError>,
     },
     #[error("runtime closure root asset is missing: {root}")]
     MissingClosureRoot { root: AssetId },

@@ -1,6 +1,7 @@
 // Copyright The SimpleGameEngine Contributors
 
-use sge_math::{Quat, Vec3};
+use sge_asset::TextureAsset;
+use sge_math::{Quat, Vec2, Vec3};
 
 use crate::RenderSnapshot;
 
@@ -59,6 +60,44 @@ pub(super) fn linear_rgba_to_srgb8(color: [f32; 4]) -> [u8; 4] {
         linear_to_srgb8(color[2]),
         normalized_to_u8(color[3]),
     ]
+}
+
+pub(super) fn sample_texture_repeat_bilinear(texture: &TextureAsset, uv: Vec2) -> [f32; 4] {
+    let [width, height] = texture.size();
+    let x = uv.x.rem_euclid(1.0) * width as f32 - 0.5;
+    let y = uv.y.rem_euclid(1.0) * height as f32 - 0.5;
+    let x0 = x.floor() as i64;
+    let y0 = y.floor() as i64;
+    let tx = x - x.floor();
+    let ty = y - y.floor();
+    let sample = |x: i64, y: i64| {
+        let x = x.rem_euclid(i64::from(width)) as u32;
+        let y = y.rem_euclid(i64::from(height)) as u32;
+        let index = (y as usize * width as usize + x as usize) * 4;
+        let rgba = &texture.rgba8_srgb()[index..index + 4];
+        [
+            srgb8_to_linear(rgba[0]),
+            srgb8_to_linear(rgba[1]),
+            srgb8_to_linear(rgba[2]),
+            f32::from(rgba[3]) / 255.0,
+        ]
+    };
+    let top = lerp(sample(x0, y0), sample(x0 + 1, y0), tx);
+    let bottom = lerp(sample(x0, y0 + 1), sample(x0 + 1, y0 + 1), tx);
+    lerp(top, bottom, ty)
+}
+
+fn lerp(left: [f32; 4], right: [f32; 4], amount: f32) -> [f32; 4] {
+    std::array::from_fn(|index| left[index] + (right[index] - left[index]) * amount)
+}
+
+fn srgb8_to_linear(value: u8) -> f32 {
+    let value = f32::from(value) / 255.0;
+    if value <= 0.040_45 {
+        value / 12.92
+    } else {
+        ((value + 0.055) / 1.055).powf(2.4)
+    }
 }
 
 fn linear_to_srgb8(value: f32) -> u8 {

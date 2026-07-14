@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use sge_asset::{AssetRef, MeshAsset};
+use sge_asset::{AssetRef, MeshAsset, OptionalAssetRef, TextureAsset};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Projection {
@@ -119,17 +119,34 @@ impl Default for MeshRenderer {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Material {
     pub(crate) base_color: [f32; 4],
+    pub(crate) texture: OptionalAssetRef<TextureAsset>,
 }
 
 impl Material {
     #[must_use]
     pub const fn new(base_color: [f32; 4]) -> Self {
-        Self { base_color }
+        Self {
+            base_color,
+            texture: OptionalAssetRef::none(),
+        }
+    }
+
+    #[must_use]
+    pub const fn with_texture(base_color: [f32; 4], texture: AssetRef<TextureAsset>) -> Self {
+        Self {
+            base_color,
+            texture: OptionalAssetRef::some(texture),
+        }
     }
 
     #[must_use]
     pub const fn base_color(self) -> [f32; 4] {
         self.base_color
+    }
+
+    #[must_use]
+    pub const fn texture(self) -> Option<AssetRef<TextureAsset>> {
+        self.texture.get()
     }
 }
 

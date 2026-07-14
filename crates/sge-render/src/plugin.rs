@@ -162,7 +162,7 @@ fn mesh_renderer_descriptor() -> TypeDescriptor {
 }
 
 fn material_descriptor() -> TypeDescriptor {
-    TypeDescriptor::builder::<Material>(key("sge.material"), 1, "Material", Material::default)
+    TypeDescriptor::builder::<Material>(key("sge.material"), 2, "Material", Material::default)
         .field(FieldRegistration::new(
             field("base_color"),
             FieldMetadata::new("Base Color", FieldKind::Color),
@@ -172,6 +172,15 @@ fn material_descriptor() -> TypeDescriptor {
                 Ok(())
             },
         ))
+        .field(
+            FieldRegistration::reference(
+                field("texture"),
+                "Texture",
+                |value: &Material| &value.texture,
+                |value: &mut Material, texture| value.texture = texture,
+            )
+            .expect("optional TextureAsset reference semantic must be valid"),
+        )
         .validator(validate_material)
         .scene_saveable()
         .build()

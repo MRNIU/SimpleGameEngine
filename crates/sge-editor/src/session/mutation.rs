@@ -2,8 +2,8 @@
 
 use std::{fs, path::Path};
 
-use sge_asset::{AssetId, MESH_ASSET_TYPE_KEY};
-use sge_asset_pipeline::{import_project_assets, validate_obj_source};
+use sge_asset::{AssetId, MESH_ASSET_TYPE_KEY, TEXTURE_ASSET_TYPE_KEY};
+use sge_asset_pipeline::{import_project_assets, validate_obj_source, validate_png_source};
 use sge_project::{ObjImportSettings, ProjectPath, SourceAssetRecord, SourceImporter};
 use sge_reflect::{FieldKey, ReflectError, ReflectedValue, TypeKey, Value};
 use sge_scene::{AuthoringEntity, AuthoringScene, SceneEntityId, prepare};
@@ -146,6 +146,59 @@ impl EditSession {
         self.import_obj_bytes(&bytes, "Imported Mesh")
     }
 
+    pub fn import_png(&mut self, source: impl AsRef<Path>) -> Result<AssetId, EditError> {
+        let source = source.as_ref();
+        let bytes = fs::read(source).map_err(|source_error| EditError::SourceRead {
+            path: source.to_owned(),
+            source: source_error,
+        })?;
+        let asset = AssetId::new_v4();
+        let source = ProjectPath::new(format!("Content/Textures/{asset}.png"))?;
+        let record = SourceAssetRecord::new(
+            asset,
+            TypeKey::new(TEXTURE_ASSET_TYPE_KEY)?,
+            source.clone(),
+            SourceImporter::Png,
+        )?;
+        validate_png_source(&record, &bytes)?;
+        let mut records = self.manifest.records().to_vec();
+        records.push(record);
+        let manifest = sge_project::AuthoringAssetManifest::new(records)?;
+        let scene = self.snapshot()?;
+
+        self.project
+            .ensure_directory(&ProjectPath::new("Content/Textures")?)?;
+        self.project.write_new_atomic(&source, &bytes)?;
+        let commit = (|| -> Result<_, EditError> {
+            let imported = import_project_assets(&self.project, &manifest)?;
+            let assets = std::sync::Arc::new(imported.into_parts().0);
+            let mut candidate_app = self.game.create_app()?;
+            let prepared = prepare(&scene, candidate_app.type_registry(), assets.as_ref())?;
+            let candidate_instance =
+                sge_scene::instantiate(prepared, candidate_app.world_initializer()?)?;
+            manifest.save(&self.project)?;
+            Ok((assets, candidate_app, candidate_instance))
+        })();
+        let (assets, candidate_app, candidate_instance) = match commit {
+            Ok(candidate) => candidate,
+            Err(operation) => {
+                if let Err(rollback) = self.project.remove_file(&source) {
+                    return Err(EditError::AssetImportRollback {
+                        path: source,
+                        operation: Box::new(operation),
+                        rollback,
+                    });
+                }
+                return Err(operation);
+            }
+        };
+        self.manifest = manifest;
+        self.assets = assets;
+        self.app = candidate_app;
+        self.instance = candidate_instance;
+        Ok(asset)
+    }
+
     pub fn create_cube(&mut self) -> Result<CreatedMeshEntity, EditError> {
         self.create_primitive(PrimitiveKind::Cube)
     }
@@ -154,12 +207,13 @@ impl EditSession {
         &mut self,
         primitive: PrimitiveKind,
     ) -> Result<CreatedMeshEntity, EditError> {
-        let (name, source) = match primitive {
-            PrimitiveKind::Cube => ("Cube", CUBE_OBJ.to_owned()),
-            PrimitiveKind::Sphere => ("Sphere", uv_sphere_obj(16, 8)),
-            PrimitiveKind::Cone => ("Cone", cone_obj(16)),
-            PrimitiveKind::Cylinder => ("Cylinder", cylinder_obj(16)),
+        let name = match primitive {
+            PrimitiveKind::Cube => "Cube",
+            PrimitiveKind::Sphere => "Sphere",
+            PrimitiveKind::Cone => "Cone",
+            PrimitiveKind::Cylinder => "Cylinder",
         };
+        let source = primitive_obj_source(primitive);
         let bytes = source.as_bytes();
         if let Some(asset) = self.matching_obj_asset(bytes)? {
             return self.create_mesh_entity(asset, name);
@@ -169,7 +223,9 @@ impl EditSession {
 
     fn matching_obj_asset(&self, bytes: &[u8]) -> Result<Option<AssetId>, EditError> {
         for record in self.manifest.records() {
-            let SourceImporter::Obj(settings) = record.importer();
+            let SourceImporter::Obj(settings) = record.importer() else {
+                continue;
+            };
             if record.asset_type().as_str() == MESH_ASSET_TYPE_KEY
                 && !settings.flip_texcoord_v()
                 && self.project.read(record.source())? == bytes
@@ -386,6 +442,16 @@ impl EditSession {
 }
 
 const CUBE_OBJ: &str = "v -0.5 -0.5 -0.5\nv 0.5 -0.5 -0.5\nv 0.5 0.5 -0.5\nv -0.5 0.5 -0.5\nv -0.5 -0.5 0.5\nv 0.5 -0.5 0.5\nv 0.5 0.5 0.5\nv -0.5 0.5 0.5\nf 1 3 2\nf 1 4 3\nf 5 6 7\nf 5 7 8\nf 1 2 6\nf 1 6 5\nf 4 8 7\nf 4 7 3\nf 1 5 8\nf 1 8 4\nf 2 3 7\nf 2 7 6\n";
+
+#[must_use]
+pub fn primitive_obj_source(primitive: PrimitiveKind) -> String {
+    match primitive {
+        PrimitiveKind::Cube => CUBE_OBJ.to_owned(),
+        PrimitiveKind::Sphere => uv_sphere_obj(16, 8),
+        PrimitiveKind::Cone => cone_obj(16),
+        PrimitiveKind::Cylinder => cylinder_obj(16),
+    }
+}
 
 fn ring_vertex(output: &mut String, angle: f32, z: f32, radius: f32) {
     output.push_str(&format!(

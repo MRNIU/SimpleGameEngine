@@ -6,6 +6,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
 use sge_app::{EngineApp, EngineBuildError, GameDescriptor};
 use sge_asset_pipeline::{CookOutputRoot, full_cook};
 use sge_editor::{EditError, EditSession};
@@ -62,7 +63,9 @@ fn import_and_cache_failures_remove_new_source_and_preserve_live_session()
 -> Result<(), Box<dyn std::error::Error>> {
     let source_project = TestProject::new("import-rollback")?;
     let incoming = incoming_obj(&source_project, "incoming.obj")?;
-    let existing_source = source_project.path().join("Content/Meshes/demo.obj");
+    let existing_source = source_project
+        .path()
+        .join("Content/Meshes/Kenney/conveyor-bars-stripe.obj");
     let original_source = fs::read(&existing_source)?;
     let mut session = EditSession::open(demo_game::GAME, source_project.path())?;
     let before_scene = session.snapshot()?.to_ron()?;
@@ -143,6 +146,39 @@ fn prepare_and_manifest_failures_remove_new_source_and_preserve_live_session()
     Ok(())
 }
 
+#[test]
+fn png_import_commits_manifest_without_dirty_history_and_corrupt_png_rolls_back()
+-> Result<(), Box<dyn std::error::Error>> {
+    let project = TestProject::new("png-import")?;
+    let valid = project.path().join("incoming.png");
+    let mut bytes = Vec::new();
+    PngEncoder::new(&mut bytes).write_image(&[255, 0, 0, 255], 1, 1, ExtendedColorType::Rgba8)?;
+    fs::write(&valid, bytes)?;
+    let invalid = project.path().join("corrupt.png");
+    fs::write(&invalid, b"not png")?;
+    let mut session = EditSession::open(demo_game::GAME, project.path())?;
+    let before_cursor = session.history_cursor();
+    let before_records = session.manifest().records().len();
+
+    let texture = session.import_png(&valid)?;
+    assert_eq!(session.history_cursor(), before_cursor);
+    assert_eq!(session.manifest().records().len(), before_records + 1);
+    assert!(
+        session
+            .manifest()
+            .records()
+            .iter()
+            .any(|record| record.id() == texture)
+    );
+    let committed_sources = texture_source_names(project.path())?;
+
+    assert!(session.import_png(&invalid).is_err());
+    assert_eq!(session.history_cursor(), before_cursor);
+    assert_eq!(session.manifest().records().len(), before_records + 1);
+    assert_eq!(texture_source_names(project.path())?, committed_sources);
+    Ok(())
+}
+
 fn app_that_fails_prepare_once() -> Result<EngineApp, EngineBuildError> {
     if PREPARE_FACTORY_CALLS.fetch_add(1, Ordering::SeqCst) != 1 {
         return demo_game::GAME.create_app();
@@ -154,12 +190,51 @@ fn app_that_fails_prepare_once() -> Result<EngineApp, EngineBuildError> {
 
 fn incoming_obj(project: &TestProject, name: &str) -> Result<PathBuf, std::io::Error> {
     let incoming = project.path().join(name);
-    fs::copy(project.path().join("Content/Meshes/demo.obj"), &incoming)?;
+    fs::copy(
+        project
+            .path()
+            .join("Content/Meshes/Kenney/conveyor-bars-stripe.obj"),
+        &incoming,
+    )?;
     Ok(incoming)
 }
 
 fn mesh_source_names(project: &Path) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let mut names = fs::read_dir(project.join("Content/Meshes"))?
+    let root = project.join("Content/Meshes");
+    let mut names = Vec::new();
+    collect_relative_files(&root, &root, &mut names)?;
+    names.sort();
+    Ok(names)
+}
+
+fn collect_relative_files(
+    root: &Path,
+    directory: &Path,
+    files: &mut Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            collect_relative_files(root, &entry.path(), files)?;
+        } else {
+            files.push(
+                entry
+                    .path()
+                    .strip_prefix(root)?
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn texture_source_names(project: &Path) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let path = project.join("Content/Textures");
+    if !path.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut names = fs::read_dir(path)?
         .map(|entry| entry.map(|entry| entry.file_name().to_string_lossy().into_owned()))
         .collect::<Result<Vec<_>, _>>()?;
     names.sort();
@@ -183,28 +258,33 @@ impl TestProject {
             .join("../../target/tmp/sge_editor_asset_lifecycle")
             .join(format!("{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("Content/Meshes"))?;
-        fs::create_dir_all(root.join("Scenes"))?;
-        for relative in [
-            "project.sge.ron",
-            "Content/asset_manifest.ron",
-            "Scenes/main.scene.ron",
-        ] {
-            fs::copy(demo_root().join(relative), root.join(relative))?;
-        }
-        for entry in fs::read_dir(demo_root().join("Content/Meshes"))? {
-            let entry = entry?;
-            fs::copy(
-                entry.path(),
-                root.join("Content/Meshes").join(entry.file_name()),
-            )?;
-        }
+        fs::create_dir_all(&root)?;
+        copy_tree(&demo_root().join("Content"), &root.join("Content"))?;
+        copy_tree(&demo_root().join("Scenes"), &root.join("Scenes"))?;
+        fs::copy(
+            demo_root().join("project.sge.ron"),
+            root.join("project.sge.ron"),
+        )?;
         Ok(Self { root })
     }
 
     fn path(&self) -> &Path {
         &self.root
     }
+}
+
+fn copy_tree(from: &Path, to: &Path) -> Result<(), std::io::Error> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
 }
 
 impl Drop for TestProject {

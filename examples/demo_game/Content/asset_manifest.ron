@@ -4,7 +4,19 @@
         (
             id: "40000000-0000-4000-8000-000000000001",
             asset_type: "sge.mesh",
-            source: "Content/Meshes/demo.obj",
+            source: "Content/Meshes/Kenney/conveyor-bars-stripe.obj",
+            importer: Obj(settings: (flip_texcoord_v: true)),
+        ),
+        (
+            id: "40000000-0000-4000-8000-000000000002",
+            asset_type: "sge.texture",
+            source: "Content/Textures/Kenney/colormap.png",
+            importer: Png,
+        ),
+        (
+            id: "40000000-0000-4000-8000-000000000003",
+            asset_type: "sge.mesh",
+            source: "Content/Meshes/BasicShapes/cube.obj",
             importer: Obj(settings: (flip_texcoord_v: false)),
         ),
     ],

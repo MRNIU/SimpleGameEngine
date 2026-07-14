@@ -1,5 +1,6 @@
 {
   "dialog.import_obj.title": "导入 Wavefront OBJ",
+  "dialog.import_png.title": "导入 PNG 纹理",
   "dialog.new_project.choose_parent": "选择 DemoGame 的父文件夹",
   "dialog.open_project.filter": "SimpleGameEngine 项目",
   "dialog.open_project.title": "打开项目",
@@ -11,6 +12,7 @@
   "reflect.type.demo.player_controller": "玩家控制器",
   "reflect.type.demo.rotator": "旋转器",
   "scene.entity.50000000-0000-4000-8000-000000000001.name": "相机",
-  "scene.entity.50000000-0000-4000-8000-000000000002.name": "演示立方体",
-  "scene.entity.50000000-0000-4000-8000-000000000003.name": "方向光"
+  "scene.entity.50000000-0000-4000-8000-000000000002.name": "Kenney 传送带",
+  "scene.entity.50000000-0000-4000-8000-000000000003.name": "方向光",
+  "scene.entity.50000000-0000-4000-8000-000000000004.name": "基础形状立方体"
 }

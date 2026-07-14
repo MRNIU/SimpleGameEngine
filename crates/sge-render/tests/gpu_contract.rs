@@ -1,12 +1,12 @@
 // Copyright The SimpleGameEngine Contributors
 
 use sge_app::EngineApp;
-use sge_asset::{AssetId, AssetRef, MeshAsset, MeshVertex, RuntimeAssetStore};
+use sge_asset::{AssetId, AssetRef, MeshAsset, MeshVertex, RuntimeAssetStore, TextureAsset};
 use sge_math::Transform;
 use sge_render::{
-    Camera, FrameNotPreparedError, Light, Material, MeshRenderer, Projection, RenderFrameError,
-    RenderMode, RenderPlugin, RenderSettings, RenderSnapshot, RenderTargetError, RenderView,
-    ViewProjectionError, WgpuRenderer, extract, view_projection_matrix,
+    Camera, CpuRenderer, FrameNotPreparedError, Light, Material, MeshRenderer, Projection,
+    RenderFrameError, RenderMode, RenderPlugin, RenderSettings, RenderSnapshot, RenderTargetError,
+    RenderView, ViewProjectionError, WgpuRenderer, extract, view_projection_matrix,
 };
 
 #[test]
@@ -139,6 +139,51 @@ fn real_offscreen_adapter_reads_back_all_render_modes() -> Result<(), Box<dyn st
     assert!(changed(wireframe) < changed(unlit));
     assert_ne!(lit, unlit);
     assert_ne!(lit, lit_wireframe);
+    Ok(())
+}
+
+#[test]
+fn cpu_and_wgpu_sample_srgb_texture_with_repeat_bilinear_and_linear_factor()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (device, queue) = gpu()?;
+    let (snapshot, view, store) = textured_fixture()?;
+    let mut renderer = WgpuRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    renderer.prepare_assets(&device, &queue, &snapshot, &store)?;
+    assert_eq!(renderer.cached_texture_count(), 1);
+    renderer.prepare_assets(&device, &queue, &snapshot, &store)?;
+    assert_eq!(renderer.cached_texture_count(), 1);
+    let gpu = render_mode_readback(
+        &device,
+        &queue,
+        &mut renderer,
+        &snapshot,
+        view,
+        &store,
+        RenderMode::Unlit,
+    )?;
+    let cpu = CpuRenderer::new().render_with_settings(
+        [64, 64],
+        &snapshot,
+        view,
+        &store,
+        RenderSettings::new(RenderMode::Unlit, 1),
+    )?;
+
+    for (x, y) in [(24, 40), (32, 30), (40, 40)] {
+        let offset = (y * 64 + x) * 4;
+        for channel in 0..4 {
+            assert!(
+                gpu[offset + channel].abs_diff(cpu.rgba()[offset + channel]) <= 2,
+                "CPU/WGPU mismatch at ({x}, {y}) channel {channel}: {} vs {}",
+                cpu.rgba()[offset + channel],
+                gpu[offset + channel]
+            );
+        }
+    }
+    assert_ne!(
+        &gpu[(40 * 64 + 24) * 4..(40 * 64 + 24) * 4 + 4],
+        &gpu[(40 * 64 + 40) * 4..(40 * 64 + 40) * 4 + 4]
+    );
     Ok(())
 }
 
@@ -470,6 +515,57 @@ fn render_fixture()
     let snapshot = extract(app.world(), &store)?;
     let view = RenderView::from_active_camera(&snapshot)?;
     Ok((snapshot, view, store, asset))
+}
+
+fn textured_fixture()
+-> Result<(RenderSnapshot, RenderView, RuntimeAssetStore), Box<dyn std::error::Error>> {
+    let mesh = AssetId::new_v4();
+    let texture = AssetId::new_v4();
+    let mesh_asset = MeshAsset::new(
+        vec![
+            MeshVertex::new([-0.9, -0.9, 0.0], Some([0.0, 0.0, -1.0]), Some([0.0, 1.0]))?,
+            MeshVertex::new([0.9, -0.9, 0.0], Some([0.0, 0.0, -1.0]), Some([1.0, 1.0]))?,
+            MeshVertex::new([0.0, 0.9, 0.0], Some([0.0, 0.0, -1.0]), Some([0.5, 0.0]))?,
+        ],
+        vec![0, 1, 2],
+    )?;
+    let texture_asset = TextureAsset::new(
+        2,
+        2,
+        vec![
+            255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+        ],
+    )?;
+    let store = RuntimeAssetStore::from_assets([(mesh, mesh_asset)], [(texture, texture_asset)])?;
+    let mut app = EngineApp::new();
+    app.add_plugin(RenderPlugin)?;
+    app.finish()?;
+    {
+        let mut world = app.world_initializer()?;
+        let camera = world.spawn();
+        world.insert(camera, Transform::identity())?;
+        world.insert(
+            camera,
+            Camera::new(
+                true,
+                Projection::Perspective,
+                std::f32::consts::FRAC_PI_2,
+                10.0,
+                0.1,
+                100.0,
+            ),
+        )?;
+        let entity = world.spawn();
+        world.insert(entity, Transform::from_translation([0.0, 0.0, 2.0]))?;
+        world.insert(entity, MeshRenderer::new(AssetRef::new(mesh)))?;
+        world.insert(
+            entity,
+            Material::with_texture([0.5, 1.0, 1.0, 1.0], AssetRef::new(texture)),
+        )?;
+    }
+    let snapshot = extract(app.world(), &store)?;
+    let view = RenderView::from_active_camera(&snapshot)?;
+    Ok((snapshot, view, store))
 }
 
 fn hidden_line_snapshot(

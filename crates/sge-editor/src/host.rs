@@ -51,6 +51,7 @@ pub struct EditorFileDialogs {
     pub open_scene: ProjectFileDialog,
     pub save_scene: ProjectFileDialog,
     pub import_obj: ProjectFileDialog,
+    pub import_png: ProjectFileDialog,
 }
 
 #[derive(Debug, Clone)]

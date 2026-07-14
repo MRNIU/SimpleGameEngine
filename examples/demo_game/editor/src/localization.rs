@@ -24,11 +24,13 @@ pub(crate) enum DemoText {
     SceneFilter,
     SaveScene,
     ImportObj,
+    ImportPng,
     Rotator,
     RadiansPerSecond,
     PlayerController,
     MovementSpeed,
     CameraEntity,
+    KenneyConveyorEntity,
     DemoCubeEntity,
     DirectionalLightEntity,
 }
@@ -42,11 +44,13 @@ impl DemoText {
         Self::SceneFilter,
         Self::SaveScene,
         Self::ImportObj,
+        Self::ImportPng,
         Self::Rotator,
         Self::RadiansPerSecond,
         Self::PlayerController,
         Self::MovementSpeed,
         Self::CameraEntity,
+        Self::KenneyConveyorEntity,
         Self::DemoCubeEntity,
         Self::DirectionalLightEntity,
     ];
@@ -60,12 +64,14 @@ impl DemoText {
             Self::SceneFilter => "dialog.scene.filter",
             Self::SaveScene => "dialog.save_scene.title",
             Self::ImportObj => "dialog.import_obj.title",
+            Self::ImportPng => "dialog.import_png.title",
             Self::Rotator => "reflect.type.demo.rotator",
             Self::RadiansPerSecond => "reflect.field.demo.rotator.radians_per_second",
             Self::PlayerController => "reflect.type.demo.player_controller",
             Self::MovementSpeed => "reflect.field.demo.player_controller.movement_speed",
             Self::CameraEntity => "scene.entity.50000000-0000-4000-8000-000000000001.name",
-            Self::DemoCubeEntity => "scene.entity.50000000-0000-4000-8000-000000000002.name",
+            Self::KenneyConveyorEntity => "scene.entity.50000000-0000-4000-8000-000000000002.name",
+            Self::DemoCubeEntity => "scene.entity.50000000-0000-4000-8000-000000000004.name",
             Self::DirectionalLightEntity => {
                 "scene.entity.50000000-0000-4000-8000-000000000003.name"
             }

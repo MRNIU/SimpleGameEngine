@@ -4,7 +4,7 @@
 mod manifest_support;
 mod support;
 
-use sge_asset::{AssetId, AssetLookup, MESH_ASSET_TYPE_KEY};
+use sge_asset::{AssetId, AssetLookup, MESH_ASSET_TYPE_KEY, TEXTURE_ASSET_TYPE_KEY};
 use sge_project::{
     AuthoringAssetManifest, ManifestError, ObjImportSettings, ProjectDescriptor,
     ProjectFormatError, ProjectPath, SourceAssetRecord, SourceImporter,
@@ -333,6 +333,44 @@ fn manifest_v2_rejects_wrong_type_and_suffix() -> Result<(), Box<dyn std::error:
 }
 
 #[test]
+fn manifest_v2_binds_png_importer_to_texture_type_and_lowercase_suffix()
+-> Result<(), Box<dyn std::error::Error>> {
+    let id = asset_id("10000000-0000-4000-8000-000000000009")?;
+    let record = SourceAssetRecord::new(
+        id,
+        TypeKey::new(TEXTURE_ASSET_TYPE_KEY)?,
+        ProjectPath::new("Content/Textures/albedo.png")?,
+        SourceImporter::Png,
+    )?;
+    let encoded = AuthoringAssetManifest::new(vec![record])?.to_ron()?;
+    let reopened = AuthoringAssetManifest::from_ron(&encoded)?;
+
+    assert_eq!(
+        reopened.records()[0].asset_type().as_str(),
+        TEXTURE_ASSET_TYPE_KEY
+    );
+    assert!(matches!(
+        reopened.records()[0].importer(),
+        SourceImporter::Png
+    ));
+    for (asset_type, source) in [
+        (MESH_ASSET_TYPE_KEY, "Content/Textures/albedo.png"),
+        (TEXTURE_ASSET_TYPE_KEY, "Content/Textures/albedo.PNG"),
+    ] {
+        assert!(
+            SourceAssetRecord::new(
+                id,
+                TypeKey::new(asset_type)?,
+                ProjectPath::new(source)?,
+                SourceImporter::Png,
+            )
+            .is_err()
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn manifest_rejects_reserved_unassigned_asset_id() -> Result<(), Box<dyn std::error::Error>> {
     let error = SourceAssetRecord::new(
         AssetId::nil(),
@@ -360,9 +398,13 @@ fn manifest_v2_is_canonical_and_idempotent() -> Result<(), Box<dyn std::error::E
     let found = manifest.asset_type(&low).ok_or("sorted asset missing")?;
     assert!(std::ptr::eq(found, manifest.records()[0].asset_type()));
     assert_eq!(manifest.records()[0].source().as_str(), "Content/a.obj");
-    let SourceImporter::Obj(settings) = manifest.records()[0].importer();
+    let SourceImporter::Obj(settings) = manifest.records()[0].importer() else {
+        panic!("first record must use OBJ importer");
+    };
     assert!(!settings.flip_texcoord_v());
-    let SourceImporter::Obj(settings) = manifest.records()[1].importer();
+    let SourceImporter::Obj(settings) = manifest.records()[1].importer() else {
+        panic!("second record must use OBJ importer");
+    };
     assert!(settings.flip_texcoord_v());
 
     let encoded = manifest.to_ron()?;

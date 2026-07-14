@@ -41,11 +41,30 @@ pub fn extract(
         validate(entity, RenderComponentKind::Material, || {
             validate_material(material)
         })?;
-        if assets.mesh(renderer.mesh()).is_err() {
-            return Err(RenderExtractionError::MissingMeshAsset {
-                entity,
-                asset: *renderer.mesh().id(),
-            });
+        let mesh =
+            assets
+                .mesh(renderer.mesh())
+                .map_err(|_| RenderExtractionError::MissingMeshAsset {
+                    entity,
+                    asset: *renderer.mesh().id(),
+                })?;
+        if let Some(texture) = material.texture() {
+            if assets.texture(texture).is_err() {
+                return Err(RenderExtractionError::MissingTextureAsset {
+                    entity,
+                    asset: *texture.id(),
+                });
+            }
+            if mesh
+                .vertices()
+                .iter()
+                .any(|vertex| vertex.texcoord().is_none())
+            {
+                return Err(RenderExtractionError::MissingTextureCoordinates {
+                    entity,
+                    asset: *renderer.mesh().id(),
+                });
+            }
         }
         meshes.push(RenderMeshInstance::new(
             entity,
@@ -148,6 +167,10 @@ pub enum RenderExtractionError {
     MissingMaterial { entity: Entity },
     #[error("mesh entity {entity:?} references missing mesh asset {asset}")]
     MissingMeshAsset { entity: Entity, asset: AssetId },
+    #[error("mesh entity {entity:?} references missing texture asset {asset}")]
+    MissingTextureAsset { entity: Entity, asset: AssetId },
+    #[error("mesh entity {entity:?} uses texture material but mesh asset {asset} has missing UVs")]
+    MissingTextureCoordinates { entity: Entity, asset: AssetId },
     #[error("entity {entity:?} has invalid {component:?}: {source}")]
     InvalidComponent {
         entity: Entity,

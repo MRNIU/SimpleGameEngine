@@ -206,7 +206,7 @@ impl Fixture {
         fs::create_dir(&cooked)?;
         let asset = AssetId::from_str("20000000-0000-4000-8000-000000000001")?;
         fs::write(
-            source.join("Content/demo.obj"),
+            source.join("Content/triangle.obj"),
             b"o demo\nv -0.8 -0.8 0\nv 0.8 -0.8 0\nv 0 0.8 0\nf 1 2 3\n",
         )?;
         let root = ProjectRoot::open(&source)?;
@@ -221,7 +221,7 @@ impl Fixture {
         AuthoringAssetManifest::new(vec![SourceAssetRecord::new(
             asset,
             TypeKey::new(MESH_ASSET_TYPE_KEY)?,
-            ProjectPath::new("Content/demo.obj")?,
+            ProjectPath::new("Content/triangle.obj")?,
             SourceImporter::Obj(ObjImportSettings::new(false)),
         )?])?
         .save(&root)?;

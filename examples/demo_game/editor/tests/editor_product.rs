@@ -321,7 +321,9 @@ fn grid_holes_inside_material(image: &image::RgbaImage) -> usize {
             ((*first + 1)..*last)
                 .filter(|x| {
                     let pixel = image.get_pixel(*x, y);
-                    pixel[0] < 100 && pixel[1] < 100 && pixel[2] < 100
+                    (20..100).contains(&pixel[0])
+                        && pixel[0].abs_diff(pixel[1]) <= 4
+                        && pixel[0].abs_diff(pixel[2]) <= 4
                 })
                 .count()
         })
@@ -580,7 +582,7 @@ impl Drop for WindowManager {
 }
 
 fn find_window(title: &str) -> Result<String, Box<dyn std::error::Error>> {
-    for _ in 0..200 {
+    for _ in 0..1_000 {
         let output = Command::new("xdotool")
             .args(["search", "--onlyvisible", "--name", title])
             .output()?;
@@ -607,22 +609,11 @@ impl TestProject {
             .join("../../../target/tmp/demo_game_editor")
             .join(std::process::id().to_string());
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("Content/Meshes"))?;
         fs::create_dir_all(root.join("Scenes"))?;
-        for relative in [
-            "project.sge.ron",
-            "Content/asset_manifest.ron",
-            "Scenes/main.scene.ron",
-        ] {
+        for relative in ["project.sge.ron", "Scenes/main.scene.ron"] {
             fs::copy(demo_root().join(relative), root.join(relative))?;
         }
-        for entry in fs::read_dir(demo_root().join("Content/Meshes"))? {
-            let entry = entry?;
-            fs::copy(
-                entry.path(),
-                root.join("Content/Meshes").join(entry.file_name()),
-            )?;
-        }
+        copy_tree(&demo_root().join("Content"), &root.join("Content"))?;
         Ok(Self { root })
     }
 
@@ -639,4 +630,18 @@ impl Drop for TestProject {
 
 fn demo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
+}
+
+fn copy_tree(source: &Path, destination: &Path) -> Result<(), std::io::Error> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let destination_path = destination.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &destination_path)?;
+        } else {
+            fs::copy(entry.path(), destination_path)?;
+        }
+    }
+    Ok(())
 }

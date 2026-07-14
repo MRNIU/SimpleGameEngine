@@ -1,10 +1,11 @@
 // Copyright The SimpleGameEngine Contributors
 
+use sge_asset::TextureAsset;
 use sge_math::{Vec2, Vec3};
 
 use super::{
     clip::ClipVertex,
-    shade::{FrameLight, alpha_blend},
+    shade::{FrameLight, alpha_blend, sample_texture_repeat_bilinear},
 };
 
 const EDGE_EPSILON: f32 = 1.0e-6;
@@ -23,23 +24,26 @@ struct ScreenVertex {
     depth: f32,
     inverse_w: f32,
     normal_over_w: Vec3,
+    texcoord_over_w: Vec2,
     barycentric: Vec3,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct RasterTriangle {
+pub(super) struct RasterTriangle<'asset> {
     screen: [ScreenVertex; 3],
     area: f32,
     bounds: [u32; 4],
     material: [f32; 4],
+    texture: Option<&'asset TextureAsset>,
 }
 
 pub(super) fn prepare_triangle(
     triangle: [ClipVertex; 3],
     size: [u32; 2],
     material: [f32; 4],
+    texture: Option<&TextureAsset>,
     cull_back_faces: bool,
-) -> Option<RasterTriangle> {
+) -> Option<RasterTriangle<'_>> {
     let screen = triangle.map(|vertex| {
         let inverse_w = vertex.position.w.recip();
         let ndc = vertex.position.truncate() * inverse_w;
@@ -51,6 +55,7 @@ pub(super) fn prepare_triangle(
             depth: ndc.z,
             inverse_w,
             normal_over_w: vertex.normal * inverse_w,
+            texcoord_over_w: vertex.texcoord * inverse_w,
             barycentric: vertex.barycentric,
         }
     });
@@ -77,11 +82,12 @@ pub(super) fn prepare_triangle(
         area,
         bounds: [min_x, min_y, max_x, max_y],
         material,
+        texture,
     })
 }
 
 pub(super) fn rasterize_triangle_tile(
-    triangle: RasterTriangle,
+    triangle: RasterTriangle<'_>,
     tile: RasterTile,
     light: FrameLight,
     lit: bool,
@@ -135,10 +141,18 @@ pub(super) fn rasterize_triangle_tile(
                 + weights[2] * triangle.screen[2].normal_over_w)
                 / inverse_w)
                 .normalize_or_zero();
+            let texcoord = (weights[0] * triangle.screen[0].texcoord_over_w
+                + weights[1] * triangle.screen[1].texcoord_over_w
+                + weights[2] * triangle.screen[2].texcoord_over_w)
+                / inverse_w;
+            let material = triangle.texture.map_or(triangle.material, |texture| {
+                let sampled = sample_texture_repeat_bilinear(texture, texcoord);
+                std::array::from_fn(|index| sampled[index] * triangle.material[index])
+            });
             let source = if lit {
-                light.shade(normal, triangle.material)
+                light.shade(normal, material)
             } else {
-                triangle.material
+                material
             };
             colors[index] = alpha_blend(source, colors[index]);
             depths[index] = depth;
@@ -147,7 +161,7 @@ pub(super) fn rasterize_triangle_tile(
 }
 
 pub(super) fn rasterize_triangle_wire_tile(
-    triangle: RasterTriangle,
+    triangle: RasterTriangle<'_>,
     tile: RasterTile,
     width_pixels: f32,
     color: [f32; 4],
@@ -179,7 +193,7 @@ pub(super) fn rasterize_triangle_wire_tile(
 }
 
 fn visit_triangle_pixels(
-    triangle: RasterTriangle,
+    triangle: RasterTriangle<'_>,
     tile: RasterTile,
     mut visit: impl FnMut(usize, Vec2, f32),
 ) {
@@ -206,7 +220,7 @@ fn visit_triangle_pixels(
     }
 }
 
-fn barycentric_weights(triangle: RasterTriangle, point: Vec2) -> [f32; 3] {
+fn barycentric_weights(triangle: RasterTriangle<'_>, point: Vec2) -> [f32; 3] {
     [
         edge(
             triangle.screen[1].position,
@@ -226,13 +240,13 @@ fn barycentric_weights(triangle: RasterTriangle, point: Vec2) -> [f32; 3] {
     ]
 }
 
-fn interpolate_depth(triangle: RasterTriangle, weights: [f32; 3]) -> f32 {
+fn interpolate_depth(triangle: RasterTriangle<'_>, weights: [f32; 3]) -> f32 {
     weights[0] * triangle.screen[0].depth
         + weights[1] * triangle.screen[1].depth
         + weights[2] * triangle.screen[2].depth
 }
 
-fn interpolate_barycentric(triangle: RasterTriangle, weights: [f32; 3]) -> Vec3 {
+fn interpolate_barycentric(triangle: RasterTriangle<'_>, weights: [f32; 3]) -> Vec3 {
     weights[0] * triangle.screen[0].barycentric
         + weights[1] * triangle.screen[1].barycentric
         + weights[2] * triangle.screen[2].barycentric

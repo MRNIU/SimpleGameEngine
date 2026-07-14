@@ -9,7 +9,7 @@ mod tests;
 
 use rayon::prelude::*;
 use sge_asset::{AssetId, RuntimeAssetStore};
-use sge_math::{Mat3, Mat4, Quat, Vec3, Vec4};
+use sge_math::{Mat3, Mat4, Quat, Vec2, Vec3, Vec4};
 
 use self::{
     clip::{ClipVertex, clip_triangle},
@@ -121,6 +121,17 @@ impl CpuRenderer {
                 .mesh(instance.mesh())
                 .map_err(|_| CpuRenderError::MissingAsset { asset })?;
             let transform = instance.transform();
+            let texture = instance
+                .material()
+                .texture()
+                .map(|reference| {
+                    assets
+                        .texture(reference)
+                        .map_err(|_| CpuRenderError::MissingTexture {
+                            asset: *reference.id(),
+                        })
+                })
+                .transpose()?;
             let model = Mat4::from_scale_rotation_translation(
                 Vec3::from_array(transform.scale),
                 Quat::from_array(transform.rotation).normalize(),
@@ -137,6 +148,7 @@ impl CpuRenderer {
                     normal: (normal_matrix
                         * Vec3::from_array(vertex.normal().copied().unwrap_or([0.0, 0.0, 1.0])))
                     .normalize_or_zero(),
+                    texcoord: Vec2::from_array(vertex.texcoord().copied().unwrap_or([0.0; 2])),
                     barycentric: Vec3::ZERO,
                 })
                 .collect::<Vec<_>>();
@@ -154,6 +166,7 @@ impl CpuRenderer {
                         clipped,
                         target_size,
                         instance.material().base_color(),
+                        texture,
                         mode != RenderMode::Wireframe,
                     ) {
                         triangles.push(triangle);
@@ -264,4 +277,6 @@ pub enum CpuRenderError {
     TargetTooLarge { width: u32, height: u32 },
     #[error("CPU mesh asset is missing: {asset}")]
     MissingAsset { asset: AssetId },
+    #[error("CPU texture asset is missing: {asset}")]
+    MissingTexture { asset: AssetId },
 }

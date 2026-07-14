@@ -40,6 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 open_scene: open_scene_dialog,
                 save_scene: save_scene_dialog,
                 import_obj: import_obj_dialog,
+                import_png: import_png_dialog,
             }),
             translations: Some(translations),
             ..EditorRunOptions::default()
@@ -121,6 +122,13 @@ fn import_obj_dialog(language: EditorLanguage, _: &Path) -> Option<PathBuf> {
         .pick_file()
 }
 
+fn import_png_dialog(language: EditorLanguage, _: &Path) -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title(text(language, DemoText::ImportPng))
+        .add_filter("PNG", &["png"])
+        .pick_file()
+}
+
 fn create_demo_project(parent: &Path) -> Result<PathBuf, String> {
     let root = parent.join("DemoGame");
     fs::create_dir(&root).map_err(|error| {
@@ -142,18 +150,9 @@ fn populate_demo_project(root: &Path) -> Result<(), String> {
     let manifest = sge_project::AuthoringAssetManifest::from_ron(include_str!(
         "../../Content/asset_manifest.ron"
     ))
-    .and_then(|manifest| {
-        sge_project::AuthoringAssetManifest::new(
-            manifest
-                .records()
-                .iter()
-                .filter(|record| record.source().as_str() == "Content/Meshes/demo.obj")
-                .cloned()
-                .collect(),
-        )
-    })
     .and_then(|manifest| manifest.to_ron())
     .map_err(|error| error.to_string())?;
+    let cube = sge_editor::primitive_obj_source(sge_editor::PrimitiveKind::Cube);
     let files = [
         (
             "project.sge.ron",
@@ -161,16 +160,36 @@ fn populate_demo_project(root: &Path) -> Result<(), String> {
         ),
         ("Content/asset_manifest.ron", manifest.as_bytes()),
         (
-            "Content/Meshes/demo.obj",
-            include_bytes!("../../Content/Meshes/demo.obj").as_slice(),
+            "Content/Meshes/Kenney/conveyor-bars-stripe.obj",
+            include_bytes!("../../Content/Meshes/Kenney/conveyor-bars-stripe.obj").as_slice(),
         ),
+        (
+            "Content/Textures/Kenney/colormap.png",
+            include_bytes!("../../Content/Textures/Kenney/colormap.png").as_slice(),
+        ),
+        (
+            "Content/ThirdParty/KenneyFactoryKit/LICENSE.txt",
+            include_bytes!("../../Content/ThirdParty/KenneyFactoryKit/LICENSE.txt").as_slice(),
+        ),
+        (
+            "Content/ThirdParty/KenneyFactoryKit/SOURCE.md",
+            include_bytes!("../../Content/ThirdParty/KenneyFactoryKit/SOURCE.md").as_slice(),
+        ),
+        ("Content/Meshes/BasicShapes/cube.obj", cube.as_bytes()),
         (
             "Scenes/main.scene.ron",
             include_bytes!("../../Scenes/main.scene.ron").as_slice(),
         ),
     ];
-    fs::create_dir_all(root.join("Content/Meshes")).map_err(|error| error.to_string())?;
-    fs::create_dir_all(root.join("Scenes")).map_err(|error| error.to_string())?;
+    for directory in [
+        "Content/Meshes/Kenney",
+        "Content/Meshes/BasicShapes",
+        "Content/Textures/Kenney",
+        "Content/ThirdParty/KenneyFactoryKit",
+        "Scenes",
+    ] {
+        fs::create_dir_all(root.join(directory)).map_err(|error| error.to_string())?;
+    }
     for (path, bytes) in files {
         fs::write(root.join(path), bytes).map_err(|error| error.to_string())?;
     }
@@ -329,7 +348,15 @@ mod tests {
         let root = create_demo_project(&parent)?;
         assert!(root.join("project.sge.ron").is_file());
         assert!(root.join("Content/asset_manifest.ron").is_file());
-        assert!(root.join("Content/Meshes/demo.obj").is_file());
+        assert!(
+            root.join("Content/Meshes/Kenney/conveyor-bars-stripe.obj")
+                .is_file()
+        );
+        assert!(root.join("Content/Textures/Kenney/colormap.png").is_file());
+        assert_eq!(
+            fs::read_to_string(root.join("Content/Meshes/BasicShapes/cube.obj"))?,
+            sge_editor::primitive_obj_source(sge_editor::PrimitiveKind::Cube)
+        );
         assert!(root.join("Scenes/main.scene.ron").is_file());
         let _session = sge_editor::EditSession::open(demo_game::GAME, &root)?;
         assert!(create_demo_project(&parent).is_err());

@@ -10,6 +10,12 @@ struct FrameUniform {
 @group(0) @binding(0)
 var<uniform> frame: FrameUniform;
 
+@group(1) @binding(0)
+var color_texture: texture_2d<f32>;
+
+@group(1) @binding(1)
+var color_sampler: sampler;
+
 struct MeshInput {
   @location(0) position: vec3<f32>,
   @location(1) normal: vec3<f32>,
@@ -21,12 +27,16 @@ struct MeshInput {
   @location(7) normal_0: vec4<f32>,
   @location(8) normal_1: vec4<f32>,
   @location(9) normal_2: vec4<f32>,
+  @location(11) uv: vec2<f32>,
+  @location(12) has_texture: vec4<f32>,
 };
 
 struct MeshOutput {
   @builtin(position) clip_position: vec4<f32>,
   @location(0) normal: vec3<f32>,
   @location(1) color: vec4<f32>,
+  @location(2) uv: vec2<f32>,
+  @location(3) has_texture: f32,
 };
 
 @vertex
@@ -37,17 +47,23 @@ fn vs_mesh(input: MeshInput) -> MeshOutput {
   let normal_matrix = mat3x3<f32>(input.normal_0.xyz, input.normal_1.xyz, input.normal_2.xyz);
   output.normal = normalize(normal_matrix * input.normal);
   output.color = input.color;
+  output.uv = input.uv;
+  output.has_texture = input.has_texture.x;
   return output;
 }
 
 @fragment
 fn fs_mesh(input: MeshOutput) -> @location(0) vec4<f32> {
+  var material = input.color;
+  if input.has_texture > 0.5 {
+    material = textureSample(color_texture, color_sampler, input.uv) * input.color;
+  }
   if frame.render_settings.x == 1.0 || frame.light_direction_intensity.w < 0.0 {
-    return input.color;
+    return material;
   }
   let light = max(dot(input.normal, -frame.light_direction_intensity.xyz), 0.0);
   let strength = 0.15 + light * frame.light_direction_intensity.w;
-  return vec4<f32>(input.color.rgb * frame.light_color.rgb * strength, input.color.a);
+  return vec4<f32>(material.rgb * frame.light_color.rgb * strength, material.a);
 }
 
 struct WireInput {

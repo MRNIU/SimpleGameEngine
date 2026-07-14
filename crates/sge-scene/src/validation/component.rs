@@ -155,7 +155,13 @@ fn validate_reference(
         }
         ReferenceSemantic::Asset {
             asset_type: expected,
+        }
+        | ReferenceSemantic::OptionalAsset {
+            asset_type: expected,
         } => {
+            if value.is_empty() && matches!(semantic, ReferenceSemantic::OptionalAsset { .. }) {
+                return Ok(None);
+            }
             let asset = value.parse::<AssetId>().map_err(|source| {
                 SceneValidationError::InvalidAssetReference {
                     entity,

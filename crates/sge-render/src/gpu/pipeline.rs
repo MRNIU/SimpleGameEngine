@@ -1,9 +1,9 @@
 // Copyright The SimpleGameEngine Contributors
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
-    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
-const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 8] = wgpu::vertex_attr_array![
+const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 11 => Float32x2];
+const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 9] = wgpu::vertex_attr_array![
     2 => Float32x4,
     3 => Float32x4,
     4 => Float32x4,
@@ -11,7 +11,8 @@ const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 8] = wgpu::vertex_attr_array!
     6 => Float32x4,
     7 => Float32x4,
     8 => Float32x4,
-    9 => Float32x4
+    9 => Float32x4,
+    12 => Float32x4
 ];
 const WIREFRAME_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
     wgpu::vertex_attr_array![0 => Float32x3, 10 => Float32x3];
@@ -26,11 +27,12 @@ pub(super) fn create_mesh_pipeline(
     device: &wgpu::Device,
     shader: &wgpu::ShaderModule,
     frame_layout: &wgpu::BindGroupLayout,
+    texture_layout: &wgpu::BindGroupLayout,
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("sge_render_mesh_pipeline_layout"),
-        bind_group_layouts: &[Some(frame_layout)],
+        bind_group_layouts: &[Some(frame_layout), Some(texture_layout)],
         immediate_size: 0,
     });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -42,12 +44,12 @@ pub(super) fn create_mesh_pipeline(
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             buffers: &[
                 wgpu::VertexBufferLayout {
-                    array_stride: 24,
+                    array_stride: 32,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &VERTEX_ATTRIBUTES,
                 },
                 wgpu::VertexBufferLayout {
-                    array_stride: 128,
+                    array_stride: 144,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &INSTANCE_ATTRIBUTES,
                 },
@@ -111,7 +113,7 @@ pub(super) fn create_wireframe_pipeline(
                     attributes: &WIREFRAME_VERTEX_ATTRIBUTES,
                 },
                 wgpu::VertexBufferLayout {
-                    array_stride: 128,
+                    array_stride: 144,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &WIREFRAME_INSTANCE_ATTRIBUTES,
                 },

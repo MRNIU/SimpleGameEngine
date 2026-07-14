@@ -62,6 +62,7 @@ impl Value {
 pub enum ReferenceSemantic {
     Entity,
     Asset { asset_type: TypeKey },
+    OptionalAsset { asset_type: TypeKey },
 }
 
 pub trait ReferenceValue: Sized + 'static {

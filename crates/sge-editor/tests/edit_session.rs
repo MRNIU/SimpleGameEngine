@@ -14,10 +14,10 @@ use sge_render::{Material, MeshRenderer};
 use sge_scene::{AuthoringEntity, SceneEntityId, SceneName};
 
 const CAMERA: &str = "50000000-0000-4000-8000-000000000001";
-const MESH: &str = "50000000-0000-4000-8000-000000000002";
+const MESH: &str = "50000000-0000-4000-8000-000000000004";
 const NEW_PARENT: &str = "60000000-0000-4000-8000-000000000001";
 const NEW_CHILD: &str = "60000000-0000-4000-8000-000000000002";
-const DEMO_ASSET: &str = "40000000-0000-4000-8000-000000000001";
+const DEMO_ASSET: &str = "40000000-0000-4000-8000-000000000003";
 
 #[test]
 fn inspector_field_edit_is_validated_and_undoable() -> Result<(), Box<dyn std::error::Error>> {
@@ -211,7 +211,7 @@ fn play_uses_a_fresh_world_and_drop_preserves_edit_world() -> Result<(), Box<dyn
     assert_eq!(state.updates(), 1);
     assert_eq!(state.post_updates(), 1);
     let (snapshot, view) = play.render_frame()?;
-    assert_eq!(snapshot.meshes().len(), 1);
+    assert_eq!(snapshot.meshes().len(), 2);
     assert!(view.camera().active());
     drop(play);
 
@@ -261,7 +261,11 @@ fn authoring_workflow_uses_generic_history_and_formal_assets()
     assert!(has_entity(&session, camera)?);
     assert!(has_entity(&session, duplicate)?);
 
-    let imported = session.import_obj(project.path().join("Content/Meshes/demo.obj"))?;
+    let imported = session.import_obj(
+        project
+            .path()
+            .join("Content/Meshes/Kenney/conveyor-bars-stripe.obj"),
+    )?;
     assert!(
         session
             .manifest()
@@ -412,22 +416,13 @@ impl TestProject {
             .join("../../target/tmp/sge_editor_edit")
             .join(format!("{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("Content/Meshes"))?;
-        fs::create_dir_all(root.join("Scenes"))?;
-        for relative in [
-            "project.sge.ron",
-            "Content/asset_manifest.ron",
-            "Scenes/main.scene.ron",
-        ] {
-            fs::copy(demo_root().join(relative), root.join(relative))?;
-        }
-        for entry in fs::read_dir(demo_root().join("Content/Meshes"))? {
-            let entry = entry?;
-            fs::copy(
-                entry.path(),
-                root.join("Content/Meshes").join(entry.file_name()),
-            )?;
-        }
+        fs::create_dir_all(&root)?;
+        copy_tree(&demo_root().join("Content"), &root.join("Content"))?;
+        copy_tree(&demo_root().join("Scenes"), &root.join("Scenes"))?;
+        fs::copy(
+            demo_root().join("project.sge.ron"),
+            root.join("project.sge.ron"),
+        )?;
         Ok(Self { root })
     }
 
@@ -444,4 +439,18 @@ impl Drop for TestProject {
 
 fn demo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/demo_game")
+}
+
+fn copy_tree(from: &Path, to: &Path) -> Result<(), std::io::Error> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
 }

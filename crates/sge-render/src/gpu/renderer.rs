@@ -9,7 +9,7 @@ use wgpu::util::DeviceExt;
 use crate::{BackendFrame, RenderSettings, RenderSnapshot, RenderView};
 
 use super::{
-    assets::{GpuMesh, prepare_assets},
+    assets::{GpuMesh, GpuTexture, GpuUploadContext, create_fallback_texture, prepare_assets},
     errors::{FrameNotPreparedError, GpuAssetError, RenderFrameError, RenderTargetError},
     frame::{
         create_depth_target, extent, normalized_model_matrix, uniform_bytes, validate_target_size,
@@ -31,10 +31,14 @@ pub struct WgpuRenderer {
     wireframe_xray_pipeline: wgpu::RenderPipeline,
     wireframe_overlay_pipeline: wgpu::RenderPipeline,
     frame_layout: wgpu::BindGroupLayout,
+    texture_layout: wgpu::BindGroupLayout,
     composite_pipeline: wgpu::RenderPipeline,
     composite_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
+    texture_sampler: wgpu::Sampler,
+    fallback_texture: GpuTexture,
     meshes: BTreeMap<AssetId, GpuMesh>,
+    textures: BTreeMap<AssetId, GpuTexture>,
     offscreen: Option<OffscreenTarget>,
 }
 
@@ -46,7 +50,8 @@ struct OffscreenTarget {
 }
 
 struct DrawBatch {
-    asset: AssetId,
+    mesh: AssetId,
+    texture: Option<AssetId>,
     instances: std::ops::Range<u32>,
 }
 
@@ -97,7 +102,34 @@ impl WgpuRenderer {
                 },
             ],
         });
-        let mesh_pipeline = create_mesh_pipeline(device, &shader, &frame_layout, target_format);
+        let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("sge_render_color_texture_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let mesh_pipeline = create_mesh_pipeline(
+            device,
+            &shader,
+            &frame_layout,
+            &texture_layout,
+            target_format,
+        );
         let wireframe_xray_pipeline =
             create_wireframe_pipeline(device, &shader, &frame_layout, target_format, false);
         let wireframe_overlay_pipeline =
@@ -110,16 +142,31 @@ impl WgpuRenderer {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+        let texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("sge_render_color_texture_sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let fallback_texture = create_fallback_texture(device, &texture_layout, &texture_sampler);
         Self {
             target_format,
             mesh_pipeline,
             wireframe_xray_pipeline,
             wireframe_overlay_pipeline,
             frame_layout,
+            texture_layout,
             composite_pipeline,
             composite_layout,
             sampler,
+            texture_sampler,
+            fallback_texture,
             meshes: BTreeMap::new(),
+            textures: BTreeMap::new(),
             offscreen: None,
         }
     }
@@ -127,11 +174,22 @@ impl WgpuRenderer {
     pub fn prepare_assets(
         &mut self,
         device: &wgpu::Device,
-        _queue: &wgpu::Queue,
+        queue: &wgpu::Queue,
         snapshot: &RenderSnapshot,
         store: &RuntimeAssetStore,
     ) -> Result<(), GpuAssetError> {
-        prepare_assets(&mut self.meshes, device, snapshot, store)
+        prepare_assets(
+            &mut self.meshes,
+            &mut self.textures,
+            GpuUploadContext {
+                device,
+                queue,
+                texture_layout: &self.texture_layout,
+                texture_sampler: &self.texture_sampler,
+            },
+            snapshot,
+            store,
+        )
     }
 
     pub fn render_to_target(
@@ -191,7 +249,7 @@ impl WgpuRenderer {
         validate_target_size(device, target.size)?;
         let (mut instance_bytes, batches) = self.prepare_instances(snapshot)?;
         if instance_bytes.is_empty() {
-            instance_bytes.resize(128, 0);
+            instance_bytes.resize(144, 0);
         }
         let instance_size = u64::try_from(instance_bytes.len()).unwrap_or(u64::MAX);
         let max_buffer_size = device.limits().max_buffer_size;
@@ -252,7 +310,13 @@ impl WgpuRenderer {
         pass.set_vertex_buffer(1, instance_buffer.slice(..));
         if settings.mode().has_fill() {
             pass.set_pipeline(&self.mesh_pipeline);
-            draw_filled_batches(&mut pass, &self.meshes, &batches);
+            draw_filled_batches(
+                &mut pass,
+                &self.meshes,
+                &self.textures,
+                &self.fallback_texture.bind_group,
+                &batches,
+            );
         }
         if settings.mode().has_wireframe() {
             pass.set_pipeline(match settings.mode() {
@@ -263,7 +327,7 @@ impl WgpuRenderer {
                 }
             });
             for batch in &batches {
-                let mesh = &self.meshes[&batch.asset];
+                let mesh = &self.meshes[&batch.mesh];
                 pass.set_vertex_buffer(0, mesh.wireframe_vertex_buffer.slice(..));
                 pass.draw(0..mesh.wireframe_vertex_count, batch.instances.clone());
             }
@@ -393,28 +457,40 @@ impl WgpuRenderer {
         self.meshes.len()
     }
 
+    #[must_use]
+    pub fn cached_texture_count(&self) -> usize {
+        self.textures.len()
+    }
+
     pub fn clear_asset_cache(&mut self) {
         self.meshes.clear();
+        self.textures.clear();
     }
 
     fn prepare_instances(
         &self,
         snapshot: &RenderSnapshot,
     ) -> Result<(Vec<u8>, Vec<DrawBatch>), FrameNotPreparedError> {
-        let mut grouped = BTreeMap::<AssetId, Vec<_>>::new();
+        let mut grouped = BTreeMap::<(AssetId, Option<AssetId>), Vec<_>>::new();
         for instance in snapshot.meshes() {
             let asset = *instance.mesh().id();
             if !self.meshes.contains_key(&asset) {
                 return Err(FrameNotPreparedError::Asset { asset });
             }
-            grouped.entry(asset).or_default().push(*instance);
+            let texture = instance.material().texture().map(|value| *value.id());
+            if texture.is_some_and(|texture| !self.textures.contains_key(&texture)) {
+                return Err(FrameNotPreparedError::Texture {
+                    asset: texture.expect("checked Some above"),
+                });
+            }
+            grouped.entry((asset, texture)).or_default().push(*instance);
         }
         let mut bytes = Vec::new();
         let mut batches = Vec::new();
         let mut first = 0_u32;
-        for (asset, instances) in grouped {
+        for ((mesh, texture), instances) in grouped {
             let count = u32::try_from(instances.len())
-                .map_err(|_| FrameNotPreparedError::InstanceCountOverflow { asset })?;
+                .map_err(|_| FrameNotPreparedError::InstanceCountOverflow { asset: mesh })?;
             for instance in instances {
                 let model = normalized_model_matrix(instance.transform());
                 let normal = Mat3::from_mat4(model).inverse().transpose().to_cols_array();
@@ -428,14 +504,25 @@ impl WgpuRenderer {
                         .into_iter()
                         .chain(instance.material().base_color())
                         .chain(normal_padded)
+                        .chain([
+                            if instance.material().texture().is_some() {
+                                1.0
+                            } else {
+                                0.0
+                            },
+                            0.0,
+                            0.0,
+                            0.0,
+                        ])
                         .flat_map(f32::to_ne_bytes),
                 );
             }
             let end = first
                 .checked_add(count)
-                .ok_or(FrameNotPreparedError::InstanceCountOverflow { asset })?;
+                .ok_or(FrameNotPreparedError::InstanceCountOverflow { asset: mesh })?;
             batches.push(DrawBatch {
-                asset,
+                mesh,
+                texture,
                 instances: first..end,
             });
             first = end;
@@ -488,10 +575,16 @@ impl WgpuRenderer {
 fn draw_filled_batches<'pass>(
     pass: &mut wgpu::RenderPass<'pass>,
     meshes: &'pass BTreeMap<AssetId, GpuMesh>,
+    textures: &'pass BTreeMap<AssetId, GpuTexture>,
+    fallback: &'pass wgpu::BindGroup,
     batches: &'pass [DrawBatch],
 ) {
     for batch in batches {
-        let mesh = &meshes[&batch.asset];
+        let mesh = &meshes[&batch.mesh];
+        let texture = batch
+            .texture
+            .map_or(fallback, |asset| &textures[&asset].bind_group);
+        pass.set_bind_group(1, texture, &[]);
         pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
         pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         pass.draw_indexed(0..mesh.index_count, 0, batch.instances.clone());

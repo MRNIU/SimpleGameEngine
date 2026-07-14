@@ -42,7 +42,11 @@ pub(crate) fn import_obj(
                 source_path: record.source().clone(),
                 source,
             })?;
-    let SourceImporter::Obj(settings) = record.importer();
+    let SourceImporter::Obj(settings) = record.importer() else {
+        return Err(ImportCacheError::WrongImporter {
+            asset_id: record.id(),
+        });
+    };
     let source_digest = digest_hex(&raw_bytes);
     let cache_key = cache_key(&raw_bytes, settings);
     let cache_directory = ProjectPath::new(format!("Cache/Imported/{}", record.id()))?;
@@ -313,6 +317,8 @@ pub enum CacheIssue {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ImportCacheError {
+    #[error("source asset {asset_id} does not use the OBJ importer")]
+    WrongImporter { asset_id: AssetId },
     #[error("cannot read OBJ source {source_path} for asset {asset_id}: {source}")]
     SourceRead {
         asset_id: AssetId,

@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     AssetId, AssetIdError, MESH_ASSET_TYPE_KEY, RuntimeGenerationId, RuntimeGenerationIdError,
-    RuntimeProductPath, RuntimeProductPathError,
+    RuntimeProductPath, RuntimeProductPathError, TEXTURE_ASSET_TYPE_KEY,
 };
 
 pub const RUNTIME_ASSET_CATALOG_FORMAT_VERSION: u32 = 1;
@@ -75,6 +75,15 @@ impl RuntimeAssetRecord {
             }
             if !dependencies.is_empty() {
                 return Err(RuntimeCatalogError::MeshHasDependencies { id });
+            }
+        }
+        if asset_type.as_str() == TEXTURE_ASSET_TYPE_KEY {
+            let expected = format!("Content/{id}.texture.bin");
+            if product.as_str() != expected {
+                return Err(RuntimeCatalogError::InvalidTextureProductPath { id, path: product });
+            }
+            if !dependencies.is_empty() {
+                return Err(RuntimeCatalogError::TextureHasDependencies { id });
             }
         }
         dependencies.sort_unstable();
@@ -467,6 +476,13 @@ pub enum RuntimeCatalogError {
     },
     #[error("mesh asset {id} cannot declare dependencies")]
     MeshHasDependencies { id: AssetId },
+    #[error("texture asset {id} has non-canonical product path {path}")]
+    InvalidTextureProductPath {
+        id: AssetId,
+        path: RuntimeProductPath,
+    },
+    #[error("texture asset {id} cannot declare dependencies")]
+    TextureHasDependencies { id: AssetId },
     #[error("asset {asset} repeats dependency {dependency}")]
     DuplicateDependency { asset: AssetId, dependency: AssetId },
     #[error("runtime catalog repeats asset ID {id}")]
